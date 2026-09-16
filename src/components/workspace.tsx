@@ -77,7 +77,7 @@ const formatTime = (value: string | Date | number) =>
     timeStyle: "short",
     timeZone: "Europe/London",
   }).format(new Date(value));
-const formatDate = (value: string) =>
+const formatDate = (value: string | Date) =>
   new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeZone: "UTC",
@@ -595,14 +595,11 @@ export function Workspace({
             {doc.friendlyName}
           </button>
           <p>
-            {doc.originalName} · {formatSize(doc.size)} · {names(doc.createdBy)}
-            {doc.category && <> · {label(doc.category)}</>}
+            {doc.category ? label(doc.category) : "No category"}
+            {linkedNames.length > 0 ? ` · ${linkedNames.join(" · ")}` : " · No links yet – reusable across records"}
           </p>
           <p>
-            {linkedNames.length > 0 ? linkedNames.join(" · ") : "No links yet – reusable across records"}
-          </p>
-          <p>
-            <small>Stored as {doc.storageName.slice(0, 8)}… · {formatTime(doc.createdAt)}</small>
+            <small>Uploaded on {formatDate(doc.createdAt)} by {names(doc.createdBy)}</small>
           </p>
         </div>
         <div className="row-actions">
@@ -790,16 +787,12 @@ export function Workspace({
               </p>
             </div>
             <div className="row-actions">
-              {view === "documents" && (
-                <Button variant="outline" onClick={() => setDocUpload({})}>
-                  <FileText size={16} />
-                  Upload document
+              {view !== "documents" && (
+                <Button onClick={() => edit("interaction")}>
+                  <Plus size={18} />
+                  Quick note
                 </Button>
               )}
-              <Button onClick={() => edit("interaction")}>
-                <Plus size={18} />
-                Quick note
-              </Button>
             </div>
           </div>
           {message && (
@@ -1398,9 +1391,6 @@ export function Workspace({
                   Upload document
                 </Button>
               </div>
-              <p className="form-help" style={{ marginBottom: "12px" }}>
-                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. View opens in-app with a close button to return; Download shows a save dialog. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed.
-              </p>
               <section className="panel">
                 {filteredDocs.map(documentRow)}
                 {!filteredDocs.length && (
@@ -1702,7 +1692,7 @@ function DocumentViewerDialog({
           <p className="eyebrow">VIEWING DOCUMENT</p>
           <h2>{doc.friendlyName}</h2>
           <p className="form-help" style={{ margin: 0 }}>
-            {doc.originalName} · {formatSize(doc.size)} · {doc.category ? label(doc.category) : "No category"} · {doc.mimeType}
+            {doc.category ? label(doc.category) : "No category"} · Uploaded on {formatDate(doc.createdAt)} by {doc.createdBy.split("@")[0]}
           </p>
         </div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close viewer">
