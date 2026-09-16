@@ -20,8 +20,8 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
 | 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Full browser e2e for upload/link/download flows in restricted sandbox, accessibility polish |
 | 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
-| 5a. Checklist templates | Partly implemented – Notifications (15) and Probate & Estate Administration (21) lists built, editable, with duplicate-safe application | Funeral list, and any wording changes the user wants after reading the probate list |
-| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and two checklist lists (Notifications, Probate) exist; the Funeral list, install metadata and complete accessibility polish remain |
+| 5a. Checklist templates | Implemented for the three starter projects – Notifications (16), Probate & Estate Administration (21) and Funeral (25), all editable with duplicate-safe application | Any wording changes the user wants after reading them |
+| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and all three checklist lists exist; install metadata and complete accessibility polish remain |
 | 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
 
 ### Next recommended work
@@ -319,4 +319,22 @@ Verified:
 - TypeScript, Prettier and production build checks passing.
 - Demo preview checked: both checklist panels render inside their projects with no runtime errors and no figures leaked into the page.
 
-Remaining: the Funeral list, and any rewording the user wants after reading the probate list.
+Remaining: any rewording the user wants after reading the lists.
+
+## Checklist templates — funeral list, and the list tuned to the user's stage (16 September 2026)
+
+Situation given by the user: their mother died a few days ago; she had been widowed about fifteen years; all assets are in her name alone; the only beneficiaries are the user and their sister; no gifts in the seven years before death. The medical examiner has submitted findings to the registry office and the death certificate appointment is the next day. The funeral will be non-denominational at a crematorium with a celebrant, followed by a wake at a local pub, with catering still to be decided.
+
+Implemented:
+- **Funeral** list, 25 suggestions for exactly that plan: registration and certificates first; the separate cremation certificate from the medical examiner; choosing a funeral director and asking for an itemised quote; agreeing the day and slot; the celebrant and the tribute; the shape of the service; music; order of service; photographs; flowers or donations in memory; what she will wear and jewellery; transport; confirming the pub, the catering, and anything extra at the wake; telling people; a death notice; tracking guests; dress; recording the costs in Estate finances; the day before; the ashes as a later decision; and looking after each other afterwards.
+- **Notifications** list tuned to the current stage: a new second item, "Order extra death certificates at the appointment", and the Tell Us Once wording now says the registrar offers the reference code at the registration appointment and that it can only be used once. The list was renumbered so both appointment items read first. This matters because registration is the next day and a second trip is avoidable.
+- No burial, church, hymn or clergy wording appears anywhere in the funeral list, and a test enforces that. As with the probate list, no figure, fee or rate is quoted, and a test enforces that too.
+
+Verified:
+- 48 unit/integration tests passing (46 previous + 2 new): the funeral list is tailored to cremation, a celebrant and a pub wake; it avoids burial and religious wording; it quotes no figures; its costs item points at Estate finances and reimbursement; it applies and re-applies like the other lists; and the notifications list now leads with the two registration-appointment items in the right order.
+- TypeScript, Prettier and production build checks passing.
+- Demo preview checked: all three checklist panels render with no runtime errors, the funeral items read in the intended order, and none of the 62 suggestion explanations contains a money figure.
+
+Deliberately not done: the app does not decide, state or calculate whether Inheritance Tax applies, whether an account is needed, or which allowances are available. The user's circumstances (widowed, all assets in her name, two children as beneficiaries, no recent gifts) are the kind of thing that can change which forms HMRC expects, so the wording tells the user to confirm the position rather than asserting it.
+
+Next: the user is registering the death and meeting the funeral director, so the natural next work is supporting documents and receipts for the funeral and probate paperwork, and the Stage 6 backup work.

@@ -30,8 +30,16 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     projectId: "notifications",
     title: "Tell Us Once",
     detail:
-      "The registrar can give you a reference code for this government service. It reports the death to HMRC, the DWP, DVLA, the Passport Office and your council in one go.",
+      "Ask the registrar for the reference code at the registration appointment – it is offered there and can only be used once. It reports the death to HMRC, the DWP, DVLA, the Passport Office and your council in one go, which saves most of the individual phone calls.",
     sortOrder: 1,
+  },
+  {
+    id: "notif-certificates",
+    projectId: "notifications",
+    title: "Order extra death certificates at the appointment",
+    detail:
+      "Banks, pension schemes, insurers and share registrars usually each want their own certificate, and ordering them now is cheaper and quicker than a second visit later. Keep one copy for yourselves as well.",
+    sortOrder: 2,
   },
   {
     id: "notif-banks",
@@ -39,7 +47,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Banks and building societies",
     detail:
       "Every current account, savings account and ISA. Ask what they need – usually the death certificate – and whether the accounts are frozen in the meantime.",
-    sortOrder: 2,
+    sortOrder: 3,
   },
   {
     id: "notif-pension",
@@ -47,7 +55,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Private pension provider",
     detail:
       "There was no employer scheme, so this is the private pension. Tell the scheme and ask what they need and what the scheme offers; there is no need to decide anything on the first call.",
-    sortOrder: 3,
+    sortOrder: 4,
   },
   {
     id: "notif-council-tax",
@@ -55,7 +63,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Council tax",
     detail:
       "Tell your council the property is empty now and ask which exemptions or discounts apply to it.",
-    sortOrder: 4,
+    sortOrder: 5,
   },
   {
     id: "notif-energy",
@@ -63,7 +71,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Energy supplier (gas and electricity)",
     detail:
       "One call covers both, since the gas and electricity are with the same supplier. Ask about closing or transferring the account and any final bill.",
-    sortOrder: 5,
+    sortOrder: 6,
   },
   {
     id: "notif-water",
@@ -71,7 +79,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Water company",
     detail:
       "Let them know the property is empty and ask about closing or transferring the account.",
-    sortOrder: 6,
+    sortOrder: 7,
   },
   {
     id: "notif-broadband",
@@ -79,7 +87,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Broadband and landline provider",
     detail:
       "Ask what notice period applies, and whether any equipment needs returning.",
-    sortOrder: 7,
+    sortOrder: 8,
   },
   {
     id: "notif-mobile",
@@ -87,7 +95,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Mobile phone provider",
     detail:
       "Ask about notice, and whether anything is still owed on the handset or contract.",
-    sortOrder: 8,
+    sortOrder: 9,
   },
   {
     id: "notif-tv-licence",
@@ -95,7 +103,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "TV Licence",
     detail:
       "Tell TV Licensing. Ask about cancelling the licence and about a refund for the unused part of the year.",
-    sortOrder: 9,
+    sortOrder: 10,
   },
   {
     id: "notif-home-insurance",
@@ -103,7 +111,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Home and contents insurance",
     detail:
       "There is no mortgage lender to notify, so the insurer is the one to call. Ask what cover continues while the property is empty – policies often set limits, so it is worth a direct question.",
-    sortOrder: 10,
+    sortOrder: 11,
   },
   {
     id: "notif-post",
@@ -111,7 +119,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Royal Mail redirection",
     detail:
       "A paid service that forwards post to you for a set period. Useful while the house is being cleared, and it reduces post arriving at an empty address.",
-    sortOrder: 11,
+    sortOrder: 12,
   },
   {
     id: "notif-subscriptions",
@@ -119,7 +127,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Subscriptions and regular payments",
     detail:
       "Magazines, streaming, gym, clubs, charity donations. Recent bank or card statements usually reveal all of them at once.",
-    sortOrder: 12,
+    sortOrder: 13,
   },
   {
     id: "notif-credit-agencies",
@@ -127,7 +135,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Credit reference agencies",
     detail:
       "Telling them helps guard against fraud and can reveal open accounts you did not know about. It also avoids lenders writing to an unoccupied address.",
-    sortOrder: 13,
+    sortOrder: 14,
   },
   {
     id: "notif-car",
@@ -135,7 +143,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Car insurer and DVLA",
     detail:
       "Only if there is a vehicle or a driving licence to deal with. Tell the insurer, and check with DVLA about the licence and about the registered keeper of any car.",
-    sortOrder: 14,
+    sortOrder: 15,
   },
   {
     id: "notif-other-services",
@@ -143,7 +151,7 @@ export const notificationsTemplateSeeds: TemplateSeed[] = [
     title: "Doctor, dentist and similar services",
     detail:
       "GP surgery, dentist, optician, and any clinics or services they used regularly. Also worth a thought: clubs, hobbies, and anyone who would want to know.",
-    sortOrder: 15,
+    sortOrder: 16,
   },
 ];
 
@@ -319,8 +327,217 @@ export const probateTemplateSeeds: TemplateSeed[] = [
   },
 ];
 
+/**
+ * Funeral arrangements for a non-denominational cremation service led by a
+ * celebrant, with a wake afterwards at a local pub. Nothing here presumes a
+ * religious service, a burial, or any particular way of doing things.
+ */
+export const funeralTemplateSeeds: TemplateSeed[] = [
+  {
+    id: "fun-register-death",
+    projectId: "funeral",
+    title: "Register the death and collect the certificates",
+    detail:
+      "Registration is what unlocks everything else: the registrar issues the certificate that allows the funeral to go ahead. Ask for the Tell Us Once reference while you are there, and order extra death certificates if you have not already.",
+    sortOrder: 1,
+  },
+  {
+    id: "fun-cremation-paperwork",
+    projectId: "funeral",
+    title: "Check the cremation paperwork is in place",
+    detail:
+      "Cremation needs a separate medical certificate from the medical examiner, on top of the registrar's certificate. The funeral director usually arranges it, and a fee can apply – worth confirming with them that it is in hand.",
+    sortOrder: 2,
+  },
+  {
+    id: "fun-funeral-director",
+    projectId: "funeral",
+    title: "Choose a funeral director, or decide to arrange it yourselves",
+    detail:
+      "Ask for the itemised price list and a written estimate, and check what is included: their own fees, the crematorium fee, the celebrant, the cremation certificate fee, transport, and the coffin. Prices vary a lot for the same service.",
+    sortOrder: 3,
+  },
+  {
+    id: "fun-date-and-time",
+    projectId: "funeral",
+    title: "Agree the day and time",
+    detail:
+      "The funeral director usually books the crematorium slot. Slots are a fixed length, which shapes the whole service, so ask how long you have and whether a longer slot is possible.",
+    sortOrder: 4,
+  },
+  {
+    id: "fun-celebrant",
+    projectId: "funeral",
+    title: "Book the celebrant and tell them about her",
+    detail:
+      "A non-denominational celebrant will usually meet you, ask about her life, and either write the tribute or help you write it. Ask what they need from you, who reads what, and when they need it by.",
+    sortOrder: 5,
+  },
+  {
+    id: "fun-service-shape",
+    projectId: "funeral",
+    title: "Decide the shape of the service",
+    detail:
+      "Who speaks and in what order, whether there is music, a reading or a poem, whether guests are invited to contribute, and how the service ends. Agree this with the celebrant before anything is printed.",
+    sortOrder: 6,
+  },
+  {
+    id: "fun-tribute",
+    projectId: "funeral",
+    title: "Write the tribute, or decide who will",
+    detail:
+      "Notes, milestones, and the small things that made her herself. This usually takes longer than expected, so starting early takes the pressure off. Decide whether one of you reads it or the celebrant does.",
+    sortOrder: 7,
+  },
+  {
+    id: "fun-music",
+    projectId: "funeral",
+    title: "Choose the music",
+    detail:
+      "Music for arrival, during the service, and to leave to. The crematorium may have limits on what can be played and on timing, so check before finalising.",
+    sortOrder: 8,
+  },
+  {
+    id: "fun-order-of-service",
+    projectId: "funeral",
+    title: "Decide about an order of service",
+    detail:
+      "Whether to have one at all, who designs and prints it, how many copies, and whether it includes photographs. The celebrant often has a template you can adapt.",
+    sortOrder: 9,
+  },
+  {
+    id: "fun-photos",
+    projectId: "funeral",
+    title: "Photographs or a slideshow",
+    detail:
+      "Many crematoriums can show photographs on a screen. Ask what format and deadline they need, whether there is an extra charge, and pick a small number that tells the story rather than all of them.",
+    sortOrder: 10,
+  },
+  {
+    id: "fun-flowers",
+    projectId: "funeral",
+    title: "Flowers – decide what you want",
+    detail:
+      "Family flowers only, a single bouquet, or none. Some people ask for donations in memory instead; both are entirely a matter of what feels right for you.",
+    sortOrder: 11,
+  },
+  {
+    id: "fun-donations",
+    projectId: "funeral",
+    title: "Donations in memory, if you want them",
+    detail:
+      "Choose a charity if that appeals, and decide how they will be collected – through the funeral director, an online page, or at the wake. Check whether the funeral director handles it for you.",
+    sortOrder: 12,
+  },
+  {
+    id: "fun-what-she-wears",
+    projectId: "funeral",
+    title: "What she will wear, and jewellery",
+    detail:
+      "The funeral director will ask. Decide early what should be kept back for the family, and whether anything personal goes with her.",
+    sortOrder: 13,
+  },
+  {
+    id: "fun-transport",
+    projectId: "funeral",
+    title: "Transport and arriving together",
+    detail:
+      "Hearse and family cars, or making your own way. Check parking at the crematorium and at the pub, and whether anyone needs a lift or help walking in.",
+    sortOrder: 14,
+  },
+  {
+    id: "fun-wake-venue",
+    projectId: "funeral",
+    title: "Confirm the wake at the pub",
+    detail:
+      "Check the room, the time it is available, how many people it holds, and whether there is a minimum spend. Agree who is the point of contact on the day.",
+    sortOrder: 15,
+  },
+  {
+    id: "fun-catering",
+    projectId: "funeral",
+    title: "Decide the catering",
+    detail:
+      "The pub's buffet or your own arrangements. Agree numbers, timing, any dietary needs, and who is paying. A rough headcount from the replies is usually enough.",
+    sortOrder: 16,
+  },
+  {
+    id: "fun-wake-extras",
+    projectId: "funeral",
+    title: "Anything extra at the wake",
+    detail:
+      "Photographs, a memory book for guests to write in, a playlist of her music, or a display of things that were hers. These are often what people remember.",
+    sortOrder: 17,
+  },
+  {
+    id: "fun-tell-people",
+    projectId: "funeral",
+    title: "Tell people the details",
+    detail:
+      "Date, time, place, the wake, dress, and whether flowers or donations. Agree between you who tells whom, and in what order, so nobody hears it in the wrong way.",
+    sortOrder: 18,
+  },
+  {
+    id: "fun-notice",
+    projectId: "funeral",
+    title: "Consider a death notice",
+    detail:
+      "A local paper, an online notice, or a message to a group. Often the kindest way to reach people you cannot phone individually, and a place to put the funeral details.",
+    sortOrder: 19,
+  },
+  {
+    id: "fun-attendees",
+    projectId: "funeral",
+    title: "Keep track of who is coming",
+    detail:
+      "Especially anyone who needs help with travel, seating, or being met. A simple list, with numbers for the venue, is all this needs to be.",
+    sortOrder: 20,
+  },
+  {
+    id: "fun-dress",
+    projectId: "funeral",
+    title: "Agree what to wear",
+    detail:
+      "What the two of you will wear, and whether you would like guests to follow any request – a colour, no black, or something of hers. Say it clearly if you do.",
+    sortOrder: 21,
+  },
+  {
+    id: "fun-costs",
+    projectId: "funeral",
+    title: "Record the funeral costs in Estate finances",
+    detail:
+      "Funeral costs are usually paid from the estate, but often have to be paid up front. Add it to Estate finances as an expense, and mark who paid if either of you pays personally, so it can be reimbursed to you later.",
+    sortOrder: 22,
+  },
+  {
+    id: "fun-day-before",
+    projectId: "funeral",
+    title: "The day before",
+    detail:
+      "Confirm timings with the celebrant and the funeral director, check who has the order of service, agree who is responsible for what, and make a plan for afterwards when people may want to keep talking.",
+    sortOrder: 23,
+  },
+  {
+    id: "fun-ashes",
+    projectId: "funeral",
+    title: "The ashes – nothing to decide yet",
+    detail:
+      "The crematorium returns the ashes, usually through the funeral director. Collecting them, scattering them, keeping them, or interring them can all wait until you are ready – there is no deadline on this.",
+    sortOrder: 24,
+  },
+  {
+    id: "fun-after",
+    projectId: "funeral",
+    title: "Look after each other afterwards",
+    detail:
+      "The days after the funeral often feel flat, and the practical jobs that kept everyone busy stop. Note who might want company, and accept the offers of help that suit you.",
+    sortOrder: 25,
+  },
+];
+
 /** Every starter list, in project order. */
 export const templateSeeds: TemplateSeed[] = [
   ...notificationsTemplateSeeds,
   ...probateTemplateSeeds,
+  ...funeralTemplateSeeds,
 ];

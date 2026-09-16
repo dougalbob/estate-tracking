@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../src/lib/db/schema";
 import { recordStore, RecordError } from "../src/lib/records/store";
 import {
+  funeralTemplateSeeds,
   notificationsTemplateSeeds,
   probateTemplateSeeds,
   templateSeeds,
@@ -14,10 +15,13 @@ import {
 const users = ["alex@example.invalid", "jamie@example.invalid"];
 const notif = notificationsTemplateSeeds;
 const probate = probateTemplateSeeds;
+const funeral = funeralTemplateSeeds;
 const notificationsOf = (store: ReturnType<typeof setup>["store"]) =>
   store.snapshot().taskTemplates.filter((i) => i.projectId === "notifications");
 const probateOf = (store: ReturnType<typeof setup>["store"]) =>
   store.snapshot().taskTemplates.filter((i) => i.projectId === "probate");
+const funeralOf = (store: ReturnType<typeof setup>["store"]) =>
+  store.snapshot().taskTemplates.filter((i) => i.projectId === "funeral");
 const alex = users[0];
 const jamie = users[1];
 
@@ -393,13 +397,13 @@ test("the probate list is seeded, tailored, and states no rules or figures", () 
   }
 });
 
-test("both starter lists are seeded together and stay independent", () => {
+test("all three starter lists are seeded together and stay independent", () => {
   const { sqlite, store } = setup();
   try {
     store.seedTemplates();
     const all = store.snapshot().taskTemplates;
-    assert.equal(all.length, notif.length + probate.length);
-    assert.equal(all.filter((i) => i.projectId === "funeral").length, 0);
+    assert.equal(all.length, notif.length + probate.length + funeral.length);
+    assert.equal(funeralOf(store).length, funeral.length);
 
     // Items never move between lists.
     const item = probateOf(store)[0];
@@ -421,22 +425,114 @@ test("both starter lists are seeded together and stay independent", () => {
     // The same wording may exist in two different lists.
     const id = store.saveTemplateItem(
       {
-        projectId: "funeral",
-        title: "Tell Us Once",
+        projectId: "notifications",
+        title: "The ashes – nothing to decide yet",
         detail: "Shared wording.",
       },
       jamie,
     );
     assert.ok(id);
     assert.equal(
-      store.snapshot().taskTemplates.filter((i) => i.title === "Tell Us Once")
-        .length,
+      store
+        .snapshot()
+        .taskTemplates.filter(
+          (i) => i.title === "The ashes – nothing to decide yet",
+        ).length,
       2,
     );
-    const funeral = store
-      .snapshot()
-      .taskTemplates.find((i) => i.projectId === "funeral")!;
-    assert.equal(funeral.sortOrder, 1);
+    // A new item goes to the end of its own list, not another list's numbering.
+    const added = store.snapshot().taskTemplates.find((i) => i.id === id)!;
+    assert.equal(added.sortOrder, notif.length + 1);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("the funeral list is tailored to a cremation, a celebrant and a pub wake", () => {
+  const { sqlite, store } = setup();
+  try {
+    const items = funeralOf(store);
+    assert.equal(items.length, funeral.length);
+    assert.equal(
+      items[0].title,
+      "Register the death and collect the certificates",
+    );
+
+    const titles = items.map((i) => i.title).join(" | ");
+    const text = items.map((i) => `${i.title} ${i.detail}`).join(" ");
+
+    // Written for the agreed plan: non-denominational cremation with a
+    // celebrant, wake at a local pub.
+    assert.match(titles, /cremation paperwork/i);
+    assert.match(titles, /celebrant/i);
+    assert.match(titles, /wake at the pub/i);
+    assert.match(titles, /catering/i);
+    assert.match(titles, /tribute/i);
+    assert.match(titles, /ashes/i);
+    assert.match(text, /crematorium/i);
+    assert.match(text, /non-denominational/i);
+    assert.match(text, /separate medical certificate/i);
+
+    // No burial, no church, and no assumption of a religious service.
+    assert.doesNotMatch(text, /grave|church|vicar|priest|hymn|burial/i);
+
+    // Nothing is costed, and no figures are quoted anywhere.
+    assert.doesNotMatch(text, /£|percent|\b\d{3,}\b/);
+
+    // The funeral costs item points at the finances module rather than deciding
+    // how it is paid.
+    const costs = items.find((i) => i.id === "fun-costs")!;
+    assert.match(costs.detail, /Estate finances/);
+    assert.match(costs.detail, /reimbursed/);
+
+    // Applying works the same way as the other lists.
+    const chosen = [
+      items.find((i) => i.id === "fun-register-death")!,
+      items.find((i) => i.id === "fun-celebrant")!,
+    ].map((i) => i.id);
+    assert.deepEqual(
+      store.applyTemplate({ projectId: "funeral", itemIds: chosen }, alex)
+        .added,
+      chosen,
+    );
+    assert.deepEqual(
+      store.applyTemplate({ projectId: "funeral", itemIds: chosen }, jamie)
+        .added,
+      [],
+    );
+    const tasks = store.snapshot().tasks;
+    assert.equal(tasks.length, 2);
+    assert.ok(tasks.every((t) => t.projectId === "funeral"));
+    assert.ok(tasks.every((t) => t.assignee === null && t.dueDate === null));
+    assert.equal(notificationsOf(store).length, notif.length);
+    assert.equal(probateOf(store).length, probate.length);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("the notifications list now covers the registration appointment", () => {
+  const { sqlite, store } = setup();
+  try {
+    const items = notificationsOf(store);
+    assert.equal(items.length, notif.length);
+    const certificates = items.find((i) => i.id === "notif-certificates")!;
+    assert.equal(
+      certificates.title,
+      "Order extra death certificates at the appointment",
+    );
+    assert.equal(certificates.sortOrder, 2);
+    const tellUsOnce = items.find((i) => i.id === "notif-tell-us-once")!;
+    assert.match(
+      tellUsOnce.detail,
+      /reference code at the registration appointment/i,
+    );
+    assert.match(tellUsOnce.detail, /only be used once/i);
+    // Ordering is by position, so the appointment items read first.
+    assert.deepEqual(
+      items.slice(0, 2).map((i) => i.id),
+      ["notif-tell-us-once", "notif-certificates"],
+    );
   } finally {
     sqlite.close();
   }
