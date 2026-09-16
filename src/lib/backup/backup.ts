@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import {
   appendFile,
+  cp,
   mkdir,
   mkdtemp,
   open,
@@ -567,10 +568,21 @@ export async function restoreEncryptedBackup(
 
     options.closeDatabase?.();
     const id = randomBytes(12).toString("hex");
+    // Stage the replacement on the SAME filesystem as the target first so
+    // that the final swap uses atomic same-device renames. The decrypted
+    // payload lives under tmpdir() which is frequently a different mount
+    // (tmpfs, /tmp ramdisk, etc.) — most notably in containers like Unraid
+    // where /tmp and the /data appdata mount are on separate devices.
+    // Using rename across devices throws EXDEV, so we copy to a sibling
+    // temporary path beside the live target and rename from there.
+    const databaseStage = `${targetDatabase}.restore-new-${id}`;
+    const documentsStage = `${targetDocuments}.restore-new-${id}`;
     const oldDatabase = `${targetDatabase}.before-restore-${id}`;
     const oldWal = `${targetDatabase}-wal.before-restore-${id}`;
     const oldShm = `${targetDatabase}-shm.before-restore-${id}`;
     const oldDocuments = `${targetDocuments}.before-restore-${id}`;
+    let copiedDatabase = false;
+    let copiedDocuments = false;
     let movedDatabase = false;
     let movedWal = false;
     let movedShm = false;
@@ -578,13 +590,19 @@ export async function restoreEncryptedBackup(
     let installedDatabase = false;
     let installedDocuments = false;
     try {
+      await cp(staged.databasePath, databaseStage);
+      copiedDatabase = true;
+      await cp(staged.documentsPath, documentsStage, { recursive: true });
+      copiedDocuments = true;
+      await validateDatabase(databaseStage);
+
       movedDatabase = await renameIfPresent(targetDatabase, oldDatabase);
       movedWal = await renameIfPresent(`${targetDatabase}-wal`, oldWal);
       movedShm = await renameIfPresent(`${targetDatabase}-shm`, oldShm);
-      await rename(staged.databasePath, targetDatabase);
+      await rename(databaseStage, targetDatabase);
       installedDatabase = true;
       movedDocuments = await renameIfPresent(targetDocuments, oldDocuments);
-      await rename(staged.documentsPath, targetDocuments);
+      await rename(documentsStage, targetDocuments);
       installedDocuments = true;
       await validateDatabase(targetDatabase);
       await rm(oldDatabase, { force: true });
@@ -601,6 +619,14 @@ export async function restoreEncryptedBackup(
       if (movedWal) await rename(oldWal, `${targetDatabase}-wal`);
       if (movedDatabase) await rename(oldDatabase, targetDatabase);
       throw error;
+    } finally {
+      // Clean up the on-target staging copies whether or not the swap
+      // succeeded. If rename installed them, the path no longer exists
+      // (rm with force is a no-op); if we bailed out early, this removes
+      // the half-copied payload.
+      if (copiedDatabase) await rm(databaseStage, { force: true });
+      if (copiedDocuments)
+        await rm(documentsStage, { recursive: true, force: true });
     }
     return staged.metadata;
   } finally {
