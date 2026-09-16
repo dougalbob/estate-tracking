@@ -19,9 +19,12 @@ import {
   maxDocumentSizeBytes,
   documentInput,
   documentLinkInput,
+  financeVoidInput,
 } from "@/lib/records/validation";
+import { MoneyError } from "@/lib/finances/money";
 
 type Kind = "organisation" | "interaction" | "task" | "project" | "document";
+type BinKind = Kind | "finance_record" | "finance_movement";
 
 export async function saveRecord(kind: Kind, input: unknown) {
   try {
@@ -76,6 +79,96 @@ export async function saveRecord(kind: Kind, input: unknown) {
   }
 }
 
+export async function saveFinanceRecord(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const id = store.saveFinanceRecord(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+        code: "validation",
+      };
+    if (error instanceof MoneyError)
+      return { ok: false as const, error: error.message, code: "validation" };
+    return {
+      ok: false as const,
+      error:
+        "Unable to save. Check your access and try again. Your draft has been kept.",
+      code: "unavailable",
+    };
+  }
+}
+
+export async function saveFinanceMovement(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const id = store.saveFinanceMovement(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error: "Unable to save this money movement. Your draft has been kept.",
+      code: "unavailable",
+    };
+  }
+}
+
+/** Voiding keeps a financial record visible, with a reason, out of the totals. */
+export async function setFinanceVoid(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const parsed = financeVoidInput.parse(input);
+    store.setFinanceVoid(parsed, user.email);
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues.map((i) => i.message).join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error: "Unable to change this record. Check your access and try again.",
+      code: "unavailable",
+    };
+  }
+}
+
 export async function uploadDocument(formData: FormData) {
   try {
     const user = await currentUser();
@@ -91,6 +184,7 @@ export async function uploadDocument(formData: FormData) {
     const interactionId = (formData.get("interactionId") as string) || null;
     const taskId = (formData.get("taskId") as string) || null;
     const projectId = (formData.get("projectId") as string) || null;
+    const financeRecordId = (formData.get("financeRecordId") as string) || null;
 
     if (!file || typeof file === "string" || file.size === 0) {
       return {
@@ -114,17 +208,15 @@ export async function uploadDocument(formData: FormData) {
     ) {
       // Still allow if extension is pdf or image
       const lower = file.name.toLowerCase();
-      if (
-        !(
-          lower.endsWith(".pdf") ||
-          lower.endsWith(".png") ||
-          lower.endsWith(".jpg") ||
-          lower.endsWith(".jpeg") ||
-          lower.endsWith(".webp") ||
-          lower.endsWith(".tiff") ||
-          lower.endsWith(".txt")
-        )
-      ) {
+      if (!(
+        lower.endsWith(".pdf") ||
+        lower.endsWith(".png") ||
+        lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") ||
+        lower.endsWith(".webp") ||
+        lower.endsWith(".tiff") ||
+        lower.endsWith(".txt")
+      )) {
         return {
           ok: false as const,
           error: "Unsupported file type – use PDF, image, or text",
@@ -175,7 +267,13 @@ export async function uploadDocument(formData: FormData) {
         user.email,
       );
       // Optional initial link
-      if (organisationId || interactionId || taskId || projectId) {
+      if (
+        organisationId ||
+        interactionId ||
+        taskId ||
+        projectId ||
+        financeRecordId
+      ) {
         try {
           store.linkDocument(
             {
@@ -184,6 +282,7 @@ export async function uploadDocument(formData: FormData) {
               interactionId,
               taskId,
               projectId,
+              financeRecordId,
             },
             user.email,
           );
@@ -279,7 +378,7 @@ export async function unlinkDocument(linkId: string) {
 }
 
 export async function deleteRecord(
-  kind: Kind,
+  kind: BinKind,
   id: string,
   version: number,
   permanent = false,
@@ -290,6 +389,17 @@ export async function deleteRecord(
       ? ["alex@example.invalid", "jamie@example.invalid"]
       : authConfiguration(process.env).users;
     const store = recordStore(database(), users);
+    if (kind === "finance_record" || kind === "finance_movement") {
+      store.deleteFinance(
+        kind === "finance_record" ? "record" : "movement",
+        id,
+        version,
+        user.email,
+        permanent,
+      );
+      revalidatePath("/");
+      return { ok: true as const };
+    }
     const result = store.deleteRecord(kind, id, version, user.email, permanent);
     // For permanent document deletion, also remove file from disk
     if (kind === "document" && permanent) {
@@ -317,13 +427,27 @@ export async function deleteRecord(
   }
 }
 
-export async function restoreRecord(kind: Kind, id: string, version: number) {
+export async function restoreRecord(
+  kind: BinKind,
+  id: string,
+  version: number,
+) {
   try {
     const user = await currentUser();
     const users = user.demo
       ? ["alex@example.invalid", "jamie@example.invalid"]
       : authConfiguration(process.env).users;
     const store = recordStore(database(), users);
+    if (kind === "finance_record" || kind === "finance_movement") {
+      store.restoreFinance(
+        kind === "finance_record" ? "record" : "movement",
+        id,
+        version,
+        user.email,
+      );
+      revalidatePath("/");
+      return { ok: true as const };
+    }
     // For documents, ensure file still exists before restore
     if (kind === "document") {
       const snap = store.snapshot();

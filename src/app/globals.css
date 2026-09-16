@@ -1040,3 +1040,106 @@ summary {
 .doc-inline-row:last-child {
   border-bottom: 0;
 }
+
+/* Estate finances – calm summaries, all figures from semantic tokens */
+.finance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.finance-grid .panel {
+  margin: 0;
+  padding: 22px;
+}
+.money-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.money-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.money-row:last-child {
+  border-bottom: 0;
+}
+.money-row dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.money-row dt small {
+  font-size: 11px;
+}
+.money-row dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.money-split {
+  border-bottom: 0;
+}
+.money-split dt,
+.money-split dd {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.money-sub dt {
+  padding-left: 14px;
+}
+.money-sub dd {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.money-total {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.money-total dt {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.money-total dd {
+  color: var(--primary);
+  font-size: 19px;
+}
+.badge.voided {
+  background: var(--notice);
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.csv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.csv-bar > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.csv-bar small {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+@media (max-width: 1150px) {
+  .finance-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .finance-grid {
+    grid-template-columns: 1fr;
+  }
+  .money-row dd {
+    font-size: 15px;
+  }
+}

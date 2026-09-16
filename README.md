@@ -104,6 +104,23 @@ Templates may cover Tell Us Once, banks, post redirection, subscriptions, DVLA, 
 - Reimbursement settles money owed to a user; it must not count the original expense again.
 - Export asset/liability lists and financial records to CSV for spreadsheet use.
 
+Implemented behaviour:
+
+- Every amount is stored as an integer number of pence. Pounds are only an input and display format, so totals never drift.
+- Five record types: **asset** (estimated value, then actual sale proceeds), **liability** (amount owed, then payments), **income**, **expense** (paid from the estate or personally by Alex or Jamie), and **distribution** (recorded against either beneficiary).
+- Proceeds and payments are recorded as separate movements against the asset or liability, so the estimate stays alongside what actually happened.
+- Reimbursements are movements against a personally paid expense. A GBP 500 expense with GBP 200 reimbursed leaves GBP 300 owed, and only one expense exists in the totals. Part payments are recorded as they happen; the app refuses a reimbursement that would exceed the amount owed, and refuses to reimburse an expense the estate paid directly. Liability payments have the same limit — correct the recorded amount first if it has changed.
+- Corrections keep every previous version, its author and the time. **Voiding** (with a required reason) keeps a record visible, out of the totals, and can be reinstated. Financial records can be moved to the recoverable bin and restored, but they are **never permanently deleted** through the app: the server refuses, and the bin shows "Correct or void instead".
+- Distributions are recorded as they happened, with no assumed 50/50 split.
+- CSV downloads (assets and liabilities, cash movements, reimbursements owed) are generated on the server after the same authentication check. Text that a spreadsheet could treat as a formula is prefixed with an apostrophe and quoted; money is exported as plain decimals with money in and money out in separate columns, so nothing relies on negative numbers.
+- No tax, debt-priority, or entitlement calculation appears anywhere in the summaries.
+
+For fictional demo rows on the finances screens:
+```bash
+DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-finances.ts
+```
+The script refuses to run against a database path that does not contain `demo`.
+
 ## Shared history, corrections, and recovery
 
 - Chronological activity feed with automatic actor attribution.
@@ -180,7 +197,7 @@ NEXT_TELEMETRY_DISABLED=1 npm start
 
 Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
 
-Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads, finances, checklist templates, backups, and install metadata are still upcoming; this is **not ready for real estate data or production use**.
+Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, and estate finances in GBP as integer pence with CSV exports, are also implemented. Checklist templates, backups, deployment, install metadata, and a full accessibility/security review are still upcoming; this is **not ready for real estate data or production use**.
 
 ### Browser workflow test
 
@@ -193,7 +210,7 @@ npm run test:e2e
 
 The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
 
-Run `npm run format:check` for source formatting checks.
+Run `npm run format:check` for source formatting checks. The unit suite (38 tests) covers shared records, documents, and the finance rules described above, including the GBP 500/200/300 reimbursement case, part payments, voids, and CSV formula protection.
 
 Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Full Cloudflare/Unraid, browser accessibility, backup, and restore verification are still outstanding.
 

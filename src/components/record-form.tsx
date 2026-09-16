@@ -69,6 +69,7 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
   const [docLinkOrg, setDocLinkOrg] = useState<string>("");
   const [docLinkProject, setDocLinkProject] = useState<string>("");
   const [docLinkTask, setDocLinkTask] = useState<string>("");
+  const [docLinkFinance, setDocLinkFinance] = useState<string>("");
   const [docLinkSaving, setDocLinkSaving] = useState(false);
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
@@ -253,10 +254,17 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
         // For documents, also create optional links selected in the polished edit UI
         if (editor.kind === "document") {
           setDocLinkSaving(true);
-          const linksToCreate: Array<{ organisationId?: string | null; projectId?: string | null; taskId?: string | null }> = [];
+          const linksToCreate: Array<{
+            organisationId?: string | null;
+            projectId?: string | null;
+            taskId?: string | null;
+            financeRecordId?: string | null;
+          }> = [];
           if (docLinkOrg) linksToCreate.push({ organisationId: docLinkOrg });
           if (docLinkProject) linksToCreate.push({ projectId: docLinkProject });
           if (docLinkTask) linksToCreate.push({ taskId: docLinkTask });
+          if (docLinkFinance)
+            linksToCreate.push({ financeRecordId: docLinkFinance });
           for (const link of linksToCreate) {
             try {
               const res = await linkDocument({
@@ -469,10 +477,7 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
               </label>
               <label>
                 Category
-                <select
-                  name="category"
-                  defaultValue={value("category")}
-                >
+                <select name="category" defaultValue={value("category")}>
                   <option value="">No category</option>
                   {documentCategories.map((c) => (
                     <option key={c} value={c}>
@@ -482,22 +487,68 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 </select>
               </label>
               <p className="form-help">
-                The file itself isn&apos;t changed here – only name and category. Links can be added below. Null is fine – not every document needs every link.
+                The file itself isn&apos;t changed here – only name and
+                category. Links can be added below. Null is fine – not every
+                document needs every link.
               </p>
 
               {localDocLinks.length > 0 && (
                 <fieldset className="follow-up">
                   <legend>Current links – this file is reused</legend>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
                     {localDocLinks.map((l) => {
-                      const org = l.organisationId ? data.organisations.find((o) => o.id === l.organisationId)?.name : null;
-                      const proj = l.projectId ? data.projects.find((p) => p.id === l.projectId)?.name : null;
-                      const task = l.taskId ? data.tasks.find((t) => t.id === l.taskId)?.title : null;
-                      const note = l.interactionId ? data.interactions.find((i) => i.id === l.interactionId)?.title : null;
+                      const org = l.organisationId
+                        ? data.organisations.find(
+                            (o) => o.id === l.organisationId,
+                          )?.name
+                        : null;
+                      const proj = l.projectId
+                        ? data.projects.find((p) => p.id === l.projectId)?.name
+                        : null;
+                      const task = l.taskId
+                        ? data.tasks.find((t) => t.id === l.taskId)?.title
+                        : null;
+                      const note = l.interactionId
+                        ? data.interactions.find(
+                            (i) => i.id === l.interactionId,
+                          )?.title
+                        : null;
+                      const finance = l.financeRecordId
+                        ? data.financeRecords.find(
+                            (f) => f.id === l.financeRecordId,
+                          )?.title
+                        : null;
                       return (
-                        <div key={l.id} style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
-                          <span className="badge" style={{ justifyContent: "flex-start", flex: 1 }}>
-                            {org ? `Contact: ${org}` : proj ? `Project: ${proj}` : task ? `Task: ${task}` : note ? `Note: ${note}` : "Link"}
+                        <div
+                          key={l.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span
+                            className="badge"
+                            style={{ justifyContent: "flex-start", flex: 1 }}
+                          >
+                            {org
+                              ? `Contact: ${org}`
+                              : proj
+                                ? `Project: ${proj}`
+                                : task
+                                  ? `Task: ${task}`
+                                  : finance
+                                    ? `Finance: ${finance}`
+                                    : note
+                                      ? `Note: ${note}`
+                                      : "Link"}
                           </span>
                           <button
                             type="button"
@@ -505,7 +556,12 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                             title="Remove this link – file itself stays"
                             disabled={busy || docLinkSaving}
                             onClick={async () => {
-                              if (!window.confirm("Remove this link? The file itself will stay and can be reused elsewhere.")) return;
+                              if (
+                                !window.confirm(
+                                  "Remove this link? The file itself will stay and can be reused elsewhere.",
+                                )
+                              )
+                                return;
                               setDocLinkSaving(true);
                               setError("");
                               const res = await unlinkDocument(l.id);
@@ -513,7 +569,9 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                               if (!res.ok) {
                                 setError(res.error);
                               } else {
-                                setLocalDocLinks((prev) => prev.filter((x) => x.id !== l.id));
+                                setLocalDocLinks((prev) =>
+                                  prev.filter((x) => x.id !== l.id),
+                                );
                                 setDirty(true);
                                 router.refresh();
                               }
@@ -526,7 +584,15 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                       );
                     })}
                   </div>
-                  <p className="form-help" style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
+                  <p
+                    className="form-help"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      marginTop: "8px",
+                    }}
+                  >
                     <Lightbulb size={14} />
                     Tip: removing a link(s) does not delete the file
                   </p>
@@ -539,11 +605,16 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   Contact (organisation)
                   <select
                     value={docLinkOrg}
-                    onChange={(e) => { setDocLinkOrg(e.target.value); setDirty(true); }}
+                    onChange={(e) => {
+                      setDocLinkOrg(e.target.value);
+                      setDirty(true);
+                    }}
                   >
                     <option value="">No contact link</option>
                     {data.organisations.map((o) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -551,11 +622,16 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   Project
                   <select
                     value={docLinkProject}
-                    onChange={(e) => { setDocLinkProject(e.target.value); setDirty(true); }}
+                    onChange={(e) => {
+                      setDocLinkProject(e.target.value);
+                      setDirty(true);
+                    }}
                   >
                     <option value="">No project link</option>
                     {data.projects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -563,11 +639,33 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   Task
                   <select
                     value={docLinkTask}
-                    onChange={(e) => { setDocLinkTask(e.target.value); setDirty(true); }}
+                    onChange={(e) => {
+                      setDocLinkTask(e.target.value);
+                      setDirty(true);
+                    }}
                   >
                     <option value="">No task link</option>
                     {data.tasks.slice(0, 100).map((t) => (
-                      <option key={t.id} value={t.id}>{t.title}</option>
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Financial record (receipt or invoice)
+                  <select
+                    value={docLinkFinance}
+                    onChange={(e) => {
+                      setDocLinkFinance(e.target.value);
+                      setDirty(true);
+                    }}
+                  >
+                    <option value="">No financial link</option>
+                    {data.financeRecords.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {label(r.kind)} – {r.title}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -576,11 +674,22 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
               <dl className="details-grid">
                 <div>
                   <dt>File</dt>
-                  <dd>{value("friendlyName")} – {value("originalName")}</dd>
+                  <dd>
+                    {value("friendlyName")} – {value("originalName")}
+                  </dd>
                 </div>
                 <div>
                   <dt>Uploaded</dt>
-                  <dd>{initial.createdAt ? new Date(String(initial.createdAt)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Unknown"} by {String(initial.createdBy ?? "").split("@")[0] || "Unknown"}</dd>
+                  <dd>
+                    {initial.createdAt
+                      ? new Date(String(initial.createdAt)).toLocaleDateString(
+                          "en-GB",
+                          { day: "numeric", month: "short", year: "numeric" },
+                        )
+                      : "Unknown"}{" "}
+                    by{" "}
+                    {String(initial.createdBy ?? "").split("@")[0] || "Unknown"}
+                  </dd>
                 </div>
               </dl>
             </>
@@ -662,7 +771,8 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                     />
                   </label>
                   <p className="form-help">
-                    Recorded by the signed-in user. Attach documents from the organisation or document list after saving.
+                    Recorded by the signed-in user. Attach documents from the
+                    organisation or document list after saving.
                   </p>
                   <h3>
                     {editor.id ? "Add more follow-up tasks" : "Follow-up tasks"}

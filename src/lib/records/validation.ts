@@ -102,15 +102,134 @@ export const documentInput = z.object({
 });
 export const documentLinkInput = z.object({
   documentId: z.string().min(1),
-  organisationId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
-  interactionId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
-  taskId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
-  projectId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
+  organisationId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.trim() : null) || null),
+  interactionId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.trim() : null) || null),
+  taskId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.trim() : null) || null),
+  projectId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.trim() : null) || null),
+  /** A receipt or invoice can be linked to the financial record it belongs to. */
+  financeRecordId: z
+    .string()
+    .trim()
+    .min(1)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.trim() : null) || null),
 });
 export const deleteInput = z.object({
   ...common,
   permanent: z.boolean().optional().default(false),
 });
+export const financeKinds = [
+  "asset",
+  "liability",
+  "income",
+  "expense",
+  "distribution",
+] as const;
+export const financeMovementKinds = [
+  "proceeds",
+  "payment",
+  "reimbursement",
+] as const;
+export const financeCategories: Record<
+  (typeof financeKinds)[number],
+  readonly string[]
+> = {
+  asset: [
+    "property",
+    "bank_account",
+    "investment",
+    "pension",
+    "vehicle",
+    "household_items",
+    "other",
+  ],
+  liability: [
+    "loan",
+    "mortgage",
+    "credit_card",
+    "overdraft",
+    "unpaid_bill",
+    "other",
+  ],
+  income: ["interest", "refund", "rent", "sale_deposit", "other"],
+  expense: ["funeral", "administration", "property", "travel", "other"],
+  distribution: ["interim", "final", "other"],
+};
+/** Each kind of financial record only accepts its own kind of movement. */
+export const movementKindFor = (kind: (typeof financeKinds)[number]) =>
+  kind === "asset"
+    ? "proceeds"
+    : kind === "liability"
+      ? "payment"
+      : kind === "expense"
+        ? "reimbursement"
+        : null;
+export const financeRecordInput = z.object({
+  ...common,
+  kind: z.enum(financeKinds),
+  title: z.string().trim().min(1, "A title is required").max(200),
+  detail: z.string().max(20000).default(""),
+  category: optionalText,
+  /** Pounds as typed by a person, for example "500" or "500.25". */
+  amount: z.string().trim().max(40),
+  occurredOn: date,
+  /** Expense: the user who paid personally. Money already owed to them. */
+  fundedBy: optionalText,
+  /** Distribution: the user this money was paid to. */
+  beneficiary: optionalText,
+  organisationId: optionalText,
+  projectId: optionalText,
+});
+export const financeMovementInput = z.object({
+  ...common,
+  recordId: z.string().min(1),
+  kind: z.enum(financeMovementKinds),
+  amount: z.string().trim().min(1, "Enter an amount").max(40),
+  occurredOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
+    .refine(
+      (v) =>
+        Number.isFinite(Date.parse(v)) &&
+        new Date(v).toISOString().slice(0, 10) === v,
+      "Enter a valid date",
+    ),
+  detail: z.string().max(20000).default(""),
+});
+export const financeVoidInput = z.object({
+  target: z.enum(["record", "movement"]),
+  id: z.string().min(1),
+  version: z.number().int().positive(),
+  voided: z.boolean(),
+  reason: z.string().max(500).optional(),
+});
+export type FinanceRecordInput = z.input<typeof financeRecordInput>;
+export type FinanceMovementInput = z.input<typeof financeMovementInput>;
 export type OrganisationInput = z.input<typeof organisationInput>;
 export type TaskInput = z.input<typeof taskInput>;
 export type InteractionInput = z.input<typeof interactionInput>;

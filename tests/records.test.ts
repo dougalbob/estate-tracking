@@ -570,10 +570,7 @@ test("documents: upload, edit friendlyName/category, link reusable, unlink prese
       { documentId: docId, organisationId: orgId },
       users[0],
     );
-    const link2 = store.linkDocument(
-      { documentId: docId, taskId },
-      users[0],
-    );
+    const link2 = store.linkDocument({ documentId: docId, taskId }, users[0]);
     snap = store.snapshot();
     assert.equal(snap.documentLinks.length, 2);
     // Idempotent – same link again returns same id
@@ -628,7 +625,11 @@ test("documents: bin preserves file and links, permanent delete removes file ref
     let snap = store.snapshot();
     assert.equal(snap.documents.length, 0);
     assert.equal(snap.deletedDocuments.length, 1);
-    assert.equal(snap.documentLinks.length, 1, "link remains after soft delete");
+    assert.equal(
+      snap.documentLinks.length,
+      1,
+      "link remains after soft delete",
+    );
 
     // Restore
     store.restoreRecord("document", docId, 2, users[0]);
@@ -646,9 +647,15 @@ test("documents: bin preserves file and links, permanent delete removes file ref
     snap = store.snapshot();
     assert.equal(snap.documents.length, 0);
     assert.equal(snap.deletedDocuments.length, 0);
-    assert.equal(snap.documentLinks.length, 0, "cascade removes links on permanent delete");
+    assert.equal(
+      snap.documentLinks.length,
+      0,
+      "cascade removes links on permanent delete",
+    );
     assert.ok(
-      snap.revisions.some((r) => r.entity === "document" && r.entityId === docId),
+      snap.revisions.some(
+        (r) => r.entity === "document" && r.entityId === docId,
+      ),
       "revision history retained",
     );
   } finally {
@@ -678,7 +685,11 @@ test("documents: deleting linked record does not delete document, only unlinks",
     store.deleteRecord("organisation", orgId, 1, users[0], false);
     store.deleteRecord("organisation", orgId, 2, users[0], true);
     let snap = store.snapshot();
-    assert.equal(snap.documents.length, 1, "document not cascade-deleted with org");
+    assert.equal(
+      snap.documents.length,
+      1,
+      "document not cascade-deleted with org",
+    );
     assert.equal(snap.documentLinks.length, 0, "org link removed");
   } finally {
     sqlite.close();

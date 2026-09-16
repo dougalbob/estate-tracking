@@ -14,9 +14,12 @@ export async function GET(
   try {
     user = await currentUser();
   } catch {
-    return new Response("Protected workspace – open through Cloudflare Access", {
-      status: 401,
-    });
+    return new Response(
+      "Protected workspace – open through Cloudflare Access",
+      {
+        status: 401,
+      },
+    );
   }
   const users = user.demo
     ? ["alex@example.invalid", "jamie@example.invalid"]
@@ -34,9 +37,12 @@ export async function GET(
     return new Response("Document not found", { status: 404 });
   }
   if (doc.deletedAt) {
-    return new Response("Document is in the recoverable bin – restore it first", {
-      status: 410,
-    });
+    return new Response(
+      "Document is in the recoverable bin – restore it first",
+      {
+        status: 410,
+      },
+    );
   }
 
   const path = fullPath(doc.storageName);
@@ -57,11 +63,14 @@ export async function GET(
         : "application/octet-stream";
 
     const dispositionType =
-      forceDownload || !(safeMime.startsWith("image/") || safeMime === "application/pdf")
+      forceDownload ||
+      !(safeMime.startsWith("image/") || safeMime === "application/pdf")
         ? "attachment"
         : "inline";
 
-    const safeOriginal = doc.originalName.replace(/"/g, '\\"').replace(/[\r\n]/g, "");
+    const safeOriginal = doc.originalName
+      .replace(/"/g, '\\"')
+      .replace(/[\r\n]/g, "");
     const encoded = encodeURIComponent(doc.originalName);
     const disposition = `${dispositionType}; filename="${safeOriginal}"; filename*=UTF-8''${encoded}`;
 

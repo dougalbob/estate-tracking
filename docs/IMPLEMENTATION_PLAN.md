@@ -1,6 +1,6 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, and document storage with reusable links have been implemented and unit-tested. The application is still in development, not ready for real estate information or production use.
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, document storage with reusable links, and estate finances in GBP have been implemented and unit-tested. The application is still in development, not ready for real estate information or production use.
 
 ## Start here — conversation handover (16 September 2026)
 
@@ -19,34 +19,39 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | 1. Foundation | Implemented baseline | Full accessibility/security review, additional-theme coverage, and real Cloudflare/Unraid verification remain |
 | 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
 | 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Full browser e2e for upload/link/download flows in restricted sandbox, accessibility polish |
-| 4. Finances | Not implemented | Inventory, transactions, reimbursements, distributions, summaries, exports |
+| 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
 | 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture and responsive screens exist; templates, install metadata and complete accessibility polish remain |
 | 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
 
 ### Next recommended work
 
-Stage 3 is now complete. Continue to Stage 4 – Estate Finances:
+Stage 4 is implemented and unit-tested; ask the user to try the finances screen before starting Stage 5.
 
-1. Model assets, liabilities, income, expenses, personal funding, reimbursements, distributions in GBP as integer pence.
-2. Explicit links between valuations/realisations/payments/reimbursements to avoid duplicate totals.
-3. Separate summaries for assets vs liabilities, cash movements, outstanding reimbursements.
-4. Receipt/invoice document linking, financial correction/void history, CSV export with formula-injection protection.
-5. Extend automated tests, then ask user to try finance workflows.
+1. Walk the user through the finances screen in the preview: add an asset, sell it, part-pay a liability, record a personally paid expense and part-reimburse it, then download each CSV.
+2. Continue to Stage 5 – attention dashboard, checklist templates, install metadata, and mobile/accessibility polish.
+3. Keep any feedback about finance wording or extra fields together for one small follow-up change rather than redesigning the screen.
 
 ### Where to find the current implementation
 
 - `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, projects, documents (decluttered row: friendlyName + category·linkedNames + Uploaded on date by user), recoverable bin, history and demo-user switch, plus delete/restore handling, in-app document viewer dialog, multi-method download fallback (anchor+download, hidden iframe, fetch blob+object URL, direct link) to handle Arena preview sandbox `allow-popups` restriction.
 - `src/components/record-form.tsx`: organisation (multi-project checkboxes), interaction, task, and project forms, follow-ups, conflict/draft recovery. Document edit now: `Current links – this file is reused` section showing each `documentLink` with badge and Remove button using `Link2Off` icon calling `unlinkDocument(id)`, local state `localDocLinks` syncing via effect, Tip line with `Lightbulb` icon "Tip: removing a link(s) does not delete the file". Add links fieldset with 3 optional dropdowns (organisation, project, task) nullable – on save after `saveRecord` succeeds, iterates selected values and calls `linkDocument({documentId, organisationId/projectId/taskId, interactionId:null})`, ignoring duplicate "already" errors. File never deleted on unlink.
+- `src/components/finance-forms.tsx`: `FinanceRecordForm` (kind, title, pounds amount, date, category, paid-personally/beneficiary, organisation, project, notes; version-conflict aware), `FinanceMovementDialog` (add proceeds/payment/reimbursement, list recorded movements with void/bin, linked receipts with View/Download/Remove link, attach or link existing document), and `FinanceVoidDialog` (reason required, reinstate supported).
 - `src/components/record-summary.tsx`: readable history and comparison fields, aware of deleted records, project links, and documents.
 - `src/app/actions.ts`: authenticated server actions for save, soft-delete, restore, permanent delete, `uploadDocument`, `linkDocument`, `unlinkDocument`. Upload validates size (20 MB), safe storage name, creates document + optional initial link transactionally, keeps file on link failure.
 - `src/app/api/documents/[id]/download/route.ts`: protected download, uses `readFile` buffer to avoid `ReadableStream already closed` on concurrent downloads, sets safe Content-Disposition with original name, inline vs attachment via `?download=1`, checks auth and deleted state.
 - `src/lib/documents/storage.ts`: `documentsPath()` returns `DEMO_DOCUMENTS_PATH`/`DOCUMENTS_PATH` env, `safeStorageName()` UUID + safe extension, `safeOriginalName()` strips control chars and path, `fullPath()` guards traversal, `ensureDocumentsPath()`.
 - `src/lib/records/store.ts`: transactional writes, organisation-project join handling, revision history, optimistic version checks, resolution warnings, recoverable bin with no auto-purge, safe restore checks, non-cascading permanent deletion retaining revision metadata. Document methods: `createDocumentFromUpload`, `saveDocument` (friendlyName/category only), `linkDocument` (validates exactly one target, duplicate returns existing id), `unlinkDocument`, soft-delete preserves links, permanent delete cascade removes links and file reference is removed by action layer.
-- `src/lib/records/validation.ts`: input schemas for organisations (with projectIds), tasks, interactions, projects, `documentInput` (friendlyName, category), `documentLinkInput` (exactly one of organisationId/interactionId/taskId/projectId), `maxDocumentSizeBytes`, `documentCategories`.
+- `src/lib/records/validation.ts`: input schemas for organisations (with projectIds), tasks, interactions, projects, `documentInput` (friendlyName, category), `documentLinkInput` (exactly one of organisationId/interactionId/taskId/projectId/financeRecordId), `maxDocumentSizeBytes`, `documentCategories`, and the finance inputs (`financeRecordInput`, `financeMovementInput`, `financeVoidInput`, `financeKinds`, `financeCategories`, `movementKindFor`).
+- `src/lib/finances/money.ts`: integer-pence parsing and formatting (`parsePoundsToPence` rejects signs, more than two decimals, and anything non-numeric), `formatPence`, `formatPencePlain`.
+- `src/lib/finances/summary.ts`: `financeSummary(records, movements, users)` – the single source of every total (assets estimated vs proceeds, liabilities owed/paid/outstanding, cash in/out including liability payments, per-user reimbursement owed, per-beneficiary distributions, excluded voided/binned counts). Voided and binned records, and movements against them, are excluded.
+- `src/lib/finances/store.ts`: `saveFinanceRecord`, `saveFinanceMovement`, `setFinanceVoid`, `deleteFinance`, `restoreFinance`, spread into `recordStore` so the snapshot and all finance writes come from one entry point. Over-repayment and over-payment are refused with the remaining amount; reimbursements require a personally paid expense; a record with money against it cannot change type; permanent deletion always throws.
+- `src/lib/finances/csv.ts` and `src/lib/finances/export.ts`: quoted CSV with apostrophe-prefixed formula protection, UTF-8 BOM, money as plain decimals, `inventory`/`cash`/`reimbursements` views.
+- `src/app/api/finances/export/route.ts`: authenticated CSV download; 401 without a verified Cloudflare identity, 400 for an unknown view, `private, no-store`.
+- `src/lib/records/errors.ts` and `src/lib/records/audit.ts`: shared `RecordError`, `versionConflict`, `assertActor`, and `auditEntry` used by both the records store and the finance store.
 - `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations including `organisation_projects`, `documents`, `document_links`, and `deleted_at` columns. Add migrations; do not replace existing history.
 - `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
 - `src/app/globals.css` and `src/themes/index.ts`: approved calm theme and token foundation; project pills, doc pills, and bin actions reuse existing tokens.
-- `tests/`: 25 unit/integration tests covering Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, plus 3 document tests (upload/edit/link/unlink, bin preserves file/links, deleting linked record does not delete document).
+- `tests/`: 38 unit/integration tests. `tests/records.test.ts` covers Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, and three document tests. `tests/finances.test.ts` covers money parsing/formatting, asset estimate vs proceeds, liability part payments, the GBP 500/GBP 200/GBP 300 reimbursement case with no second expense, over-repayment and non-personal refusals, void/reinstate/correct history, bin and restore with permanent deletion refused, per-beneficiary distributions without a 50/50 assumption, stale-edit conflicts, receipt linking, CSV formula protection and totals separation.
 
 ### Restarting and checking the app
 
@@ -252,3 +257,26 @@ Verified:
 - Browser e2e not rerun due to sandbox network restrictions; existing workflow still exercises core Bank1 flow. New document flows covered by unit/integration tests and manual preview checks.
 
 Remaining: Stage 4 Estate Finances (GBP integer pence, assets/liabilities/income/expenses/personal funding/reimbursements/distributions, summaries, CSV exports), Stage 5 templates/mobile polish, Stage 6 backups/deployment. End-to-end tests add fictional example records and are intended only for isolated demo preview.
+
+## Stage 4 checkpoint — Estate finances (16 September 2026)
+
+Implemented:
+- One finance model (`finance_records` + `finance_movements`, migration `0004_zippy_sunspot`): assets with estimated values and sale proceeds, liabilities with part payments, income, expenses paid from the estate or personally by either user, reimbursement movements, and distributions recorded against either beneficiary. Every amount is an integer number of pence; GBP only.
+- One shared calculation (`financeSummary`) feeds the screen, the CSV exports, and the tests, so the same figures cannot disagree. Voided and binned records, and movements against them, are excluded from every total.
+- Separate summaries: assets versus liabilities (estimate, proceeds, still to realise, owed, paid, outstanding), cash movements (money in split into income and sale proceeds; money out split into estate expenses, liability payments, reimbursements, and distributions; net), and amounts awaiting reimbursement per person.
+- Reimbursements settle money already recorded as a personally paid expense. A £500 expense with £200 reimbursed leaves £300 owed with exactly one expense in the totals. Part payments are supported; over-repayment and over-payment of a liability are refused with the amount still outstanding, and an estate-paid expense cannot be reimbursed.
+- Corrections keep every version, editor, and time in the shared history. Voiding requires a reason, keeps the record visible, takes it out of the totals, and can be reinstated. Financial records can be binned and restored but never permanently deleted: the store refuses it and the bin shows "Correct or void instead".
+- Receipts and invoices link to financial records using the existing reusable document links (`document_links.finance_record_id`); the upload dialog, the link picker, and the document edit form all offer financial records.
+- Three authenticated CSV downloads (`/api/finances/export?view=inventory|cash|reimbursements`): values quoted, formula starts (`= + - @`, tab, carriage return) prefixed with an apostrophe, UTF-8 BOM for Excel, money as plain decimals with separate money-in and money-out columns, and no leading minus signs.
+- No tax, debt-priority, or entitlement calculation is implemented anywhere.
+- Layout unchanged: the approved calm theme, tokens, sidebar, and row patterns are reused, with three summary panels above the existing list/toolbar style.
+
+Verified:
+- 38 unit/integration tests passing (25 existing + 13 new finance tests).
+- TypeScript check, Prettier check, and production build passing.
+- Fresh migration from scratch creates all eleven tables; the demo database migrated and rendered the finances screen with correct figures (assets £250,000 estimate vs £255,000.50 proceeds, £2,000 outstanding on a part-paid liability, £300 still owed after a £500/£200 reimbursement).
+- CSV downloads checked through HTTP: correct headers, filenames, and rows; unknown view returns 400.
+- Production mode without Cloudflare authentication: the page shows the protected-workspace message, the CSV route returns 401, and a spoofed `cf-access-authenticated-user-email` header is ignored.
+- Demo seed (`scripts/seed-demo-finances.ts`) writes fictional rows only, and refuses a database path without `demo` in it.
+
+Remaining: full browser e2e coverage for the finance dialogs in a sandbox that permits a browser, accessibility polish, and the user's first pass through the screen. `main` is still untouched; work continues on `arena/01a0a9cb-estate-tracking` (draft PR #2).

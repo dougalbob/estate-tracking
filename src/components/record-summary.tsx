@@ -1,5 +1,6 @@
 import type { Snapshot } from "@/lib/records/store";
 import { label } from "@/lib/records/validation";
+import { formatPence } from "@/lib/finances/money";
 const captions: Record<string, string> = {
   name: "Organisation",
   mainContact: "Main contact",
@@ -27,6 +28,14 @@ const captions: Record<string, string> = {
   size: "Size",
   category: "Category",
   documentId: "Document",
+  amountPence: "Amount",
+  occurredOn: "Date",
+  fundedBy: "Paid personally by",
+  beneficiary: "Beneficiary",
+  voidedAt: "Voided",
+  voidReason: "Void reason",
+  financeRecordId: "Financial record",
+  recordId: "Financial record",
 };
 export function RecordSummary({
   record,
@@ -64,6 +73,26 @@ export function RecordSummary({
       );
       return names.join(" · ") || "Not set";
     }
+    if (key === "amountPence") return formatPence(Number(value));
+    if (key === "financeRecordId" || key === "recordId")
+      return (
+        data.financeRecords.find((r) => r.id === value)?.title ??
+        data.deletedFinanceRecords.find((r) => r.id === value)?.title ??
+        "Linked financial record"
+      );
+    if (key === "fundedBy" || key === "beneficiary" || key === "createdBy")
+      return String(value).split("@")[0];
+    if (key === "voidedAt")
+      return new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Europe/London",
+      }).format(new Date(String(value)));
+    if (key === "occurredOn")
+      return new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeZone: "UTC",
+      }).format(new Date(`${String(value)}T00:00:00Z`));
     if (key === "documentId")
       return (
         data.documents.find((d) => d.id === value)?.friendlyName ??

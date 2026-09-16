@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { eq, and, desc, isNull, isNotNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "../db/schema";
+import { RecordError, assertActor, versionConflict } from "./errors";
+import { auditEntry } from "./audit";
+import { financeStore } from "../finances/store";
 import {
   organisationInput,
   interactionInput,
@@ -19,22 +22,17 @@ const {
   organisationProjects,
   documents,
   documentLinks,
+  financeRecords,
+  financeMovements,
 } = schema;
-export class RecordError extends Error {
-  constructor(
-    message: string,
-    public code = "validation",
-  ) {
-    super(message);
-  }
-}
+export { RecordError };
 export function recordStore(
   db: BetterSQLite3Database<typeof schema>,
   users: string[],
 ) {
+  const finances = financeStore(db, users);
   function actorCheck(actor: string) {
-    if (!users.includes(actor))
-      throw new RecordError("Unauthorised user", "auth");
+    assertActor(users, actor);
   }
   function relations(t: {
     organisationId: string | null;
@@ -89,25 +87,9 @@ export function recordStore(
     after: Record<string, unknown>,
     action?: string,
   ) {
-    db.insert(revisions)
-      .values({
-        id: randomUUID(),
-        entity,
-        entityId,
-        actor,
-        at: new Date().toISOString(),
-        action: action ?? (before ? "updated" : "created"),
-        before,
-        after,
-      })
-      .run();
+    auditEntry(db, { entity, entityId, actor, before, after, action });
   }
-  function conflict(): never {
-    throw new RecordError(
-      "This record changed while you were editing. Your draft is still here. Review the latest version before trying again.",
-      "conflict",
-    );
-  }
+  const conflict: () => never = versionConflict;
   function saveTask(raw: unknown, actor: string) {
     actorCheck(actor);
     const input = taskInput.parse(raw);
@@ -148,6 +130,7 @@ export function recordStore(
     });
   }
   return {
+    ...finances,
     snapshot() {
       return {
         organisations: db
@@ -175,6 +158,26 @@ export function recordStore(
           .orderBy(desc(documents.createdAt))
           .all(),
         documentLinks: db.select().from(documentLinks).all(),
+        financeRecords: db
+          .select()
+          .from(financeRecords)
+          .where(isNull(financeRecords.deletedAt))
+          .all(),
+        financeMovements: db
+          .select()
+          .from(financeMovements)
+          .where(isNull(financeMovements.deletedAt))
+          .all(),
+        deletedFinanceRecords: db
+          .select()
+          .from(financeRecords)
+          .where(isNotNull(financeRecords.deletedAt))
+          .all(),
+        deletedFinanceMovements: db
+          .select()
+          .from(financeMovements)
+          .where(isNotNull(financeMovements.deletedAt))
+          .all(),
         deletedOrganisations: db
           .select()
           .from(organisations)
@@ -567,6 +570,7 @@ export function recordStore(
           input.interactionId,
           input.taskId,
           input.projectId,
+          input.financeRecordId,
         ].filter(Boolean).length;
         if (count !== 1)
           throw new RecordError("Link a document to exactly one record");
@@ -595,7 +599,11 @@ export function recordStore(
             throw new RecordError("Note no longer available");
         }
         if (input.taskId) {
-          const t = db.select().from(tasks).where(eq(tasks.id, input.taskId)).get();
+          const t = db
+            .select()
+            .from(tasks)
+            .where(eq(tasks.id, input.taskId))
+            .get();
           if (!t || t.deletedAt)
             throw new RecordError("Task no longer available");
         }
@@ -613,6 +621,15 @@ export function recordStore(
               .get()
           )
             throw new RecordError("Project no longer available");
+        }
+        if (input.financeRecordId) {
+          const finance = db
+            .select()
+            .from(financeRecords)
+            .where(eq(financeRecords.id, input.financeRecordId))
+            .get();
+          if (!finance || finance.deletedAt)
+            throw new RecordError("Financial record no longer available");
         }
         const existing = db
           .select()
@@ -632,6 +649,9 @@ export function recordStore(
               input.projectId
                 ? eq(documentLinks.projectId, input.projectId)
                 : isNull(documentLinks.projectId),
+              input.financeRecordId
+                ? eq(documentLinks.financeRecordId, input.financeRecordId)
+                : isNull(documentLinks.financeRecordId),
             ),
           )
           .get();
@@ -645,6 +665,7 @@ export function recordStore(
             interactionId: input.interactionId,
             taskId: input.taskId,
             projectId: input.projectId,
+            financeRecordId: input.financeRecordId,
           })
           .run();
         audit("document_link", id, actor, null, {
@@ -653,6 +674,7 @@ export function recordStore(
           interactionId: input.interactionId,
           taskId: input.taskId,
           projectId: input.projectId,
+          financeRecordId: input.financeRecordId,
         });
         return id;
       });
@@ -679,12 +701,7 @@ export function recordStore(
       });
     },
     deleteRecord(
-      kind:
-        | "organisation"
-        | "interaction"
-        | "task"
-        | "project"
-        | "document",
+      kind: "organisation" | "interaction" | "task" | "project" | "document",
       id: string,
       version: number,
       actor: string,
@@ -954,7 +971,9 @@ export function recordStore(
               !db
                 .update(documents)
                 .set(after)
-                .where(and(eq(documents.id, id), eq(documents.version, version)))
+                .where(
+                  and(eq(documents.id, id), eq(documents.version, version)),
+                )
                 .run().changes
             )
               conflict();
@@ -972,12 +991,7 @@ export function recordStore(
       });
     },
     restoreRecord(
-      kind:
-        | "organisation"
-        | "interaction"
-        | "task"
-        | "project"
-        | "document",
+      kind: "organisation" | "interaction" | "task" | "project" | "document",
       id: string,
       version: number,
       actor: string,

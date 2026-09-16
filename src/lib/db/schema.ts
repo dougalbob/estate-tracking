@@ -108,6 +108,71 @@ export const documentLinks = sqliteTable("document_links", {
   projectId: text("project_id").references(() => projects.id, {
     onDelete: "cascade",
   }),
+  financeRecordId: text("finance_record_id").references(
+    () => financeRecords.id,
+    { onDelete: "cascade" },
+  ),
+});
+/**
+ * Estate finances – GBP only, every amount stored as integer pence.
+ * `kind` gives the record its meaning:
+ *  - asset:        amountPence is the estimated value (null = not valued yet)
+ *  - liability:    amountPence is the amount owed
+ *  - income:       money received by the estate
+ *  - expense:      money spent; fundedBy names the user who paid personally
+ *                  (null means it was paid from estate money)
+ *  - distribution: money paid to a beneficiary; beneficiary names the user
+ * Corrections keep their history: edits create revisions, and voiding keeps the
+ * record visible but out of the summaries. Nothing is permanently erased.
+ */
+export const financeRecords = sqliteTable("finance_records", {
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: ["asset", "liability", "income", "expense", "distribution"],
+  }).notNull(),
+  title: text("title").notNull(),
+  detail: text("detail").notNull().default(""),
+  category: text("category"),
+  amountPence: integer("amount_pence"),
+  occurredOn: text("occurred_on"),
+  fundedBy: text("funded_by"),
+  beneficiary: text("beneficiary"),
+  organisationId: text("organisation_id").references(() => organisations.id),
+  projectId: text("project_id").references(() => projects.id),
+  voidedAt: integer("voided_at", { mode: "timestamp_ms" }),
+  voidReason: text("void_reason"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
+/**
+ * Money movements against a finance record:
+ *  - proceeds:      sale proceeds received for an asset
+ *  - payment:       money paid against a liability
+ *  - reimbursement: estate money repaying a user for an expense they funded
+ *                    personally. This settles money owed to that user; it is
+ *                    never counted as a second expense.
+ */
+export const financeMovements = sqliteTable("finance_movements", {
+  id: text("id").primaryKey(),
+  recordId: text("record_id")
+    .notNull()
+    .references(() => financeRecords.id),
+  kind: text("kind", {
+    enum: ["proceeds", "payment", "reimbursement"],
+  }).notNull(),
+  amountPence: integer("amount_pence").notNull(),
+  occurredOn: text("occurred_on").notNull(),
+  detail: text("detail").notNull().default(""),
+  voidedAt: integer("voided_at", { mode: "timestamp_ms" }),
+  voidReason: text("void_reason"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
 export const revisions = sqliteTable("revisions", {
   id: text("id").primaryKey(),
