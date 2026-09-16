@@ -44,6 +44,7 @@ export const organisationInput = z.object({
   notes: z.string().max(20000).nullable(),
   status: z.enum(organisationStatuses),
   confirmResolve: z.boolean().optional(),
+  projectIds: z.array(z.string().min(1)).max(20).default([]),
 });
 export const taskInput = z.object({
   ...common,
@@ -75,9 +76,18 @@ export const interactionInput = z
     (v) => v.kind === "note" || v.title.length > 0,
     "An interaction title is required",
   );
+export const projectInput = z.object({
+  ...common,
+  name: z.string().trim().min(1, "A project name is required").max(200),
+});
+export const deleteInput = z.object({
+  ...common,
+  permanent: z.boolean().optional().default(false),
+});
 export type OrganisationInput = z.input<typeof organisationInput>;
 export type TaskInput = z.input<typeof taskInput>;
 export type InteractionInput = z.input<typeof interactionInput>;
+export type ProjectInput = z.input<typeof projectInput>;
 export const label = (value: string) =>
   value
     .split("_")

@@ -16,8 +16,12 @@ import {
   Pencil,
   History,
   Phone,
+  Trash2,
+  ArchiveRestore,
+  Archive,
+  AlertTriangle,
 } from "lucide-react";
-import { switchDemoUser } from "@/app/actions";
+import { switchDemoUser, deleteRecord, restoreRecord } from "@/app/actions";
 import { RecordSummary } from "./record-summary";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -52,7 +56,7 @@ const sections = [
     description: "Important paperwork, kept together and easy to find.",
   },
 ];
-const formatTime = (value: string | Date) =>
+const formatTime = (value: string | Date | number) =>
   new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -79,7 +83,8 @@ export function Workspace({
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("open"),
     [owner, setOwner] = useState("all"),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [error, setError] = useState("");
   const router = useRouter();
   useEffect(() => {
     const refresh = () => {
@@ -96,8 +101,26 @@ export function Workspace({
   const organisation = data.organisations.find((o) => o.id === selected);
   const names = (email: string | null) =>
     email ? email.split("@")[0] : "Unassigned";
-  const orgName = (id: string | null) =>
-    data.organisations.find((o) => o.id === id)?.name ?? "No organisation";
+  const orgName = (id: string | null) => {
+    if (!id) return "No organisation";
+    return (
+      data.organisations.find((o) => o.id === id)?.name ??
+      data.deletedOrganisations.find((o) => o.id === id)?.name ??
+      "Linked organisation"
+    );
+  };
+  const projectName = (id: string | null) => {
+    if (!id) return null;
+    return (
+      data.projects.find((p) => p.id === id)?.name ??
+      data.deletedProjects.find((p) => p.id === id)?.name ??
+      "Linked project"
+    );
+  };
+  const organisationProjectIds = (orgId: string) =>
+    data.organisationProjects
+      .filter((op) => op.organisationId === orgId)
+      .map((op) => op.projectId);
   const openTasks = data.tasks.filter(
     (t) => !["done", "cancelled"].includes(t.status),
   );
@@ -111,10 +134,12 @@ export function Workspace({
     setSelected(null);
     setHistory(null);
     setQuery("");
+    setError("");
   }
   function edit(kind: Editor["kind"], id?: string, organisationId?: string) {
     setEditor({ kind, id, organisationId });
     setMessage("");
+    setError("");
   }
   function historyButton(kind: string, id: string) {
     return (
@@ -126,6 +151,64 @@ export function Workspace({
         History
       </button>
     );
+  }
+  async function handleDelete(
+    kind: "organisation" | "interaction" | "task" | "project",
+    id: string,
+    version: number,
+    permanent = false,
+  ) {
+    setError("");
+    if (!permanent) {
+      if (
+        !window.confirm(
+          "Move this to the recoverable bin? You can restore it later. Linked notes and tasks will not be deleted.",
+        )
+      )
+        return;
+    } else {
+      if (
+        !window.confirm(
+          "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks and notes will be kept but unlinked.",
+        )
+      )
+        return;
+      const second = window.prompt(
+        "To confirm permanent deletion, type DELETE in capitals",
+      );
+      if (second !== "DELETE") {
+        setError(
+          "Permanent deletion cancelled – confirmation text did not match.",
+        );
+        return;
+      }
+    }
+    const result = await deleteRecord(kind, id, version, permanent);
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setMessage(
+        permanent
+          ? "Permanently deleted. The history entry remains for your records."
+          : "Moved to the recoverable bin. You can restore it from the bin view.",
+      );
+      if (selected === id) setSelected(null);
+      router.refresh();
+    }
+  }
+  async function handleRestore(
+    kind: "organisation" | "interaction" | "task" | "project",
+    id: string,
+    version: number,
+  ) {
+    setError("");
+    const result = await restoreRecord(kind, id, version);
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setMessage("Restored from the bin. It is now back in your workspace.");
+      router.refresh();
+    }
   }
   function taskRow(t: Snapshot["tasks"][number]) {
     const date = attentionDate(t),
@@ -143,8 +226,8 @@ export function Workspace({
             {orgName(t.organisationId)}
             <span>·</span>
             {names(t.assignee)}
-            {t.projectId && (
-              <> · {data.projects.find((p) => p.id === t.projectId)?.name}</>
+            {t.projectId && projectName(t.projectId) && (
+              <> · {projectName(t.projectId)}</>
             )}
           </p>
           <p>
@@ -180,6 +263,14 @@ export function Workspace({
             Edit
           </button>
           {historyButton("task", t.id)}
+          <button
+            className="subtle-button"
+            aria-label={`Delete task ${t.title}`}
+            onClick={() => handleDelete("task", t.id, t.version)}
+          >
+            <Trash2 size={14} />
+            Bin
+          </button>
         </div>
       </div>
     );
@@ -196,13 +287,22 @@ export function Workspace({
               {orgName(note.organisationId)}
             </p>
           </div>
-          <button
-            className="subtle-button"
-            onClick={() => edit("interaction", note.id)}
-          >
-            <Pencil size={14} />
-            Edit
-          </button>
+          <div className="row-actions">
+            <button
+              className="subtle-button"
+              onClick={() => edit("interaction", note.id)}
+            >
+              <Pencil size={14} />
+              Edit
+            </button>
+            <button
+              className="subtle-button"
+              onClick={() => handleDelete("interaction", note.id, note.version)}
+            >
+              <Trash2 size={14} />
+              Bin
+            </button>
+          </div>
         </div>
         <p className="note-detail">{note.detail}</p>
         <div className="note-meta">
@@ -242,9 +342,16 @@ export function Workspace({
             ? "Unfiled notes"
             : view === "projects"
               ? "Your projects"
-              : view === "finances"
-                ? "Estate finances"
-                : "Documents";
+              : view === "bin"
+                ? "Recoverable bin"
+                : view === "finances"
+                  ? "Estate finances"
+                  : "Documents";
+  const binCount =
+    data.deletedOrganisations.length +
+    data.deletedInteractions.length +
+    data.deletedTasks.length +
+    data.deletedProjects.length;
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -268,6 +375,11 @@ export function Workspace({
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
             { id: "finances", title: "Estate finances", icon: Wallet },
+            {
+              id: "bin",
+              title: `Recoverable bin${binCount ? ` (${binCount})` : ""}`,
+              icon: Archive,
+            },
           ].map((s) => (
             <button
               key={s.id}
@@ -327,7 +439,9 @@ export function Workspace({
               <p>
                 {view === "overview"
                   ? "See what needs attention and pick up where you left off."
-                  : "Everything you need, shared between the two of you."}
+                  : view === "bin"
+                    ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation."
+                    : "Everything you need, shared between the two of you."}
               </p>
             </div>
             <Button onClick={() => edit("interaction")}>
@@ -339,6 +453,11 @@ export function Workspace({
             <p role="status" className="success-message">
               {message}
             </p>
+          )}
+          {error && (
+            <div role="alert" className="form-error spaced-error">
+              <p>{error}</p>
+            </div>
           )}
           {view === "overview" && (
             <>
@@ -429,13 +548,33 @@ export function Workspace({
                 ))}
               </div>
               <section className="panel project-panel spaced">
-                <h2>Your projects</h2>
-                <p>Group the work in a way that makes sense to you.</p>
+                <div className="section-heading">
+                  <div>
+                    <h2>Your projects</h2>
+                    <p>Group the work in a way that makes sense to you.</p>
+                  </div>
+                  <Button variant="outline" onClick={() => edit("project")}>
+                    <Plus size={14} />
+                    Add project
+                  </Button>
+                </div>
                 <div className="project-pills">
                   {data.projects.map((p) => (
-                    <span key={p.id}>{p.name}</span>
+                    <button
+                      key={p.id}
+                      className="project-pill"
+                      onClick={() => edit("project", p.id)}
+                    >
+                      {p.name}
+                      <Pencil size={12} />
+                    </button>
                   ))}
                 </div>
+                {!data.projects.length && (
+                  <p className="empty-state">
+                    No projects yet. Add one to group your work.
+                  </p>
+                )}
               </section>
             </>
           )}
@@ -479,6 +618,15 @@ export function Workspace({
                           {o.mainContact ||
                             o.email ||
                             "Contact details ready to add"}
+                          {organisationProjectIds(o.id).length > 0 && (
+                            <>
+                              {" "}
+                              ·{" "}
+                              {organisationProjectIds(o.id)
+                                .map((pid) => projectName(pid))
+                                .join(", ")}
+                            </>
+                          )}
                         </small>
                       </span>
                       <span className="badge">{label(o.status)}</span>
@@ -529,6 +677,19 @@ export function Workspace({
                       Edit organisation
                     </button>
                     {historyButton("organisation", organisation.id)}
+                    <button
+                      className="subtle-button"
+                      onClick={() =>
+                        handleDelete(
+                          "organisation",
+                          organisation.id,
+                          organisation.version,
+                        )
+                      }
+                    >
+                      <Trash2 size={15} />
+                      Move to bin
+                    </button>
                   </div>
                 </div>
                 <dl className="details-grid">
@@ -546,6 +707,16 @@ export function Workspace({
                 </dl>
                 {organisation.notes && (
                   <p className="note-detail">{organisation.notes}</p>
+                )}
+                {organisationProjectIds(organisation.id).length > 0 && (
+                  <div
+                    className="project-pills"
+                    style={{ padding: "0 24px 18px" }}
+                  >
+                    {organisationProjectIds(organisation.id).map((pid) => (
+                      <span key={pid}>{projectName(pid)}</span>
+                    ))}
+                  </div>
                 )}
               </section>
               <div className="list-toolbar">
@@ -687,19 +858,207 @@ export function Workspace({
               )}
             </>
           )}
-          {view === "projects" &&
-            data.projects.map((p) => (
-              <section className="panel project-panel spaced" key={p.id}>
-                <h2>{p.name}</h2>
-                <p>
-                  Task grouping is available now. Project editing will follow.
-                </p>
-                {data.tasks.filter((t) => t.projectId === p.id).map(taskRow)}
-                {!data.tasks.some((t) => t.projectId === p.id) && (
-                  <p>No tasks assigned to this project yet.</p>
-                )}
-              </section>
-            ))}
+          {view === "projects" && (
+            <>
+              <div className="list-toolbar">
+                <h2>Manage your projects</h2>
+                <Button onClick={() => edit("project")}>
+                  <Plus size={16} />
+                  Add project
+                </Button>
+              </div>
+              <p className="form-help" style={{ marginBottom: "16px" }}>
+                Projects group tasks and organisations. Organisations can belong
+                to multiple projects; tasks have one optional project. Rename
+                projects any time. Deleting a project does not delete its tasks
+                – it just unlinks them.
+              </p>
+              {data.projects.map((p) => {
+                const linkedOrgs = data.organisationProjects
+                  .filter((op) => op.projectId === p.id)
+                  .map((op) =>
+                    data.organisations.find((o) => o.id === op.organisationId),
+                  )
+                  .filter(Boolean) as Snapshot["organisations"];
+                return (
+                  <section className="panel project-panel spaced" key={p.id}>
+                    <div className="section-heading">
+                      <div>
+                        <h2>{p.name}</h2>
+                        <p>
+                          {
+                            data.tasks.filter((t) => t.projectId === p.id)
+                              .length
+                          }{" "}
+                          tasks · {linkedOrgs.length} organisations
+                        </p>
+                      </div>
+                      <div className="row-actions">
+                        <button
+                          className="subtle-button"
+                          onClick={() => edit("project", p.id)}
+                        >
+                          <Pencil size={14} />
+                          Rename
+                        </button>
+                        {historyButton("project", p.id)}
+                        <button
+                          className="subtle-button"
+                          onClick={() =>
+                            handleDelete("project", p.id, p.version)
+                          }
+                        >
+                          <Trash2 size={14} />
+                          Bin
+                        </button>
+                      </div>
+                    </div>
+                    {linkedOrgs.length > 0 && (
+                      <div
+                        className="project-pills"
+                        style={{ padding: "0 24px 12px" }}
+                      >
+                        {linkedOrgs.map((o) => (
+                          <span key={o.id}>{o.name}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ borderTop: "1px solid var(--border)" }}>
+                      {data.tasks
+                        .filter((t) => t.projectId === p.id)
+                        .map(taskRow)}
+                      {!data.tasks.some((t) => t.projectId === p.id) && (
+                        <p className="empty-state">
+                          No tasks assigned to this project yet.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+              {!data.projects.length && (
+                <section className="panel empty-state">
+                  <BookOpen size={26} />
+                  <h2>No projects yet</h2>
+                  <p>
+                    Create Funeral, Notifications, Probate & Estate
+                    Administration, or your own such as House Clearance. You can
+                    link organisations to multiple projects.
+                  </p>
+                  <Button onClick={() => edit("project")}>
+                    Add your first project
+                  </Button>
+                </section>
+              )}
+            </>
+          )}
+          {view === "bin" && (
+            <>
+              <div className="panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>How the bin works</h2>
+                    <p>
+                      Ordinary deletions go here. No automatic purge. Permanent
+                      deletion needs explicit confirmation and keeps the history
+                      entry. Deleting an organisation never deletes its notes,
+                      tasks, or documents.
+                    </p>
+                  </div>
+                  <span className="badge">{binCount} items</span>
+                </div>
+              </div>
+              {[
+                {
+                  kind: "organisation" as const,
+                  items: data.deletedOrganisations,
+                  label: "Organisations",
+                },
+                {
+                  kind: "interaction" as const,
+                  items: data.deletedInteractions,
+                  label: "Notes & interactions",
+                },
+                {
+                  kind: "task" as const,
+                  items: data.deletedTasks,
+                  label: "Tasks",
+                },
+                {
+                  kind: "project" as const,
+                  items: data.deletedProjects,
+                  label: "Projects",
+                },
+              ].map((group) => (
+                <section className="panel spaced" key={group.kind}>
+                  <div className="section-heading">
+                    <h2>{group.label}</h2>
+                    <span className="badge">{group.items.length}</span>
+                  </div>
+                  {group.items.map((item: any) => (
+                    <div className="task-row" key={item.id}>
+                      <span className="task-icon">
+                        {group.kind === "organisation" ? (
+                          <Users size={16} />
+                        ) : group.kind === "interaction" ? (
+                          <Phone size={16} />
+                        ) : group.kind === "task" ? (
+                          <ListTodo size={16} />
+                        ) : (
+                          <BookOpen size={16} />
+                        )}
+                      </span>
+                      <div className="task-copy">
+                        <strong>{item.name ?? item.title}</strong>
+                        <p>
+                          {item.detail
+                            ? item.detail.slice(0, 120)
+                            : item.reference || item.mainContact || ""}
+                        </p>
+                        <p>
+                          <small>
+                            Deleted {formatTime(item.deletedAt)} · Version{" "}
+                            {item.version} · By {names(item.createdBy)}
+                          </small>
+                        </p>
+                      </div>
+                      <div className="row-actions">
+                        <button
+                          className="subtle-button"
+                          onClick={() =>
+                            handleRestore(group.kind, item.id, item.version)
+                          }
+                        >
+                          <ArchiveRestore size={14} />
+                          Restore
+                        </button>
+                        {historyButton(group.kind, item.id)}
+                        <button
+                          className="subtle-button danger"
+                          onClick={() =>
+                            handleDelete(
+                              group.kind,
+                              item.id,
+                              item.version,
+                              true,
+                            )
+                          }
+                        >
+                          <AlertTriangle size={14} />
+                          Delete permanently
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!group.items.length && (
+                    <p className="empty-state">
+                      No {group.label.toLowerCase()} in the bin.
+                    </p>
+                  )}
+                </section>
+              ))}
+            </>
+          )}
           {["documents", "finances"].includes(view) && (
             <section className="panel empty-state">
               <FolderOpen size={28} />
@@ -732,6 +1091,8 @@ export function Workspace({
             if (editor.kind === "organisation") {
               setView("contacts");
               setSelected(id);
+            } else if (editor.kind === "project") {
+              setView("projects");
             }
             setEditor(null);
           }}
@@ -782,15 +1143,24 @@ function HistoryDialog({
       </div>
       <p className="form-help">
         Times shown in Europe/London. Earlier versions remain available after
-        edits.
+        edits. Permanent deletions keep this history entry; the record content
+        is no longer in the workspace.
       </p>
       {data.revisions
         .filter((r) => r.entity === target.kind && r.entityId === target.id)
         .map((r) => (
           <details key={r.id}>
             <summary>
-              {r.action === "created" ? "Created" : "Edited"} by{" "}
-              {r.actor.split("@")[0]} · {formatTime(r.at)}
+              {r.action === "created"
+                ? "Created"
+                : r.action === "deleted"
+                  ? "Moved to bin"
+                  : r.action === "restored"
+                    ? "Restored"
+                    : r.action === "permanently_deleted"
+                      ? "Permanently deleted"
+                      : "Edited"}{" "}
+              by {r.actor.split("@")[0]} · {formatTime(r.at)}
             </summary>
             {r.before && (
               <>
@@ -802,6 +1172,9 @@ function HistoryDialog({
             <RecordSummary record={r.after} data={data} />
           </details>
         ))}
+      {!data.revisions.some(
+        (r) => r.entity === target.kind && r.entityId === target.id,
+      ) && <p className="empty-state">No history found for this record.</p>}
     </dialog>
   );
 }

@@ -986,3 +986,29 @@ summary {
     gap: 3px;
   }
 }
+.project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 6px 10px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--foreground);
+}
+.project-pill:hover {
+  background: var(--accent);
+}
+.project-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.spaced-error {
+  margin-bottom: 20px;
+}
+.subtle-button.danger {
+  color: #8b3a2f !important;
+}

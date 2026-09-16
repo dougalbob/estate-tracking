@@ -1,9 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, isNotNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "../db/schema";
-import { organisationInput, interactionInput, taskInput } from "./validation";
-const { organisations, interactions, tasks, projects, revisions } = schema;
+import {
+  organisationInput,
+  interactionInput,
+  taskInput,
+  projectInput,
+} from "./validation";
+const {
+  organisations,
+  interactions,
+  tasks,
+  projects,
+  revisions,
+  organisationProjects,
+} = schema;
 export class RecordError extends Error {
   constructor(
     message: string,
@@ -42,7 +54,11 @@ export function recordStore(
       throw new RecordError("Organisation no longer available");
     if (
       t.projectId &&
-      !db.select().from(projects).where(eq(projects.id, t.projectId)).get()
+      !db
+        .select()
+        .from(projects)
+        .where(and(eq(projects.id, t.projectId), isNull(projects.deletedAt)))
+        .get()
     )
       throw new RecordError("Project no longer available");
     if (t.assignee && !users.includes(t.assignee))
@@ -53,7 +69,9 @@ export function recordStore(
         .from(interactions)
         .where(eq(interactions.id, t.interactionId))
         .get();
-      if (!note || note.organisationId !== t.organisationId)
+      if (!note || note.deletedAt)
+        throw new RecordError("The source note is no longer available");
+      if (note.organisationId !== t.organisationId)
         throw new RecordError(
           "The source note and task must belong to the same organisation",
         );
@@ -65,6 +83,7 @@ export function recordStore(
     actor: string,
     before: Record<string, unknown> | null,
     after: Record<string, unknown>,
+    action?: string,
   ) {
     db.insert(revisions)
       .values({
@@ -73,13 +92,13 @@ export function recordStore(
         entityId,
         actor,
         at: new Date().toISOString(),
-        action: before ? "updated" : "created",
+        action: action ?? (before ? "updated" : "created"),
         before,
         after,
       })
       .run();
   }
-  function conflict() {
+  function conflict(): never {
     throw new RecordError(
       "This record changed while you were editing. Your draft is still here. Review the latest version before trying again.",
       "conflict",
@@ -93,7 +112,11 @@ export function recordStore(
       const before = input.id
         ? db.select().from(tasks).where(eq(tasks.id, input.id)).get()
         : undefined;
-      if (input.id && (!before || before.version !== input.version)) conflict();
+      if (
+        input.id &&
+        (!before || before.deletedAt || before.version !== input.version)
+      )
+        conflict();
       const { id: suppliedId, version, ...values } = input;
       const id = suppliedId || randomUUID(),
         now = new Date().toISOString();
@@ -104,6 +127,7 @@ export function recordStore(
         createdBy: before?.createdBy ?? actor,
         createdAt: before?.createdAt ?? now,
         updatedAt: now,
+        deletedAt: null,
       };
       if (before) {
         if (
@@ -130,10 +154,36 @@ export function recordStore(
         interactions: db
           .select()
           .from(interactions)
+          .where(isNull(interactions.deletedAt))
           .orderBy(desc(interactions.occurredAt))
           .all(),
-        tasks: db.select().from(tasks).all(),
-        projects: db.select().from(projects).all(),
+        tasks: db.select().from(tasks).where(isNull(tasks.deletedAt)).all(),
+        projects: db
+          .select()
+          .from(projects)
+          .where(isNull(projects.deletedAt))
+          .all(),
+        organisationProjects: db.select().from(organisationProjects).all(),
+        deletedOrganisations: db
+          .select()
+          .from(organisations)
+          .where(isNotNull(organisations.deletedAt))
+          .all(),
+        deletedInteractions: db
+          .select()
+          .from(interactions)
+          .where(isNotNull(interactions.deletedAt))
+          .all(),
+        deletedTasks: db
+          .select()
+          .from(tasks)
+          .where(isNotNull(tasks.deletedAt))
+          .all(),
+        deletedProjects: db
+          .select()
+          .from(projects)
+          .where(isNotNull(projects.deletedAt))
+          .all(),
         revisions: db
           .select()
           .from(revisions)
@@ -142,14 +192,101 @@ export function recordStore(
       };
     },
     seedProjects() {
-      for (const [id, name] of [
+      const now = new Date();
+      const starter: [string, string][] = [
         ["funeral", "Funeral"],
         ["notifications", "Notifications"],
         ["probate", "Probate & Estate Administration"],
-      ])
-        db.insert(projects).values({ id, name }).onConflictDoNothing().run();
+      ];
+      for (const [id, name] of starter) {
+        db.insert(projects)
+          .values({
+            id,
+            name,
+            version: 1,
+            createdBy: "system",
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          })
+          .onConflictDoNothing()
+          .run();
+        const existing = db
+          .select()
+          .from(projects)
+          .where(eq(projects.id, id))
+          .get();
+        if (
+          existing &&
+          (existing.version == null || existing.createdAt == null)
+        ) {
+          db.update(projects)
+            .set({
+              version: existing.version ?? 1,
+              createdBy: existing.createdBy ?? "system",
+              createdAt: existing.createdAt ?? now,
+              updatedAt: existing.updatedAt ?? now,
+              deletedAt: null,
+            })
+            .where(eq(projects.id, id))
+            .run();
+        }
+      }
     },
     saveTask,
+    saveProject(raw: unknown, actor: string) {
+      actorCheck(actor);
+      const input = projectInput.parse(raw);
+      return db.transaction(() => {
+        const before = input.id
+          ? db.select().from(projects).where(eq(projects.id, input.id)).get()
+          : undefined;
+        if (
+          input.id &&
+          (!before || before.deletedAt || before.version !== input.version)
+        )
+          conflict();
+        const duplicate = db
+          .select()
+          .from(projects)
+          .where(isNull(projects.deletedAt))
+          .all()
+          .find(
+            (p) =>
+              p.name.toLowerCase() === input.name.toLowerCase() &&
+              p.id !== input.id,
+          );
+        if (duplicate)
+          throw new RecordError(
+            "A project with this name already exists",
+            "validation",
+          );
+        const { id: suppliedId, version, ...values } = input;
+        const id = suppliedId || randomUUID();
+        const now = new Date();
+        const after = {
+          ...values,
+          id,
+          version: (before?.version ?? 0) + 1,
+          createdBy: before?.createdBy ?? actor,
+          createdAt: before?.createdAt ?? now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        if (before) {
+          if (
+            !db
+              .update(projects)
+              .set(after)
+              .where(and(eq(projects.id, id), eq(projects.version, version!)))
+              .run().changes
+          )
+            conflict();
+        } else db.insert(projects).values(after).run();
+        audit("project", id, actor, before ?? null, after);
+        return id;
+      });
+    },
     saveOrganisation(raw: unknown, actor: string) {
       actorCheck(actor);
       const input = organisationInput.parse(raw);
@@ -175,7 +312,9 @@ export function recordStore(
           const open = db
             .select()
             .from(tasks)
-            .where(eq(tasks.organisationId, input.id))
+            .where(
+              and(eq(tasks.organisationId, input.id), isNull(tasks.deletedAt)),
+            )
             .all()
             .some((t) => !["done", "cancelled"].includes(t.status));
           if (open)
@@ -184,7 +323,23 @@ export function recordStore(
               "confirm_resolve",
             );
         }
-        const { id: suppliedId, version, confirmResolve, ...values } = input;
+        for (const pid of input.projectIds) {
+          if (
+            !db
+              .select()
+              .from(projects)
+              .where(and(eq(projects.id, pid), isNull(projects.deletedAt)))
+              .get()
+          )
+            throw new RecordError("Project no longer available");
+        }
+        const {
+          id: suppliedId,
+          version,
+          confirmResolve,
+          projectIds,
+          ...values
+        } = input;
         const id = suppliedId || randomUUID(),
           now = new Date();
         const after = {
@@ -211,7 +366,19 @@ export function recordStore(
           )
             conflict();
         } else db.insert(organisations).values(after).run();
-        audit("organisation", id, actor, before ?? null, after);
+        db.delete(organisationProjects)
+          .where(eq(organisationProjects.organisationId, id))
+          .run();
+        for (const pid of projectIds) {
+          db.insert(organisationProjects)
+            .values({ organisationId: id, projectId: pid })
+            .onConflictDoNothing()
+            .run();
+        }
+        audit("organisation", id, actor, before ?? null, {
+          ...after,
+          projectIds,
+        });
         return id;
       });
     },
@@ -227,16 +394,20 @@ export function recordStore(
               .where(eq(interactions.id, input.id))
               .get()
           : undefined;
-        if (input.id && (!before || before.version !== input.version))
+        if (
+          input.id &&
+          (!before || before.deletedAt || before.version !== input.version)
+        )
           conflict();
-        // Moving a note with linked tasks would silently break their context.
         if (
           before &&
           before.organisationId !== input.organisationId &&
           db
             .select()
             .from(tasks)
-            .where(eq(tasks.interactionId, before.id))
+            .where(
+              and(eq(tasks.interactionId, before.id), isNull(tasks.deletedAt)),
+            )
             .get()
         )
           throw new RecordError(
@@ -253,6 +424,7 @@ export function recordStore(
           createdBy: before?.createdBy ?? actor,
           createdAt: before?.createdAt ?? now,
           updatedAt: now,
+          deletedAt: null,
         };
         if (before) {
           if (
@@ -279,6 +451,454 @@ export function recordStore(
             },
             actor,
           );
+        return id;
+      });
+    },
+    deleteRecord(
+      kind: "organisation" | "interaction" | "task" | "project",
+      id: string,
+      version: number,
+      actor: string,
+      permanent = false,
+    ) {
+      actorCheck(actor);
+      return db.transaction(() => {
+        if (kind === "organisation") {
+          const before = db
+            .select()
+            .from(organisations)
+            .where(eq(organisations.id, id))
+            .get();
+          if (!before) conflict();
+          if (before.version !== version) conflict();
+          if (permanent) {
+            if (!before.deletedAt)
+              throw new RecordError(
+                "Move this record to the recoverable bin before permanent deletion",
+                "validation",
+              );
+            db.update(interactions)
+              .set({ organisationId: null })
+              .where(eq(interactions.organisationId, id))
+              .run();
+            db.update(tasks)
+              .set({ organisationId: null })
+              .where(eq(tasks.organisationId, id))
+              .run();
+            db.delete(organisationProjects)
+              .where(eq(organisationProjects.organisationId, id))
+              .run();
+            db.delete(organisations).where(eq(organisations.id, id)).run();
+            audit(
+              "organisation",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              { id },
+              "permanently_deleted",
+            );
+          } else {
+            if (before.deletedAt)
+              throw new RecordError("This record is already in the bin");
+            const now = new Date();
+            const after = {
+              ...before,
+              version: before.version + 1,
+              updatedAt: now,
+              deletedAt: now,
+            };
+            if (
+              !db
+                .update(organisations)
+                .set(after)
+                .where(
+                  and(
+                    eq(organisations.id, id),
+                    eq(organisations.version, version),
+                  ),
+                )
+                .run().changes
+            )
+              conflict();
+            audit(
+              "organisation",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              after as unknown as Record<string, unknown>,
+              "deleted",
+            );
+          }
+        } else if (kind === "interaction") {
+          const before = db
+            .select()
+            .from(interactions)
+            .where(eq(interactions.id, id))
+            .get();
+          if (!before) conflict();
+          if (before.version !== version) conflict();
+          if (permanent) {
+            if (!before.deletedAt)
+              throw new RecordError(
+                "Move this record to the recoverable bin before permanent deletion",
+              );
+            db.update(tasks)
+              .set({ interactionId: null })
+              .where(eq(tasks.interactionId, id))
+              .run();
+            db.delete(interactions).where(eq(interactions.id, id)).run();
+            audit(
+              "interaction",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              { id },
+              "permanently_deleted",
+            );
+          } else {
+            if (before.deletedAt)
+              throw new RecordError("This record is already in the bin");
+            const now = new Date();
+            const after = {
+              ...before,
+              version: before.version + 1,
+              updatedAt: new Date().toISOString(),
+              deletedAt: now,
+            };
+            if (
+              !db
+                .update(interactions)
+                .set(after)
+                .where(
+                  and(
+                    eq(interactions.id, id),
+                    eq(interactions.version, version),
+                  ),
+                )
+                .run().changes
+            )
+              conflict();
+            audit(
+              "interaction",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              after as unknown as Record<string, unknown>,
+              "deleted",
+            );
+          }
+        } else if (kind === "task") {
+          const before = db.select().from(tasks).where(eq(tasks.id, id)).get();
+          if (!before) conflict();
+          if (before.version !== version) conflict();
+          if (permanent) {
+            if (!before.deletedAt)
+              throw new RecordError(
+                "Move this record to the recoverable bin before permanent deletion",
+              );
+            db.delete(tasks).where(eq(tasks.id, id)).run();
+            audit(
+              "task",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              { id },
+              "permanently_deleted",
+            );
+          } else {
+            if (before.deletedAt)
+              throw new RecordError("This record is already in the bin");
+            const now = new Date();
+            const after = {
+              ...before,
+              version: before.version + 1,
+              updatedAt: new Date().toISOString(),
+              deletedAt: now,
+            };
+            if (
+              !db
+                .update(tasks)
+                .set(after)
+                .where(and(eq(tasks.id, id), eq(tasks.version, version)))
+                .run().changes
+            )
+              conflict();
+            audit(
+              "task",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              after as unknown as Record<string, unknown>,
+              "deleted",
+            );
+          }
+        } else if (kind === "project") {
+          const before = db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, id))
+            .get();
+          if (!before) conflict();
+          if (before.version !== version) conflict();
+          if (permanent) {
+            if (!before.deletedAt)
+              throw new RecordError(
+                "Move this record to the recoverable bin before permanent deletion",
+              );
+            db.update(tasks)
+              .set({ projectId: null })
+              .where(eq(tasks.projectId, id))
+              .run();
+            db.delete(organisationProjects)
+              .where(eq(organisationProjects.projectId, id))
+              .run();
+            db.delete(projects).where(eq(projects.id, id)).run();
+            audit(
+              "project",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              { id },
+              "permanently_deleted",
+            );
+          } else {
+            if (before.deletedAt)
+              throw new RecordError("This record is already in the bin");
+            const now = new Date();
+            const after = {
+              ...before,
+              version: before.version + 1,
+              updatedAt: now,
+              deletedAt: now,
+            };
+            if (
+              !db
+                .update(projects)
+                .set(after)
+                .where(and(eq(projects.id, id), eq(projects.version, version)))
+                .run().changes
+            )
+              conflict();
+            audit(
+              "project",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              after as unknown as Record<string, unknown>,
+              "deleted",
+            );
+          }
+        }
+        return id;
+      });
+    },
+    restoreRecord(
+      kind: "organisation" | "interaction" | "task" | "project",
+      id: string,
+      version: number,
+      actor: string,
+    ) {
+      actorCheck(actor);
+      return db.transaction(() => {
+        if (kind === "organisation") {
+          const before = db
+            .select()
+            .from(organisations)
+            .where(eq(organisations.id, id))
+            .get();
+          if (!before) conflict();
+          if (!before.deletedAt || before.version !== version) conflict();
+          const now = new Date();
+          const after = {
+            ...before,
+            version: before.version + 1,
+            updatedAt: now,
+            deletedAt: null,
+          };
+          if (
+            !db
+              .update(organisations)
+              .set(after)
+              .where(
+                and(
+                  eq(organisations.id, id),
+                  eq(organisations.version, version),
+                ),
+              )
+              .run().changes
+          )
+            conflict();
+          audit(
+            "organisation",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+            "restored",
+          );
+        } else if (kind === "interaction") {
+          const before = db
+            .select()
+            .from(interactions)
+            .where(eq(interactions.id, id))
+            .get();
+          if (!before) conflict();
+          if (!before.deletedAt || before.version !== version) conflict();
+          if (
+            before.organisationId &&
+            !db
+              .select()
+              .from(organisations)
+              .where(
+                and(
+                  eq(organisations.id, before.organisationId),
+                  isNull(organisations.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError(
+              "The linked organisation is in the bin. Restore it first, or remove the link.",
+            );
+          const after = {
+            ...before,
+            version: before.version + 1,
+            updatedAt: new Date().toISOString(),
+            deletedAt: null,
+          };
+          if (
+            !db
+              .update(interactions)
+              .set(after)
+              .where(
+                and(eq(interactions.id, id), eq(interactions.version, version)),
+              )
+              .run().changes
+          )
+            conflict();
+          audit(
+            "interaction",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+            "restored",
+          );
+        } else if (kind === "task") {
+          const before = db.select().from(tasks).where(eq(tasks.id, id)).get();
+          if (!before) conflict();
+          if (!before.deletedAt || before.version !== version) conflict();
+          if (
+            before.organisationId &&
+            !db
+              .select()
+              .from(organisations)
+              .where(
+                and(
+                  eq(organisations.id, before.organisationId),
+                  isNull(organisations.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError(
+              "The linked organisation is in the bin. Restore it first, or remove the link.",
+            );
+          if (
+            before.projectId &&
+            !db
+              .select()
+              .from(projects)
+              .where(
+                and(
+                  eq(projects.id, before.projectId),
+                  isNull(projects.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError(
+              "The linked project is in the bin. Restore it first, or remove the link.",
+            );
+          if (before.interactionId) {
+            const note = db
+              .select()
+              .from(interactions)
+              .where(eq(interactions.id, before.interactionId))
+              .get();
+            if (!note || note.deletedAt)
+              throw new RecordError(
+                "The source note is in the bin. Restore it first.",
+              );
+          }
+          const after = {
+            ...before,
+            version: before.version + 1,
+            updatedAt: new Date().toISOString(),
+            deletedAt: null,
+          };
+          if (
+            !db
+              .update(tasks)
+              .set(after)
+              .where(and(eq(tasks.id, id), eq(tasks.version, version)))
+              .run().changes
+          )
+            conflict();
+          audit(
+            "task",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+            "restored",
+          );
+        } else if (kind === "project") {
+          const before = db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, id))
+            .get();
+          if (!before) conflict();
+          if (!before.deletedAt || before.version !== version) conflict();
+          const duplicate = db
+            .select()
+            .from(projects)
+            .where(isNull(projects.deletedAt))
+            .all()
+            .find(
+              (p) =>
+                p.name.toLowerCase() === before.name.toLowerCase() &&
+                p.id !== id,
+            );
+          if (duplicate)
+            throw new RecordError(
+              "A project with this name already exists. Rename before restoring.",
+            );
+          const now = new Date();
+          const after = {
+            ...before,
+            version: before.version + 1,
+            updatedAt: now,
+            deletedAt: null,
+          };
+          if (
+            !db
+              .update(projects)
+              .set(after)
+              .where(and(eq(projects.id, id), eq(projects.version, version)))
+              .run().changes
+          )
+            conflict();
+          audit(
+            "project",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+            "restored",
+          );
+        }
         return id;
       });
     },

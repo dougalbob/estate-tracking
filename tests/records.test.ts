@@ -247,3 +247,280 @@ test("date priorities and London daylight-saving boundaries", () => {
   assert.equal(londonToday(new Date("2026-03-29T23:30:00Z")), "2026-03-30");
   assert.equal(londonToday(new Date("2026-10-25T23:30:00Z")), "2026-10-25");
 });
+
+// --- New Stage 2 tests: projects and recoverable bin ---
+
+test("project creation, renaming, duplicate prevention and version conflict", () => {
+  const { sqlite, store } = setup();
+  try {
+    const id = store.saveProject({ name: "House Clearance" }, users[0]);
+    let snap = store.snapshot();
+    assert.equal(
+      snap.projects.find((p) => p.id === id)?.name,
+      "House Clearance",
+    );
+    // Duplicate name (case-insensitive) rejected
+    assert.throws(() =>
+      store.saveProject({ name: "house clearance" }, users[0]),
+    );
+    // Rename
+    store.saveProject({ id, version: 1, name: "House & Garden" }, users[1]);
+    snap = store.snapshot();
+    assert.equal(
+      snap.projects.find((p) => p.id === id)?.name,
+      "House & Garden",
+    );
+    assert.equal(snap.projects.find((p) => p.id === id)?.createdBy, users[0]);
+    // Stale version rejected
+    assert.throws(
+      () => store.saveProject({ id, version: 1, name: "Old" }, users[0]),
+      (e: unknown) => e instanceof RecordError && e.code === "conflict",
+    );
+    // Revision history
+    assert.ok(
+      snap.revisions.some((r) => r.entity === "project" && r.entityId === id),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("organisation can link to multiple projects; tasks have one optional project", () => {
+  const { sqlite, store } = setup();
+  try {
+    const p1 = store.saveProject({ name: "Project A" }, users[0]);
+    const p2 = store.saveProject({ name: "Project B" }, users[0]);
+    const orgId = store.saveOrganisation(
+      { ...org, projectIds: [p1, p2] },
+      users[0],
+    );
+    let snap = store.snapshot();
+    const links = snap.organisationProjects.filter(
+      (op) => op.organisationId === orgId,
+    );
+    assert.equal(links.length, 2);
+    // Task with one project
+    const taskId = store.saveTask(
+      { ...task, organisationId: orgId, projectId: p1 },
+      users[0],
+    );
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === taskId)?.projectId,
+      p1,
+    );
+    // Update organisation to single project
+    store.saveOrganisation(
+      { ...org, id: orgId, version: 1, projectIds: [p1] },
+      users[0],
+    );
+    snap = store.snapshot();
+    assert.equal(
+      snap.organisationProjects.filter((op) => op.organisationId === orgId)
+        .length,
+      1,
+    );
+    // Invalid project rejected
+    assert.throws(() =>
+      store.saveOrganisation(
+        { ...org, id: orgId, version: 2, projectIds: ["missing"] },
+        users[0],
+      ),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("recoverable bin: soft delete moves to bin, restore brings back, no auto purge", () => {
+  const { sqlite, store } = setup();
+  try {
+    const orgId = store.saveOrganisation(org, users[0]);
+    const noteId = store.saveInteraction(
+      {
+        organisationId: orgId,
+        title: "Call",
+        detail: "Detail",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        followUps: [],
+      },
+      users[0],
+    );
+    const taskId = store.saveTask({ ...task, organisationId: orgId }, users[0]);
+    const projId = store.saveProject({ name: "Temp Project" }, users[0]);
+
+    // Soft delete organisation – should not cascade-delete tasks/interactions
+    store.deleteRecord("organisation", orgId, 1, users[0], false);
+    let snap = store.snapshot();
+    assert.equal(snap.organisations.length, 0);
+    assert.equal(snap.deletedOrganisations.length, 1);
+    assert.equal(
+      snap.tasks.length,
+      1,
+      "task should remain after org soft delete",
+    );
+    assert.equal(
+      snap.interactions.length,
+      1,
+      "interaction should remain after org soft delete",
+    );
+
+    // Soft delete others
+    store.deleteRecord("interaction", noteId, 1, users[0], false);
+    store.deleteRecord("task", taskId, 1, users[0], false);
+    store.deleteRecord("project", projId, 1, users[0], false);
+    snap = store.snapshot();
+    assert.equal(snap.deletedInteractions.length, 1);
+    assert.equal(snap.deletedTasks.length, 1);
+    assert.equal(snap.deletedProjects.length, 1);
+    assert.equal(snap.tasks.length, 0);
+    assert.equal(snap.interactions.length, 0);
+
+    // Restore
+    store.restoreRecord("organisation", orgId, 2, users[0]);
+    store.restoreRecord("interaction", noteId, 2, users[0]);
+    store.restoreRecord("task", taskId, 2, users[0]);
+    store.restoreRecord("project", projId, 2, users[0]);
+    snap = store.snapshot();
+    assert.equal(snap.organisations.length, 1);
+    assert.equal(snap.interactions.length, 1);
+    assert.equal(snap.tasks.length, 1);
+    assert.equal(
+      snap.projects.find((p) => p.id === projId)?.name,
+      "Temp Project",
+    );
+    assert.equal(snap.deletedOrganisations.length, 0);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("permanent deletion requires bin first, retains revision history, does not cascade", () => {
+  const { sqlite, store } = setup();
+  try {
+    const orgId = store.saveOrganisation(org, users[0]);
+    const taskId = store.saveTask({ ...task, organisationId: orgId }, users[0]);
+    const noteId = store.saveInteraction(
+      {
+        organisationId: orgId,
+        title: "Call",
+        detail: "Detail",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        followUps: [],
+      },
+      users[0],
+    );
+
+    // Permanent delete without bin should fail
+    assert.throws(() =>
+      store.deleteRecord("organisation", orgId, 1, users[0], true),
+    );
+
+    // Move to bin then permanently delete organisation – tasks/notes must remain (unlinked)
+    store.deleteRecord("organisation", orgId, 1, users[0], false);
+    store.deleteRecord("organisation", orgId, 2, users[0], true);
+    let snap = store.snapshot();
+    assert.equal(snap.organisations.length, 0);
+    assert.equal(snap.deletedOrganisations.length, 0);
+    assert.equal(snap.tasks.length, 1, "task not cascade-deleted");
+    assert.equal(
+      snap.tasks[0].organisationId,
+      null,
+      "task unlinked after org permanent deletion",
+    );
+    assert.equal(snap.interactions.length, 1);
+    assert.equal(snap.interactions[0].organisationId, null);
+
+    // Revisions remain
+    assert.ok(
+      snap.revisions.some(
+        (r) => r.entity === "organisation" && r.entityId === orgId,
+      ),
+      "revision history must remain after permanent deletion",
+    );
+
+    // Permanent delete task
+    store.deleteRecord("task", taskId, 1, users[0], false);
+    store.deleteRecord("task", taskId, 2, users[0], true);
+    snap = store.snapshot();
+    assert.equal(snap.tasks.length, 0);
+    assert.ok(
+      snap.revisions.some((r) => r.entity === "task" && r.entityId === taskId),
+    );
+
+    // Permanent delete interaction – should unlink its tasks (none left) and keep other records
+    store.deleteRecord("interaction", noteId, 1, users[0], false);
+    store.deleteRecord("interaction", noteId, 2, users[0], true);
+    snap = store.snapshot();
+    assert.equal(snap.interactions.length, 0);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("project deletion does not delete tasks or organisation links, only unlinks", () => {
+  const { sqlite, store } = setup();
+  try {
+    const projId = store.saveProject({ name: "House Clearance" }, users[0]);
+    const orgId = store.saveOrganisation(
+      { ...org, projectIds: [projId] },
+      users[0],
+    );
+    const taskId = store.saveTask({ ...task, projectId: projId }, users[0]);
+
+    store.deleteRecord("project", projId, 1, users[0], false);
+    let snap = store.snapshot();
+    assert.equal(snap.projects.length, 3, "starter projects remain");
+    assert.equal(snap.deletedProjects.length, 1);
+    assert.equal(
+      snap.tasks.find((t) => t.id === taskId)?.projectId,
+      projId,
+      "task keeps projectId after soft delete",
+    );
+
+    store.deleteRecord("project", projId, 2, users[0], true);
+    snap = store.snapshot();
+    assert.equal(snap.deletedProjects.length, 0);
+    assert.equal(
+      snap.tasks.find((t) => t.id === taskId)?.projectId,
+      null,
+      "task unlinked after permanent project deletion",
+    );
+    assert.equal(
+      snap.organisationProjects.filter((op) => op.projectId === projId).length,
+      0,
+      "organisation-project links removed",
+    );
+    assert.equal(snap.organisations.length, 1, "organisation not deleted");
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("restore fails if linked organisation or project is in bin", () => {
+  const { sqlite, store } = setup();
+  try {
+    const projId = store.saveProject({ name: "Temp" }, users[0]);
+    const orgId = store.saveOrganisation(org, users[0]);
+    const taskId = store.saveTask(
+      { ...task, organisationId: orgId, projectId: projId },
+      users[0],
+    );
+
+    // Delete org and proj, then task, then try to restore task before its dependencies
+    store.deleteRecord("organisation", orgId, 1, users[0], false);
+    store.deleteRecord("project", projId, 1, users[0], false);
+    store.deleteRecord("task", taskId, 1, users[0], false);
+
+    assert.throws(() => store.restoreRecord("task", taskId, 2, users[0]));
+
+    // Restore dependencies then task
+    store.restoreRecord("organisation", orgId, 2, users[0]);
+    store.restoreRecord("project", projId, 2, users[0]);
+    store.restoreRecord("task", taskId, 2, users[0]);
+    assert.equal(store.snapshot().tasks.length, 1);
+  } finally {
+    sqlite.close();
+  }
+});

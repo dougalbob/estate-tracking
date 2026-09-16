@@ -5,10 +5,8 @@ import { database } from "@/lib/db";
 import { recordStore, RecordError } from "@/lib/records/store";
 import { ZodError } from "zod";
 import { revalidatePath } from "next/cache";
-export async function saveRecord(
-  kind: "organisation" | "interaction" | "task",
-  input: unknown,
-) {
+type Kind = "organisation" | "interaction" | "task" | "project";
+export async function saveRecord(kind: Kind, input: unknown) {
   try {
     const user = await currentUser();
     const users = user.demo
@@ -25,6 +23,9 @@ export async function saveRecord(
         break;
       case "task":
         id = store.saveTask(input, user.email);
+        break;
+      case "project":
+        id = store.saveProject(input, user.email);
         break;
       default:
         return {
@@ -50,6 +51,53 @@ export async function saveRecord(
       ok: false as const,
       error:
         "Unable to save. Check your access and try again. Your draft has been kept.",
+      code: "unavailable",
+    };
+  }
+}
+
+export async function deleteRecord(
+  kind: Kind,
+  id: string,
+  version: number,
+  permanent = false,
+) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    store.deleteRecord(kind, id, version, user.email, permanent);
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    return {
+      ok: false as const,
+      error: "Unable to delete. Check your access and try again.",
+      code: "unavailable",
+    };
+  }
+}
+
+export async function restoreRecord(kind: Kind, id: string, version: number) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    store.restoreRecord(kind, id, version, user.email);
+    revalidatePath("/");
+    return { ok: true as const };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    return {
+      ok: false as const,
+      error: "Unable to restore. Check your access and try again.",
       code: "unavailable",
     };
   }

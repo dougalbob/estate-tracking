@@ -15,6 +15,13 @@
       "when": 1789551280812,
       "tag": "0001_brief_martin_li",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789553000000,
+      "tag": "0002_add_bin_and_project_links",
+      "breakpoints": true
     }
   ]
 }

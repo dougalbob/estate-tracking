@@ -12,7 +12,7 @@ import {
   taskStatuses,
 } from "@/lib/records/validation";
 export type Editor = {
-  kind: "organisation" | "interaction" | "task";
+  kind: "organisation" | "interaction" | "task" | "project";
   id?: string;
   organisationId?: string;
   interactionId?: string;
@@ -31,7 +31,9 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
       ? data.organisations
       : editor.kind === "interaction"
         ? data.interactions
-        : data.tasks;
+        : editor.kind === "task"
+          ? data.tasks
+          : data.projects;
   const record = rows.find((r) => r.id === editor.id);
   const initial = (record ?? {}) as unknown as Record<string, unknown>;
   const value = (name: string, fallback = "") =>
@@ -44,6 +46,14 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
   const counter = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const [dirty, setDirty] = useState(false);
+  // For organisation project links
+  const linkedProjectIds = editor.id
+    ? data.organisationProjects
+        .filter((op) => op.organisationId === editor.id)
+        .map((op) => op.projectId)
+    : [];
+  const [selectedProjects, setSelectedProjects] =
+    useState<string[]>(linkedProjectIds);
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
       onClose();
@@ -192,12 +202,18 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
         notes: get("notes"),
         status: get("status"),
         confirmResolve: form.get("confirmResolve") === "on",
+        projectIds: selectedProjects,
       };
     else if (editor.kind === "task")
       input = {
         ...base,
         ...task(),
         interactionId: initial.interactionId ?? editor.interactionId ?? null,
+      };
+    else if (editor.kind === "project")
+      input = {
+        ...base,
+        name: get("name"),
       };
     else
       input = {
@@ -256,7 +272,9 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 ? "organisation"
                 : editor.kind === "interaction"
                   ? "interaction or note"
-                  : "task"}
+                  : editor.kind === "task"
+                    ? "task"
+                    : "project"}
             </h2>
           </div>
           <button
@@ -330,6 +348,35 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   ))}
                 </select>
               </label>
+              <fieldset className="follow-up">
+                <legend>Projects</legend>
+                <p className="form-help">
+                  Link this organisation to one or more projects. Tasks have one
+                  optional project; organisations can belong to many.
+                </p>
+                <div className="project-checkboxes">
+                  {data.projects.map((p) => (
+                    <label key={p.id} className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={selectedProjects.includes(p.id)}
+                        onChange={(e) => {
+                          setSelectedProjects(
+                            e.target.checked
+                              ? [...selectedProjects, p.id]
+                              : selectedProjects.filter((id) => id !== p.id),
+                          );
+                          setDirty(true);
+                        }}
+                      />
+                      {p.name}
+                    </label>
+                  ))}
+                  {!data.projects.length && (
+                    <p className="form-help">No projects yet.</p>
+                  )}
+                </div>
+              </fieldset>
               {code === "confirm_resolve" && (
                 <label className="checkbox-label">
                   <input type="checkbox" name="confirmResolve" />
@@ -337,6 +384,25 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   unchanged.
                 </label>
               )}
+            </>
+          ) : editor.kind === "project" ? (
+            <>
+              <label>
+                Project name
+                <input
+                  name="name"
+                  required
+                  maxLength={200}
+                  defaultValue={value("name")}
+                  autoFocus
+                  placeholder="For example, House Clearance"
+                />
+              </label>
+              <p className="form-help">
+                Projects group tasks and organisations. You can rename them at
+                any time. Tasks have one optional project; organisations can
+                belong to multiple projects.
+              </p>
             </>
           ) : (
             <>

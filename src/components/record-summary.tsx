@@ -14,6 +14,7 @@ const captions: Record<string, string> = {
   organisationId: "Organisation",
   interactionId: "Source interaction",
   projectId: "Project",
+  projectIds: "Projects",
   assignee: "Assigned to",
   occurredAt: "When it happened",
   dueDate: "Due date",
@@ -32,17 +33,30 @@ export function RecordSummary({
     if (key === "organisationId")
       return (
         data.organisations.find((o) => o.id === value)?.name ??
+        data.deletedOrganisations.find((o) => o.id === value)?.name ??
         "Linked organisation"
       );
     if (key === "interactionId")
       return (
         data.interactions.find((o) => o.id === value)?.title ??
+        data.deletedInteractions.find((o) => o.id === value)?.title ??
         "Linked interaction"
       );
     if (key === "projectId")
       return (
-        data.projects.find((o) => o.id === value)?.name ?? "Linked project"
+        data.projects.find((o) => o.id === value)?.name ??
+        data.deletedProjects.find((o) => o.id === value)?.name ??
+        "Linked project"
       );
+    if (key === "projectIds" && Array.isArray(value)) {
+      const names = (value as string[]).map(
+        (id) =>
+          data.projects.find((p) => p.id === id)?.name ??
+          data.deletedProjects.find((p) => p.id === id)?.name ??
+          id,
+      );
+      return names.join(" · ") || "Not set";
+    }
     if (key === "assignee") return String(value).split("@")[0];
     if (key === "status" || key === "kind") return label(String(value));
     if (key === "occurredAt")

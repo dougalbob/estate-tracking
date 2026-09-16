@@ -4,7 +4,7 @@
 
 ## Status and purpose
 
-**Core workflow in progress.** Organisations, interactions/quick notes, and tasks can now be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
+**Core workflow, project management, and recoverable deletion now implemented.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
 The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery will be staged, but these are all core requirements. This is a fresh start with no existing data to import; funeral arrangements and estate administration are both outstanding.
 
@@ -180,7 +180,7 @@ NEXT_TELEMETRY_DISABLED=1 npm start
 
 Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
 
-Project grouping is available with three starter projects. Project editing, organisation-project links, recoverable deletion, document uploads, finances, checklist templates, backups, and install metadata are still upcoming; this is **not ready for real estate data or production use**.
+Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads, finances, checklist templates, backups, and install metadata are still upcoming; this is **not ready for real estate data or production use**.
 
 ### Browser workflow test
 

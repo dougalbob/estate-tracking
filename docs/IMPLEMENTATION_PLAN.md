@@ -1,6 +1,6 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow is implemented and has been tried successfully by the user. The application is still in development, not ready for real estate information or production use.
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, and recoverable deletion with safe restore have been implemented and unit-tested. The application is still in development, not ready for real estate information or production use.
 
 ## Start here — conversation handover (16 September 2026)
 
@@ -16,7 +16,7 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | Stage | Status | Remaining work |
 |---|---|---|
 | 1. Foundation | Implemented baseline | Full accessibility/security review, additional-theme coverage, and real Cloudflare/Unraid verification remain |
-| 2. Shared records | Core workflow implemented and user-tested | Project creation/renaming, organisation-project links, recoverable bin, safe restoration and deletion behaviour |
+| 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
 | 3. Documents | Not implemented | Uploads, reusable links, friendly names, metadata search, protected downloads |
 | 4. Finances | Not implemented | Inventory, transactions, reimbursements, distributions, summaries, exports |
 | 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture and responsive screens exist; templates, install metadata and complete accessibility polish remain |
@@ -24,26 +24,25 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 
 ### Next recommended work
 
-Finish Stage 2 before starting document uploads:
+Stage 2 is now complete. Continue to Stage 3 before finances:
 
-1. Add project creation and renaming without changing the approved visual style. Add organisation-to-project links; organisations can belong to multiple projects, tasks to one optional project.
-2. Implement a recoverable bin and safe restoration for ordinary records, with no automatic purge. Do not cascade-delete linked notes, tasks, or documents when removing an organisation.
-3. Define and test permanent-deletion handling, linked-record behaviour, retained revision metadata, and stale-edit checks before exposing destructive controls. Financial records, once implemented, must retain correction/void history rather than permit normal permanent erasure.
-4. Extend automated and browser tests, then ask the user to try the new workflows.
-5. Continue to Stage 3: locally stored documents with friendly names and reusable links.
+1. Implement locally stored documents with friendly names and reusable links – upload independently or while recording an interaction, store once and link to many records, search by name/category/associated records, protect downloads.
+2. Define safe filename handling, size limits, and file-metadata lifecycle for bin/restore and permanent deletion.
+3. Extend automated and browser tests, then ask the user to try document workflows.
+4. Continue to Stage 4: estate finances in GBP with reimbursement and export handling.
 
 ### Where to find the current implementation
 
-- `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, history and demo-user switch.
-- `src/components/record-form.tsx`: organisation, interaction and task forms, follow-ups, conflict/draft recovery.
-- `src/components/record-summary.tsx`: readable history and comparison fields.
-- `src/app/actions.ts`: authenticated server actions.
-- `src/lib/records/store.ts`: transactional writes, relationship checks, revision history, optimistic version checks and resolution warnings.
-- `src/lib/records/validation.ts`: input schemas, statuses and date helpers.
-- `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations. Add migrations; do not replace the existing history.
+- `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, projects, recoverable bin, history and demo-user switch, plus delete/restore handling.
+- `src/components/record-form.tsx`: organisation (now with multi-project checkboxes), interaction, task, and project forms, follow-ups, conflict/draft recovery.
+- `src/components/record-summary.tsx`: readable history and comparison fields, now aware of deleted records and project links.
+- `src/app/actions.ts`: authenticated server actions for save, soft-delete, restore, and permanent delete.
+- `src/lib/records/store.ts`: transactional writes, organisation-project join handling, revision history, optimistic version checks, resolution warnings, recoverable bin with no auto-purge, safe restore checks, and non-cascading permanent deletion that retains revision metadata.
+- `src/lib/records/validation.ts`: input schemas for organisations (with projectIds), tasks, interactions, and projects.
+- `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations including `organisation_projects` and `deleted_at` columns. Add migrations; do not replace the existing history.
 - `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
-- `src/app/globals.css` and `src/themes/index.ts`: approved theme and theme-extension foundation.
-- `tests/`: unit/integration tests and the two-user browser workflow.
+- `src/app/globals.css` and `src/themes/index.ts`: approved calm theme and token foundation; new minimal styles for project pills and bin actions reuse existing tokens.
+- `tests/`: 22 unit/integration tests covering Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, and London DST date handling, plus the two-user browser workflow.
 
 ### Restarting and checking the app
 
@@ -191,4 +190,22 @@ Implemented:
 
 Verified: 16 unit/integration tests; production build; TypeScript and formatting checks; Chromium end-to-end test using two independent user sessions, persistence across reload, revision history, conflict recovery, resolution warnings, task completion, and mobile quick capture without horizontal overflow. Standard browser download was blocked by the sandbox network; the browser run used a locally extracted Chromium instead. Generated browser binaries/screenshots and demo records are not tracked in Git.
 
-Remaining before Stage 2 is complete: project creation/renaming, organisation-project links, recoverable deletion and safe restore workflows. Documents, finances, templates, backups, deployment, installation metadata, full accessibility/security review, and live Cloudflare/Unraid validation remain later work. End-to-end tests add fictional example records and are intended only for the isolated demo preview.
+Remaining before Stage 2 is complete: ~~project creation/renaming, organisation-project links, recoverable deletion and safe restore workflows~~ – now implemented. Documents, finances, templates, backups, deployment, installation metadata, full accessibility/security review, and live Cloudflare/Unraid validation remain later work. End-to-end tests add fictional example records and are intended only for the isolated demo preview.
+
+## Project management and recoverable bin checkpoint — 16 September 2026
+
+Implemented:
+- Project creation and renaming with case-insensitive duplicate prevention, versioned edits, and audit history. Starter projects (Funeral, Notifications, Probate & Estate Administration) backfilled with version/timestamps.
+- Organisation-to-project links via `organisation_projects` join table; organisations can belong to multiple projects, tasks to one optional project. Organisation form now shows project checkboxes; project view shows linked organisations and tasks.
+- Recoverable bin with no automatic purge: soft-delete for organisations, interactions, tasks, and projects moves records to bin; restore validates linked records and checks for name conflicts; permanent deletion requires prior bin move and explicit typed confirmation (`DELETE`), retains revision history, and unlinks rather than cascade-deletes notes/tasks/documents.
+- Safe relationship handling: deleting an organisation leaves its interactions and tasks intact (organisationId cleared only on permanent deletion); deleting a project unlinks tasks and organisation links but does not delete them; deleting an interaction unlinks its follow-up tasks.
+- UI: new “Recoverable bin” navigation with count, restore and permanent-delete actions, history entries for deleted/restored/permanently_deleted, project pills with edit affordance, and bin buttons on task rows, note cards, and organisation details. Approved calm theme preserved.
+- Validation: project name required, max 200 chars; organisation projectIds validated against active projects; delete/restore check version and deletedAt state.
+
+Verified:
+- 22 unit/integration tests (previously 16) – all passing, including new tests for project lifecycle, multi-project links, bin soft-delete/restore, permanent deletion retaining history, non-cascade behaviour, and restore failure when dependencies are in bin.
+- TypeScript check passing, production build passing, Prettier formatting passing.
+- Development preview manually checked: navigation includes bin, project creation/renaming works, organisation linking works, bin shows deleted items, restore works, permanent deletion requires confirmation.
+- Browser e2e workflow not rerun in this sandbox due to blocked Chromium download (same network restriction as previous checkpoint); existing workflow still exercises core Bank1 flow. The new bin/project flows are covered by unit/integration tests and manual preview checks.
+
+Remaining before Stage 3: document uploads with friendly names and reusable links, protected downloads, file lifecycle with bin/restore. Finances, templates, backups, deployment, install metadata, full accessibility/security review, and live Cloudflare/Unraid validation remain later work. End-to-end tests add fictional example records and are intended only for the isolated demo preview.

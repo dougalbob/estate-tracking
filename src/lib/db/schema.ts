@@ -1,4 +1,9 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
 export const organisations = sqliteTable("organisations", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -25,6 +30,11 @@ export const organisations = sqliteTable("organisations", {
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
 export const interactions = sqliteTable("interactions", {
   id: text("id").primaryKey(),
@@ -37,6 +47,7 @@ export const interactions = sqliteTable("interactions", {
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
@@ -54,7 +65,20 @@ export const tasks = sqliteTable("tasks", {
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
+export const organisationProjects = sqliteTable(
+  "organisation_projects",
+  {
+    organisationId: text("organisation_id")
+      .notNull()
+      .references(() => organisations.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.organisationId, t.projectId] })],
+);
 export const revisions = sqliteTable("revisions", {
   id: text("id").primaryKey(),
   entity: text("entity").notNull(),
