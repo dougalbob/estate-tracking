@@ -336,7 +336,7 @@ Implemented:
 - `docker-entrypoint.sh` loads `/data/estate.env` when present, creates the configured storage directories, applies migrations through the plain-JavaScript `scripts/migrate.cjs` runner, and starts Next.js on `0.0.0.0:3000`.
 - Unauthenticated `GET /api/health` returns HTTP 200 with a small status response for Unraid and tunnel smoke checks. It does not expose application data or bypass authentication.
 - `compose.yaml` documents the same GHCR image, bridge-style port mapping, persistent `/mnt/user/appdata/estate-organiser:/data` volume, restart policy, and healthcheck.
-- `estate-organiser.xml` defines the Unraid user template with the `/data` mapping, port `3000`, WebUI link, and app icon. The v1 root ownership implication is documented.
+- `estate-organiser.xml` defines the Unraid user template with the `/data` mapping, host port `3005` mapped to container port `3000`, WebUI link, and app icon. The v1 root ownership implication is documented.
 - `.github/workflows/publish.yml` publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch, with version/latest/SHA tags and `GITHUB_TOKEN` package permissions. `.env.example` contains placeholders only.
 - README deployment instructions cover appdata and `estate.env`, template import, first start, health checks, Cloudflare Tunnel and Google-only Access policy, anonymous GHCR pulls, Force Update, and the fictional-data gate.
 

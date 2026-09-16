@@ -18,5 +18,6 @@ mkdir -p "$(dirname "$DATABASE_PATH")" "$DOCUMENTS_PATH"
 node /app/scripts/migrate.cjs
 
 # Run Next directly so it remains the container's main process and receives
-# stop/restart signals correctly. Port 3000 is the documented Unraid mapping.
+# stop/restart signals correctly. The container listens on port 3000; Unraid
+# publishes host port 3005 in the template and compose reference.
 exec /app/node_modules/.bin/next start --hostname 0.0.0.0 --port 3000

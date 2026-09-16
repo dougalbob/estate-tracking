@@ -4,7 +4,7 @@ services:
     container_name: estate-organiser
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3005:3000"
     volumes:
       - /mnt/user/appdata/estate-organiser:/data
     healthcheck:

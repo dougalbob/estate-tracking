@@ -151,15 +151,15 @@ Primary database and document storage remain on Unraid. Remote traffic passes th
 
 ## Backups and deployment
 
-The deployment package is now implemented for a single application Docker container on Unraid, with persistent SQLite and document storage in `/mnt/user/appdata/estate-organiser`. Cloudflare Tunnel and Cloudflare Access remain separate infrastructure. The container uses bridge networking, port `3000`, and runs as root in v1 so that the first install is predictable; files created under the appdata mapping will therefore be owned by root.
+The deployment package is now implemented for a single application Docker container on Unraid, with persistent SQLite and document storage in `/mnt/user/appdata/estate-organiser`. Cloudflare Tunnel and Cloudflare Access remain separate infrastructure. The container listens internally on port `3000`, while Unraid publishes host port `3005` to avoid a conflict on the server. It uses bridge networking and runs as root in v1 so that the first install is predictable; files created under the appdata mapping will therefore be owned by root.
 
 **Safety gate:** encrypted backup and restore are not implemented yet. Use fictional/demo data only until the backup stage has created a consistent SQLite snapshot, encrypted it with user-managed recovery credentials, included documents, and passed a clean-install restore test. A raw copy of a live SQLite file is not an adequate backup strategy because this app uses WAL mode.
 
 ### Deployment files
 
 - `Dockerfile` is a multi-stage Node 22 image. The build stage installs `python3`, `make`, and `g++` so `better-sqlite3` can compile if a platform-specific prebuilt binary is unavailable; the runtime stage contains only production dependencies, the built Next.js app, migrations, and the plain-JavaScript migration runner.
-- `docker-entrypoint.sh` loads `/data/estate.env` if present, runs migrations, and starts Next.js on `0.0.0.0:3000`.
-- `compose.yaml` is a portable reference using the same GHCR image and `/mnt/user/appdata/estate-organiser:/data` mapping.
+- `docker-entrypoint.sh` loads `/data/estate.env` if present, runs migrations, and starts Next.js on the container's `0.0.0.0:3000`.
+- `compose.yaml` is a portable reference using the same GHCR image, host port `3005` mapped to container port `3000`, and the `/mnt/user/appdata/estate-organiser:/data` mapping.
 - `estate-organiser.xml` is the Unraid user-template import. It defines the `/data` mapping, port, bridge network, and WebUI link.
 - `.github/workflows/publish.yml` builds and publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch. A version tag produces the version tag, `latest`, and a git-SHA tag.
 
@@ -177,17 +177,17 @@ These steps deliberately explain why each file is used. Do not put real credenti
 
    Restrict the file to the administrator where practical, for example with `chmod 600 /mnt/user/appdata/estate-organiser/estate.env`. The container reads this file at startup because an Unraid template cannot pass Docker's `--env-file` option.
 
-2. **Import the Unraid template.** Copy `estate-organiser.xml` into `/boot/config/plugins/dockerMan/templates-user/`, then open Docker → Add Container → User Templates → Estate Organiser. The template makes the image, bridge network, `/data` path, port `3000`, and WebUI consistent rather than relying on manually re-entered values. Confirm that the host path is exactly `/mnt/user/appdata/estate-organiser` and that the image is `ghcr.io/dougalbob/estate-organiser:latest`.
+2. **Import the Unraid template.** Copy `estate-organiser.xml` into `/boot/config/plugins/dockerMan/templates-user/`, then open Docker → Add Container → User Templates → Estate Organiser. The template makes the image, bridge network, `/data` path, and host-port mapping (`3005` on Unraid → `3000` in the container) consistent rather than relying on manually re-entered values. Confirm that the host path is exactly `/mnt/user/appdata/estate-organiser`, the host port is `3005`, and the image is `ghcr.io/dougalbob/estate-organiser:latest`.
 
 3. **Start and smoke-test the container.** On the first start, the entrypoint creates the configured directories, applies all pending Drizzle migrations, and only then starts the web server. Check the container log for `Database migrations complete.` and open this unauthenticated health URL from the Unraid LAN:
 
    ```text
-   http://<unraid-lan-ip>:3000/api/health
+   http://<unraid-lan-ip>:3005/api/health
    ```
 
    It should return HTTP 200 with `{"status":"ok"}`. The same endpoint is used by the compose healthcheck. A failed health check means the process or image is not ready; it does not bypass Cloudflare Access.
 
-4. **Configure the existing Cloudflare Tunnel.** Add a public hostname such as `estate.<your-domain>` whose service is `http://<unraid-lan-ip>:3000`. The origin should remain a LAN address; do not point browser code at localhost and do not expose the Unraid port directly to the internet. The app's security headers include `private, no-store` caching, `nosniff`, and a restrictive referrer policy so documents and records are not browser/proxy-cached.
+4. **Configure the existing Cloudflare Tunnel.** Add a public hostname such as `estate.<your-domain>` whose service is `http://<unraid-lan-ip>:3005`. The origin should remain a LAN address; do not point browser code at localhost and do not expose the Unraid port directly to the internet. The app's security headers include `private, no-store` caching, `nosniff`, and a restrictive referrer policy so documents and records are not browser/proxy-cached.
 
 5. **Protect the hostname with Cloudflare Access.** Create a Self-hosted Access application for the hostname. Configure Google as the only enabled identity provider for this application (set up Google in Zero Trust → Settings → Authentication → Login methods if it is not already available). Add an Allow policy whose Include rule contains only the two real email addresses. Do not use a broad “everyone” rule. The application independently verifies the Access JWT issuer, audience, expiry, and email allowlist, so a spoofed email header is not sufficient.
 

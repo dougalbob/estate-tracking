@@ -13,5 +13,5 @@
   <Icon>https://raw.githubusercontent.com/dougalbob/estate-tracking/main/docs/estate-organiser-icon.svg</Icon>
   <ExtraParams>--init</ExtraParams>
   <Config Name="App data" Target="/data" Default="/mnt/user/appdata/estate-organiser" Mode="rw" Description="Persistent database, uploaded documents, and estate.env. The v1 container runs as root, so files created here will be owned by root." Type="Path" Display="always" Required="true" Mask="false" />
-  <Config Name="Web UI" Target="3000" Default="3000" Mode="tcp" Description="Estate Organiser HTTP port. Publish this only on the Unraid LAN; Cloudflare Tunnel should be the public entrance." Type="Port" Display="always" Required="true" Mask="false" />
+  <Config Name="Web UI" Target="3000" Default="3005" Mode="tcp" Description="Unraid host port 3005 mapped to the container's port 3000. Publish this only on the Unraid LAN; Cloudflare Tunnel should be the public entrance." Type="Port" Display="always" Required="true" Mask="false" />
 </Container>
