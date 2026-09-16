@@ -163,7 +163,11 @@ export function recordStore(
           .select()
           .from(taskTemplates)
           .where(isNull(taskTemplates.deletedAt))
-          .orderBy(asc(taskTemplates.sortOrder), asc(taskTemplates.title))
+          .orderBy(
+            asc(taskTemplates.projectId),
+            asc(taskTemplates.sortOrder),
+            asc(taskTemplates.title),
+          )
           .all(),
         deletedTaskTemplates: db
           .select()

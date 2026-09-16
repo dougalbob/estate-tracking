@@ -20,7 +20,8 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
 | 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Full browser e2e for upload/link/download flows in restricted sandbox, accessibility polish |
 | 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
-| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and the Notifications checklist list exist; the Funeral and Probate lists, install metadata and complete accessibility polish remain |
+| 5a. Checklist templates | Partly implemented – Notifications (15) and Probate & Estate Administration (21) lists built, editable, with duplicate-safe application | Funeral list, and any wording changes the user wants after reading the probate list |
+| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and two checklist lists (Notifications, Probate) exist; the Funeral list, install metadata and complete accessibility polish remain |
 | 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
 
 ### Next recommended work
@@ -300,4 +301,22 @@ Verified:
 - TypeScript, Prettier and production build checks passing.
 - Demo preview checked: the panel renders inside Notifications with all 15 suggestions and their tailoring, applying two suggestions created two undated tasks attributed to the acting user, a second application skipped both, and the UI showed two "Already added" badges. The temporary demo tasks created for that check were removed again so the user starts with a clean list.
 
-Remaining: the Funeral and Probate starter lists (deliberately not written yet – the user wants to judge the Notifications list first), install metadata, and the Stage 5 dashboard/accessibility polish.
+Remaining: the Funeral starter list, install metadata, and the Stage 5 dashboard/accessibility polish.
+
+## Checklist templates — probate list added (16 September 2026)
+
+Requested: a checklist for the probate procedure, English jurisdiction, an estate not expected to exceed £500,000, no Inheritance Tax expected, and no solicitor involved.
+
+Implemented:
+- **Probate & Estate Administration** list, 21 suggestions in roughly chronological order: whether a grant is needed at all; finding the will and who may apply; who applies (including reserving power); valuing the estate and the property as at the date of death; requesting balances from each institution; checking gifts in the seven years before death; confirming with HMRC whether an Inheritance Tax account is needed; checking whether an unused allowance can be transferred; applying for the grant; the statement of truth or oath; the fee and extra copies of the grant; waiting for the grant; registering it with each institution; paying the funeral account and debts; the property; estate accounts; income reporting; advertising for unknown creditors; distributions with a reserve; and knowing when to get advice.
+- No threshold, rate, fee or date is quoted anywhere in the wording. Each line points at GOV.UK or HMRC to confirm the current position, and the list states plainly that the app performs no tax calculation. A unit test enforces this: the probate wording must not contain "£", "percent", any of the well-known threshold figures, or any number of three digits or more.
+- Nothing about the user's specific figures is asserted. The wording covers both possibilities where they differ (a will or no will, one applicant or two, a transferable allowance or none).
+- Lists are now held as `notificationsTemplateSeeds` and `probateTemplateSeeds`, combined into `templateSeeds`. Snapshot ordering became deterministic (project, then position, then title) so both lists read consistently.
+- The same wording may appear in two different lists (for example a "Tell Us Once" line in more than one project), while an item can never be moved between projects.
+
+Verified:
+- 46 unit/integration tests passing (44 previous + 2 probate tests): list seeded once and tailored, no rules or figures quoted, applying creates undated and unassigned tasks in the right project, a second application skips everything, the two lists stay independent, and wording may repeat across lists.
+- TypeScript, Prettier and production build checks passing.
+- Demo preview checked: both checklist panels render inside their projects with no runtime errors and no figures leaked into the page.
+
+Remaining: the Funeral list, and any rewording the user wants after reading the probate list.

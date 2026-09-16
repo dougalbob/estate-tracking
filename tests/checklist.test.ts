@@ -5,9 +5,19 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../src/lib/db/schema";
 import { recordStore, RecordError } from "../src/lib/records/store";
-import { templateSeeds } from "../src/lib/records/template-seeds";
+import {
+  notificationsTemplateSeeds,
+  probateTemplateSeeds,
+  templateSeeds,
+} from "../src/lib/records/template-seeds";
 
 const users = ["alex@example.invalid", "jamie@example.invalid"];
+const notif = notificationsTemplateSeeds;
+const probate = probateTemplateSeeds;
+const notificationsOf = (store: ReturnType<typeof setup>["store"]) =>
+  store.snapshot().taskTemplates.filter((i) => i.projectId === "notifications");
+const probateOf = (store: ReturnType<typeof setup>["store"]) =>
+  store.snapshot().taskTemplates.filter((i) => i.projectId === "probate");
 const alex = users[0];
 const jamie = users[1];
 
@@ -27,9 +37,8 @@ test("the notifications list is seeded once and stays editable afterwards", () =
   try {
     // Seeding twice, as happens on every page load, does not duplicate the list.
     store.seedTemplates();
-    const items = store.snapshot().taskTemplates;
-    assert.equal(items.length, templateSeeds.length);
-    assert.ok(items.every((i) => i.projectId === "notifications"));
+    const items = notificationsOf(store);
+    assert.equal(items.length, notif.length);
     assert.equal(items[0].title, "Tell Us Once");
 
     // It is written for this estate: a private pension rather than an employer
@@ -58,11 +67,11 @@ test("the notifications list is seeded once and stays editable afterwards", () =
       },
       alex,
     );
-    const edited = store.snapshot().taskTemplates[0];
+    const edited = notificationsOf(store)[0];
     assert.equal(edited.title, "Tell Us Once (registrar reference)");
     assert.equal(edited.version, 2);
     assert.equal(edited.createdBy, "system");
-    assert.equal(store.snapshot().taskTemplates.length, templateSeeds.length);
+    assert.equal(notificationsOf(store).length, notif.length);
   } finally {
     sqlite.close();
   }
@@ -72,7 +81,7 @@ test("nothing is created until items are chosen, and no dates or owners are set"
   const { sqlite, store } = setup();
   try {
     assert.equal(store.snapshot().tasks.length, 0);
-    const items = store.snapshot().taskTemplates;
+    const items = notificationsOf(store);
     const chosen = items.slice(0, 3).map((i) => i.id);
     const result = store.applyTemplate(
       { projectId: "notifications", itemIds: chosen },
@@ -97,7 +106,7 @@ test("nothing is created until items are chosen, and no dates or owners are set"
       assert.ok(task.detail.length > 0);
     }
     // Untouched items stay in the list.
-    assert.equal(store.snapshot().taskTemplates.length, templateSeeds.length);
+    assert.equal(notificationsOf(store).length, notif.length);
   } finally {
     sqlite.close();
   }
@@ -106,7 +115,7 @@ test("nothing is created until items are chosen, and no dates or owners are set"
 test("reapplying the list skips anything already in the project", () => {
   const { sqlite, store } = setup();
   try {
-    const items = store.snapshot().taskTemplates;
+    const items = notificationsOf(store);
     const first = items.slice(0, 4).map((i) => i.id);
     store.applyTemplate({ projectId: "notifications", itemIds: first }, alex);
 
@@ -194,10 +203,10 @@ test("checklist items can be added, removed and restored, and a manual task is l
       },
       alex,
     );
-    let items = store.snapshot().taskTemplates;
-    assert.equal(items.length, templateSeeds.length + 1);
+    let items = notificationsOf(store);
+    assert.equal(items.length, notif.length + 1);
     const custom = items.find((i) => i.id === id)!;
-    assert.equal(custom.sortOrder, templateSeeds.length + 1);
+    assert.equal(custom.sortOrder, notif.length + 1);
 
     // Duplicate wording in the same list is refused.
     assert.throws(
@@ -217,8 +226,8 @@ test("checklist items can be added, removed and restored, and a manual task is l
     store.applyTemplate({ projectId: "notifications", itemIds: [id] }, jamie);
     const task = store.snapshot().tasks[0];
     store.deleteTemplateItem(id, custom.version, jamie);
-    items = store.snapshot().taskTemplates;
-    assert.equal(items.length, templateSeeds.length);
+    items = notificationsOf(store);
+    assert.equal(items.length, notif.length);
     assert.equal(store.snapshot().deletedTaskTemplates.length, 1);
     assert.equal(store.snapshot().tasks.length, 1);
     assert.equal(store.snapshot().tasks[0].title, "Gym membership");
@@ -240,7 +249,7 @@ test("checklist items can be added, removed and restored, and a manual task is l
 test("checklist writes are validated, attributed and confined to their project", () => {
   const { sqlite, store } = setup();
   try {
-    const item = store.snapshot().taskTemplates[0];
+    const item = notificationsOf(store)[0];
     assert.throws(
       () =>
         store.applyTemplate({ projectId: "probate", itemIds: [item.id] }, alex),
@@ -305,15 +314,129 @@ test("checklist writes are validated, attributed and confined to their project",
       (error: unknown) =>
         error instanceof RecordError && error.code === "conflict",
     );
-    assert.equal(
-      store.snapshot().taskTemplates[0].title,
-      "Tell Us Once (edited)",
-    );
+    assert.equal(notificationsOf(store)[0].title, "Tell Us Once (edited)");
     const audit = store
       .snapshot()
       .revisions.filter((r) => r.entity === "template_item");
     assert.equal(audit.length, 1);
     assert.equal(audit[0].actor, alex);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("the probate list is seeded, tailored, and states no rules or figures", () => {
+  const { sqlite, store } = setup();
+  try {
+    const items = probateOf(store);
+    assert.equal(items.length, probate.length);
+    assert.equal(items[0].title, "Confirm whether a grant is needed at all");
+
+    const titles = items.map((i) => i.title).join(" | ");
+    const text = items.map((i) => `${i.title} ${i.detail}`).join(" ");
+
+    // Written for an English estate, without a solicitor, and pointed at the
+    // authorities rather than quoting rules that change.
+    assert.match(titles, /grant is needed/i);
+    assert.match(titles, /will/i);
+    assert.match(titles, /statement of truth/i);
+    assert.match(titles, /Inheritance Tax account/i);
+    assert.match(titles, /advertising for unknown creditors/i);
+    assert.match(text, /GOV\.UK/);
+    assert.match(text, /no solicitor is required|handled without one/i);
+    assert.match(text, /deliberately does not calculate tax/i);
+    assert.match(
+      text,
+      /English estate|probate registry|letters of administration/i,
+    );
+
+    // No money thresholds, rates or fees are baked in, so nothing goes stale
+    // and the app is not offering a calculation.
+    assert.doesNotMatch(text, /£|percent|40%|325,000|175,000|500,000/);
+    assert.doesNotMatch(text, /\b\d{3,}\b/);
+
+    // It is a list, not work: applying nothing creates nothing.
+    assert.equal(store.snapshot().tasks.length, 0);
+
+    // A selection applies to the probate project and skips on a second run.
+    const chosen = [
+      items.find((i) => i.id === "probate-find-will")!,
+      items.find((i) => i.id === "probate-value-estate")!,
+      items.find((i) => i.id === "probate-iht-forms")!,
+    ].map((i) => i.id);
+    const first = store.applyTemplate(
+      { projectId: "probate", itemIds: chosen },
+      alex,
+    );
+    assert.deepEqual(first.added, chosen);
+    const second = store.applyTemplate(
+      { projectId: "probate", itemIds: chosen },
+      jamie,
+    );
+    assert.deepEqual(second.added, []);
+    assert.deepEqual(second.skipped, chosen);
+
+    const tasks = store.snapshot().tasks;
+    assert.equal(tasks.length, 3);
+    assert.ok(tasks.every((t) => t.projectId === "probate"));
+    assert.ok(tasks.every((t) => t.assignee === null && t.dueDate === null));
+
+    // The two lists are independent: notifications is untouched by this.
+    assert.equal(
+      store.snapshot().tasks.filter((t) => t.projectId === "notifications")
+        .length,
+      0,
+    );
+    assert.equal(notificationsOf(store).length, notif.length);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("both starter lists are seeded together and stay independent", () => {
+  const { sqlite, store } = setup();
+  try {
+    store.seedTemplates();
+    const all = store.snapshot().taskTemplates;
+    assert.equal(all.length, notif.length + probate.length);
+    assert.equal(all.filter((i) => i.projectId === "funeral").length, 0);
+
+    // Items never move between lists.
+    const item = probateOf(store)[0];
+    assert.throws(
+      () =>
+        store.saveTemplateItem(
+          {
+            id: item.id,
+            version: item.version,
+            projectId: "notifications",
+            title: item.title,
+            detail: item.detail,
+          },
+          alex,
+        ),
+      /stays with its project/,
+    );
+
+    // The same wording may exist in two different lists.
+    const id = store.saveTemplateItem(
+      {
+        projectId: "funeral",
+        title: "Tell Us Once",
+        detail: "Shared wording.",
+      },
+      jamie,
+    );
+    assert.ok(id);
+    assert.equal(
+      store.snapshot().taskTemplates.filter((i) => i.title === "Tell Us Once")
+        .length,
+      2,
+    );
+    const funeral = store
+      .snapshot()
+      .taskTemplates.find((i) => i.projectId === "funeral")!;
+    assert.equal(funeral.sortOrder, 1);
   } finally {
     sqlite.close();
   }
