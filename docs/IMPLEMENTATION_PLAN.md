@@ -1,6 +1,82 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. Foundation implementation has started; persistent user-facing workflows are not yet implemented.
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow is implemented and has been tried successfully by the user. The application is still in development, not ready for real estate information or production use.
+
+## Start here — conversation handover (16 September 2026)
+
+### User feedback and working style
+
+- The user has tried the core workflow and confirmed that it works.
+- The user explicitly approves the current layout, logical navigation, and calm default theme. Preserve these rather than redesigning the app.
+- The user is new to agent-assisted development. Explain milestones, testing, previews, commits, PRs, and merges in plain English. Clearly distinguish completed work from planned features.
+- Product decisions in the README are agreed. Do not restart the requirements questionnaire unless a genuinely new decision is needed.
+
+### Progress at a glance
+
+| Stage | Status | Remaining work |
+|---|---|---|
+| 1. Foundation | Implemented baseline | Full accessibility/security review, additional-theme coverage, and real Cloudflare/Unraid verification remain |
+| 2. Shared records | Core workflow implemented and user-tested | Project creation/renaming, organisation-project links, recoverable bin, safe restoration and deletion behaviour |
+| 3. Documents | Not implemented | Uploads, reusable links, friendly names, metadata search, protected downloads |
+| 4. Finances | Not implemented | Inventory, transactions, reimbursements, distributions, summaries, exports |
+| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture and responsive screens exist; templates, install metadata and complete accessibility polish remain |
+| 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
+
+### Next recommended work
+
+Finish Stage 2 before starting document uploads:
+
+1. Add project creation and renaming without changing the approved visual style. Add organisation-to-project links; organisations can belong to multiple projects, tasks to one optional project.
+2. Implement a recoverable bin and safe restoration for ordinary records, with no automatic purge. Do not cascade-delete linked notes, tasks, or documents when removing an organisation.
+3. Define and test permanent-deletion handling, linked-record behaviour, retained revision metadata, and stale-edit checks before exposing destructive controls. Financial records, once implemented, must retain correction/void history rather than permit normal permanent erasure.
+4. Extend automated and browser tests, then ask the user to try the new workflows.
+5. Continue to Stage 3: locally stored documents with friendly names and reusable links.
+
+### Where to find the current implementation
+
+- `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, history and demo-user switch.
+- `src/components/record-form.tsx`: organisation, interaction and task forms, follow-ups, conflict/draft recovery.
+- `src/components/record-summary.tsx`: readable history and comparison fields.
+- `src/app/actions.ts`: authenticated server actions.
+- `src/lib/records/store.ts`: transactional writes, relationship checks, revision history, optimistic version checks and resolution warnings.
+- `src/lib/records/validation.ts`: input schemas, statuses and date helpers.
+- `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations. Add migrations; do not replace the existing history.
+- `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
+- `src/app/globals.css` and `src/themes/index.ts`: approved theme and theme-extension foundation.
+- `tests/`: unit/integration tests and the two-user browser workflow.
+
+### Restarting and checking the app
+
+Do not assume the previous conversation's live server, dependencies, browser installation, or fictional database survived into the next workspace. Check the environment first.
+
+```bash
+npm ci
+DATABASE_PATH=./data/demo.sqlite npm run db:migrate
+DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev -- --port 3000
+```
+
+Use the agent's long-running process tool for the development server. It binds to `0.0.0.0`; the configuration permits Arena preview hosts. Use fictional information only. Demo mode always uses `data/demo.sqlite`, separate from the production database. The development-only Alex/Jamie switch lets the user try attribution and shared activity. There is no required example-data seed; a new demo database starts empty except for starter projects.
+
+```bash
+npm test
+npm run typecheck
+npm run format:check
+NEXT_TELEMETRY_DISABLED=1 npm run build
+npm audit --omit=dev
+# With the demo server running and a compatible Chromium installed:
+npm run test:e2e
+```
+
+At the last implementation checkpoint, 16 unit/integration tests, the two-user Chromium workflow, TypeScript, formatting and the production build passed. Production dependency audit reported zero findings; four moderate development-only Drizzle/esbuild findings remained. These are historical results: rerun relevant checks after changes. Browser downloads were blocked in the previous sandbox, so a locally extracted Chromium was used; do not assume its temporary executable exists in a new session. Browser tests create fictional records in the demo app.
+
+### GitHub handover
+
+- Repository: `dougalbob/estate-tracking`.
+- Current draft PR: [#1 — Build Estate Organiser](https://github.com/dougalbob/estate-tracking/pull/1).
+- The core-workflow implementation was published as commit `0d7332c` on `arena/01a0a93b-estate-tracking`.
+- `main` has not been updated. Keep the PR in draft and do not merge as part of this handover.
+- At the start of a new Arena session, inspect `git status`, branch history and the PR. Follow the branch assigned to that session; do not assume a new conversation automatically resumes the same branch or live preview.
+- The user prefers milestone commits/pushes, testing throughout, and a reviewed merge when the agreed release is ready. Explain any branch/PR difference before publishing subsequent work.
 
 ## 1. Foundation, identity, and themed shell
 
