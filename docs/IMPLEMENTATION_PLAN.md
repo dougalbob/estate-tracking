@@ -1,6 +1,6 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. No application functionality is implemented yet.
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. Foundation implementation has started; persistent user-facing workflows are not yet implemented.
 
 ## 1. Foundation, identity, and themed shell
 
@@ -91,3 +91,11 @@ No further product questionnaire is required before starting. Resolve technical 
 ## Release gate
 
 All six stages are required for the polished initial release. Run unit/integration tests, critical two-user end-to-end workflows, accessibility checks, authentication bypass checks, production container smoke tests, and a clean restore exercise. Record actual results and outstanding limitations; do not describe planned features as shipped.
+
+## Foundation checkpoint — 16 September 2026
+
+Implemented: Next.js 16.3.5/React shell, semantic default-theme tokens and registry, responsive fictional overview, explicit development identity, JWT verification and two-user allowlist, initial organisation migration, and database connection foundation.
+
+Verified: eight automated authentication/database tests; TypeScript check; production build; HTTP checks for fictional preview rendering and a protected production page despite a spoofed email header. Migration applied successfully and repeat-application tested in memory. Production dependency audit: zero findings. Development tooling: four moderate findings in the Drizzle/esbuild chain remain unresolved.
+
+Not yet verified: full browser/accessibility review, live Cloudflare identity exchange, Unraid deployment, and additional-theme coverage. There are no record-write endpoints, uploads, backups, or functional task/note forms yet. The preview is explicitly layout-only. Stage 1 is not claimed complete.
