@@ -53,6 +53,7 @@ import {
   type FinanceRecordEditor,
 } from "./finance-forms";
 import { ProjectChecklist } from "./checklist";
+import { BackupPanel } from "./backup-panel";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
 import {
@@ -1016,7 +1017,9 @@ export function Workspace({
                   ? "Recoverable bin"
                   : view === "finances"
                     ? "Estate finances"
-                    : "Documents";
+                    : view === "backup"
+                      ? "Backup & restore"
+                      : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
@@ -1109,6 +1112,7 @@ export function Workspace({
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
             { id: "finances", title: "Estate finances", icon: Wallet },
+            { id: "backup", title: "Backup & restore", icon: ArchiveRestore },
             {
               id: "bin",
               title: `Recoverable bin${binCount ? ` (${binCount})` : ""}`,
@@ -1179,7 +1183,9 @@ export function Workspace({
                       ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
                       : view === "finances"
                         ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
-                        : "Everything you need, shared between the two of you."}
+                        : view === "backup"
+                          ? "Create an encrypted recovery copy, or validate one before restoring it."
+                          : "Everything you need, shared between the two of you."}
               </p>
             </div>
             <div className="row-actions">
@@ -2061,6 +2067,7 @@ export function Workspace({
               ))}
             </>
           )}
+          {view === "backup" && <BackupPanel />}
           {view === "finances" && (
             <>
               <div className="finance-grid">
