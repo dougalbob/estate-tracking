@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789550556967,
+      "tag": "0000_orange_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789551280812,
+      "tag": "0001_brief_martin_li",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789553000000,
+      "tag": "0002_add_bin_and_project_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789554000000,
+      "tag": "0003_add_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789564204227,
+      "tag": "0004_zippy_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1789566527613,
+      "tag": "0005_curvy_mattie_franklin",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,163 +1,224 @@
-# Estate Settler
+# Estate Organiser
 
 > A calm, private web app to help two people navigate the logistics of settling a personal estate after the death of a parent.
 
-## Overview
+## Status and purpose
 
-Estate Settler is a self-hosted tool built for the specific, overwhelming period that follows a bereavement. It combines a **contact manager**, **task tracker**, and **project organiser** into one place so that nothing falls through the cracks while you're dealing with everything else.
+**Core workflow, project management, and recoverable deletion now implemented.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
-Designed for **two users** (e.g., siblings) sharing the workload, the app runs on a local [Unraid](https://unraid.net) server and is accessed through a **Cloudflare Zero Trust** tunnel — no public sign-up, no cloud database, no third-party SaaS.
+The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery will be staged, but these are all core requirements. This is a fresh start with no existing data to import; funeral arrangements and estate administration are both outstanding.
 
-> **Design principle:** Calm, clear, low-cognitive-load UI. This is a grief-adjacent tool used during one of life's most stressful periods. Every screen should reduce anxiety, not add to it.
+The app serves **one estate in England and exactly two equal users/beneficiaries**. Everything is shared. There is no public registration, additional role system, private-to-one-user data, or multi-estate support.
 
----
+It runs on an Unraid server, accessed through Cloudflare Zero Trust with Google authentication. It organises user-entered facts and confirmed deadlines; it does not provide legal advice, calculate tax, determine debt priority, calculate inheritance entitlement, or recommend safe distributions.
 
-## Key Features
+## Design and navigation
 
-### 📇 Institutions & Contacts
-- Add and manage organisations that need to be notified of the death — DWP, HMRC, pension providers, banks, utility companies, councils, etc.
-- Status tags per contact: `Not Contacted` → `In Progress` → `Awaiting Response` → `Resolved`
-- Full contact details, reference numbers, and free-text notes per institution.
+Every screen should reduce cognitive load rather than create pressure.
 
-### 📝 Interaction History
-- Log every phone call, email, letter, or web form against each contact.
-- Each entry is **automatically timestamped** and **tagged with the logged-in user** (via Cloudflare Zero Trust identity — no manual selection required).
-- Attach screenshots, PDFs, and scanned documents to any history entry.
+- Default appearance: warm off-white surfaces, readable dark text, muted teal accents, generous spacing, restrained icons, and large mobile tap targets.
+- Status is communicated with text as well as colour.
+- No gamification, celebratory animations, or alarming overdue counters. Outstanding work must still be clearly visible.
+- Responsive on desktop, tablets, and phones; installable where supported.
+- **Online only:** no offline access or offline caching of private records or documents.
+- Home prioritises due tasks, follow-ups, and approaching confirmed deadlines, followed by the other user's recent activity.
+- Clear home-screen access to contacts, all tasks, and the document list.
+- Global quick-note action available from every main screen.
 
-### ⏰ Deadlines & Timeline
-- Track hard legal and administrative deadlines (e.g., registering the death within 5 days, Inheritance Tax at 6 months, probate timelines).
-- Visual "upcoming deadlines" dashboard so nothing is missed.
+### Theme-ready architecture
 
-### ✅ Checklist Templates
-- Pre-built UK-centric checklists seeded on first run (e.g., "Tell Us Once" service, notifying banks, redirecting post, cancelling subscriptions, DVLA).
-- Fully editable — add, remove, or reassign tasks between the two users.
+Adding themes later must not require restyling individual screens.
 
-### ⚰️ Funeral Arrangements (Project)
-- Dedicated project space for funeral logistics.
-- Track funeral directors, celebrants, caterers, florists, venues, and other suppliers.
-- Interaction history and document attachments per supplier, same as the main contact manager.
+- Use central semantic design tokens for backgrounds, surfaces, text, borders, actions, focus indicators, and status colours, plus shared typography, spacing, and radius tokens.
+- Components consume these tokens rather than hard-coded palette values, including charts and financial summaries.
+- Define themes in a central registry and apply them at the app root using CSS variables.
+- Ship one polished default theme initially. Additional themes, including dark mode, and a user-facing theme selector are future additions, not first-release requirements.
+- Every theme must preserve readable contrast, visible focus, and non-colour status cues.
 
-### ⚖️ Probate & Estate Settlement (Project)
-- List and categorise assets (property, savings, investments, possessions) and liabilities (mortgages, loans, debts).
-- Running **assets vs. liabilities summary** — useful when completing IHT forms.
-- Export asset/liability lists to **CSV / spreadsheet format** for solicitors or HMRC.
-- Dedicated contacts section for solicitors, probate registries, and financial advisors.
+## Contacts and interactions
 
-### 🗄️ Document Vault
-- Central store for critical documents: death certificates, the Will, Grant of Probate, property deeds, etc.
-- Categorised and searchable, with the ability to attach files to specific contacts or projects as well.
+### Organisations
 
-### 📊 Activity Feed
-- Chronological feed of all actions across the app (e.g., *"Sarah called Scottish Power — 14 Jun 10:32"*).
-- Auto-attributed to the acting user. Prevents duplicate effort and "did you already handle that?" conversations.
+One record per organisation, with name, main contact name, phone number(s), email, account/reference details, and free-text notes. No separate people directory or multiple-account model is required.
 
-### ⚡ Quick Capture
-- Prominent "quick add note" button available from any screen.
-- Auto-timestamps and auto-assigns to the current user — designed for when you're on the phone and need to jot down a reference number *right now*.
+Statuses: **Not Contacted → In Progress → Awaiting Response → Resolved**.
 
-### 📱 PWA / Mobile Support
-- Installable as a Progressive Web App on phones and tablets.
-- Responsive UI that is equally comfortable on a laptop, desktop, or mobile device.
+Status changes are manual and independent of tasks. Resolving an organisation with open tasks gives a warning; it does not close them. Organisations can link to multiple projects.
 
----
+### Interaction history
 
-## Tech Stack
+Calls, emails, letters, and web forms can be logged against an organisation. Each interaction includes:
 
-| Layer | Technology |
+- Title and full detail.
+- Interaction date/time, defaulting to now but editable for retrospective entries.
+- Separate, automatically captured creation time and creating user.
+- Optional attachments with friendly names.
+- Zero or more follow-up tasks, each with an action, optional owner, and relevant dates.
+
+For example: create Bank1 and its reference details, log a call, attach a document, and create linked tasks to send a certificate and chase a reply. Follow-ups appear in the normal task list and on the home screen when relevant.
+
+### Quick capture
+
+Quick notes accept an optional title and free-text detail, with automatic time and user attribution. Organisation and attachments are optional. Unlinked notes appear in an **Unfiled notes** list and can be linked or given follow-up tasks later.
+
+## Tasks, dates, and projects
+
+- Tasks may stand alone, optionally link to an organisation and source interaction, and have one optional project.
+- Assign to either user or leave unassigned.
+- States: **To do, In progress, Waiting, Done, Cancelled**.
+- Distinguish a **due date** (action needed), **follow-up date** (check/chase), and **confirmed deadline** (a firm date entered by a user).
+- Waiting tasks resurface on their follow-up date.
+- No automatic calculation of legal deadlines.
+- Reminders are in-app only; no email or browser/push notifications.
+
+Starter projects are **Funeral**, **Notifications**, and **Probate & Estate Administration**. Users may rename them and create more, such as House Clearance. Contacts and documents may link to multiple projects; tasks and financial records have one optional project.
+
+### Checklist templates
+
+Provide editable, England-relevant starter checklists for the three starter projects. Users review and select tasks to add rather than receiving a large automatically populated workload. Do not assign dates automatically. Reapplying a template must avoid accidental duplicate tasks.
+
+Templates may cover Tell Us Once, banks, post redirection, subscriptions, DVLA, funeral suppliers, and estate administration. They are organisational suggestions, not legal instructions or a guarantee of completeness.
+
+Implemented so far: three lists, each written for this estate. The **Notifications** list (16 suggestions: a private pension rather than an employer scheme, no mortgage, gas and electricity with one supplier, broadband and mobile listed separately, and the registration appointment at the top), the **Probate & Estate Administration** list (21 suggestions for an English estate being handled without a solicitor), and the **Funeral** list (25 suggestions for a non-denominational cremation service led by a celebrant, with a wake at a local pub). Lists live in the database, so any line can be reworded, removed, or added to. Each project shows its list collapsed behind a "Starter checklist" summary; nothing is created until items are ticked and added, no dates or owners are set, and anything already in that project – including a task created from the same suggestion – is marked **Already added** and skipped on re-application. Removing a suggestion never touches tasks already created from it, and removed suggestions go to the recoverable bin. The probate list covers confirming whether a grant is needed, the will and who applies, valuing the estate and property at the date of death, balances and lifetime gifts, confirming with HMRC whether an Inheritance Tax account is needed, applying for the grant and signing the statement of truth, the fee and extra copies, registering the grant, paying debts, the property, estate accounts, income reporting, advertising for unknown creditors, distributions, and knowing when to get advice.
+
+The funeral list covers registration and certificates, the separate cremation certificate, choosing a funeral director and agreeing the day, the celebrant and the tribute, the shape of the service, music, order of service, photographs, flowers or donations, what she will wear, transport, the wake venue and catering, telling people, a death notice, guests, dress, recording the costs in Estate finances, the day before, the ashes, and looking after each other afterwards.
+
+Neither list quotes a threshold, rate, fee or figure: each line points at GOV.UK or HMRC to confirm the current position, and the app performs no tax calculation. Unit tests enforce this, and also check that the funeral wording assumes no religious service and no burial.
+
+## Documents
+
+- Store files locally, including PDFs, screenshots, and scanned documents.
+- Upload independently or while recording an interaction.
+- Give documents friendly names and categories.
+- Store a document once and link it to multiple organisations, interactions, projects, or relevant financial records.
+- Search by name, category, and associated records; no OCR or content search is required.
+- Removing a link must not delete the underlying document or its other links.
+- All document access requires the same authorisation as the rest of the app.
+
+## Estate finances
+
+**GBP only.** Record and summarise facts without tax or entitlement calculations.
+
+- Categorised assets, estimated values, and eventual actual sale proceeds.
+- Liabilities, outstanding amounts, and payments.
+- Estate money received and paid out.
+- Funeral and administration expenses personally paid by either user.
+- Reimbursements owed and settled, including partial repayments.
+- Distributions recorded against either beneficiary, without enforcing a 50/50 split.
+- Financial records can link to organisations, projects, invoices, and receipts.
+- Separate summaries for assets versus liabilities, cash movements, and personal amounts awaiting reimbursement.
+- Reimbursement settles money owed to a user; it must not count the original expense again.
+- Export asset/liability lists and financial records to CSV for spreadsheet use.
+
+Implemented behaviour:
+
+- Every amount is stored as an integer number of pence. Pounds are only an input and display format, so totals never drift.
+- Five record types: **asset** (estimated value, then actual sale proceeds), **liability** (amount owed, then payments), **income**, **expense** (paid from the estate or personally by Alex or Jamie), and **distribution** (recorded against either beneficiary).
+- Proceeds and payments are recorded as separate movements against the asset or liability, so the estimate stays alongside what actually happened.
+- Reimbursements are movements against a personally paid expense. A GBP 500 expense with GBP 200 reimbursed leaves GBP 300 owed, and only one expense exists in the totals. Part payments are recorded as they happen; the app refuses a reimbursement that would exceed the amount owed, and refuses to reimburse an expense the estate paid directly. Liability payments have the same limit — correct the recorded amount first if it has changed.
+- Corrections keep every previous version, its author and the time. **Voiding** (with a required reason) keeps a record visible, out of the totals, and can be reinstated. Financial records can be moved to the recoverable bin and restored, but they are **never permanently deleted** through the app: the server refuses, and the bin shows "Correct or void instead".
+- Distributions are recorded as they happened, with no assumed 50/50 split.
+- CSV downloads (assets and liabilities, cash movements, reimbursements owed) are generated on the server after the same authentication check. Text that a spreadsheet could treat as a formula is prefixed with an apostrophe and quoted; money is exported as plain decimals with money in and money out in separate columns, so nothing relies on negative numbers.
+- No tax, debt-priority, or entitlement calculation appears anywhere in the summaries.
+
+For fictional demo rows on the finances screens:
+```bash
+DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-finances.ts
+```
+The script refuses to run against a database path that does not contain `demo`.
+
+## Shared history, corrections, and recovery
+
+- Chronological activity feed with automatic actor attribution.
+- Edits retain previous versions, editor identity, and timestamps, with a discreet edited indicator and accessible history.
+- Both users can edit shared records.
+- Detect concurrent edits: never silently overwrite the other user's changes; preserve the unsaved draft for review.
+- Ordinary deletions go into a recoverable bin with no automatic purge. Permanent deletion needs explicit confirmation.
+- Deleting an organisation must not cascade-delete its interactions, documents, or finances.
+- Financial corrections and voids retain a visible history; no permanent erasure through the normal interface.
+
+## Authentication and privacy
+
+There is no built-in login/password system. Cloudflare Access authenticates the two users through Google.
+
+- Validate the Cloudflare Access JWT on the server: signature, expected issuer and audience, expiry, and membership in the configured two-user allowlist.
+- Attribute actions using the verified identity, not an unverified email header or client-supplied actor.
+- Restrict direct access to the origin so the tunnel is the intended entrance. Document downloads and all data operations remain protected independently of UI navigation.
+- Missing or invalid authentication fails closed.
+- An explicit development-only mock identity is permitted locally, but must be unavailable in production. Never silently fall back to a test user.
+
+Primary database and document storage remain on Unraid. Remote traffic passes through Cloudflare, and Google participates in authentication; it would be inaccurate to claim all data always stays on the local network. User-managed encrypted backups also leave the server. No hosted database or analytics service is planned.
+
+## Backups and deployment
+
+Target deployment: a single application Docker container on Unraid, with persistent SQLite and document storage in a mapped data volume. Cloudflare tunnel configuration is separate infrastructure.
+
+- Create a consistent backup of both database and documents, encrypted before download.
+- Initial workflow: manually download to the user's laptop, then copy to cloud storage.
+- Keep the recovery password safely outside the app. Losing it can make the backup unrecoverable.
+- Show when a backup was successfully created; do not claim that laptop/cloud copies succeeded without evidence.
+- Supply restoration instructions and test a full restore before release.
+- Scheduled transfer to a laptop is not part of the initial workflow.
+
+Docker commands, environment variables, retention/storage limits, and operational details will be documented when implemented. A raw copy of a live SQLite file is not an adequate backup strategy.
+
+## Proposed technology
+
+| Layer | Direction |
 |---|---|
-| Framework | Next.js 15 (App Router) |
+| Framework | Next.js App Router |
 | Language | TypeScript |
 | ORM | Drizzle |
 | Database | SQLite (`better-sqlite3`) |
-| Styling | Tailwind CSS |
-| UI Components | shadcn/ui |
-| PWA | `@ducanh2912/next-pwa` |
-| Auth | Cloudflare Zero Trust (header-based) |
+| Styling | Tailwind CSS with semantic CSS-variable theme tokens |
+| UI components | shadcn/ui |
+| Mobile installation | Web app manifest; no sensitive offline caching |
+| Authentication | Server-verified Cloudflare Access JWTs |
 | Deployment | Docker on Unraid |
 
----
+The original proposal specified Next.js 15 and a PWA plugin. Before scaffolding, check current supported, patched framework versions and dependency compatibility. Offline support is no longer a requirement, so a caching plugin is not assumed necessary.
 
-## Authentication
+## Development
 
-There is **no built-in login system**. The app sits behind a [Cloudflare Zero Trust](https://developers.cloudflare.com/cloudflare-one/) tunnel with Google identity provider configured.
-
-- Cloudflare authenticates the user via their Google account before the request ever reaches the app.
-- The user's email is passed to the app via the `Cf-Access-Authenticated-User-Email` request header.
-- Next.js middleware reads this header to identify the current user.
-- Both authorised users have **full access** to all features; the identity is used solely for **attribution** (who created a note, who completed a task, etc.).
-
----
-
-## Deployment
-
-The app is designed to run as a single Docker container on a local **Unraid** server.
+Requires Node.js 22 or newer.
 
 ```bash
-# Example (details TBD)
-docker run -d \
-  --name estate-settler \
-  -p 3005:3005 \
-  -v /mnt/user/appdata/estate-settler/data:/app/data \
-  estate-settler:latest
+npm ci
+DATABASE_PATH=./data/demo.sqlite npm run db:migrate
+# Fictional data only; never use this mode for real estate information
+DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev
 ```
 
-- The SQLite database file lives in the mapped `/app/data` volume.
-- Back up this directory regularly (e.g., via Unraid's CA Backup plugin or a cron job running `sqlite3 .backup`).
+Demo mode always uses `./data/demo.sqlite`, regardless of `DATABASE_PATH`, so fictional records do not mix with the production database. The “Try as Alex/Jamie” control is development-only and lets you test attribution and the activity feed; it is unavailable in production.
 
----
-
-## Data & Privacy
-
-- **All data stays on your local network.** Nothing is sent to a third-party database or SaaS provider.
-- The only external service involved is Cloudflare (for the Zero Trust tunnel and Google authentication).
-- Uploaded documents (PDFs, screenshots) are stored locally alongside the database.
-- **Backup this data.** It is irreplaceable.
-
----
-
-## Project Status
-
-🚧 **Early development.** This project is being built iteratively to meet an immediate real-world need.
-
-### Roadmap (approximate)
-
-- [ ] Core contact manager with interaction history
-- [ ] Cloudflare Zero Trust user identification
-- [ ] Task assignment and status tracking
-- [ ] Funeral arrangements project
-- [ ] Probate & estate settlement project with asset/liability tracking
-- [ ] Document vault and file uploads
-- [ ] Deadline tracker
-- [ ] CSV/spreadsheet export
-- [ ] PWA manifest and offline-read support
-- [ ] Activity feed and quick capture
-- [ ] UK checklist templates
-
----
-
-## Getting Started (Development)
+The development server binds to `0.0.0.0:3000` and allows Arena preview hosts. Do not expose development mode as a real estate installation. `.env.example` documents the production identity settings; configure those through your deployment environment. Database CLI commands read exported environment variables (they do not load `.env.local` themselves).
 
 ```bash
-# Clone the repo
-git clone https://github.com/dougalbob/estate-settler.git
-cd estate-settler
-
-# Install dependencies
-npm install
-
-# Set up the local database
-npm run db:push
-
-# Seed UK checklist templates (first run)
-npm run db:seed
-
-# Start the dev server
-npm run dev
+npm test
+npm run typecheck
+NEXT_TELEMETRY_DISABLED=1 npm run build
+npm run db:migrate # Apply migrations to DATABASE_PATH, or ./data/estate.sqlite
+NEXT_TELEMETRY_DISABLED=1 npm start
 ```
 
-> **Note:** During local development without Cloudflare Zero Trust, the app will fall back to a mock user header. See `.env.example` for configuration.
+Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
 
----
+Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, and estate finances in GBP as integer pence with CSV exports, are also implemented. Checklist templates, backups, deployment, install metadata, and a full accessibility/security review are still upcoming; this is **not ready for real estate data or production use**.
+
+### Browser workflow test
+
+With a development preview running, and only fictional data in use:
+
+```bash
+npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
+
+Run `npm run format:check` for source formatting checks. The unit suite (38 tests) covers shared records, documents, and the finance rules described above, including the GBP 500/200/300 reimbursement case, part payments, voids, and CSV formula protection.
+
+Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Full Cloudflare/Unraid, browser accessibility, backup, and restore verification are still outstanding.
 
 ## Licence
 
