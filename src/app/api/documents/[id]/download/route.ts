@@ -3,8 +3,8 @@ import { authConfiguration } from "@/lib/auth/verify";
 import { database } from "@/lib/db";
 import { recordStore } from "@/lib/records/store";
 import { fullPath } from "@/lib/documents/storage";
-import { createReadStream, existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { stat, readFile } from "node:fs/promises";
 
 export async function GET(
   request: Request,
@@ -48,7 +48,8 @@ export async function GET(
 
   try {
     const fileStat = await stat(path);
-    const stream = createReadStream(path);
+    // Read file into buffer to avoid Node stream -> Web stream conversion issues that caused "ReadableStream is already closed"
+    const buffer = await readFile(path);
 
     const safeMime =
       doc.mimeType.startsWith("image/") || doc.mimeType === "application/pdf"
@@ -60,21 +61,22 @@ export async function GET(
         ? "attachment"
         : "inline";
 
-    // Proper Content-Disposition: filename is quoted-string (escape quotes), filename* is UTF-8 encoded for save dialog
     const safeOriginal = doc.originalName.replace(/"/g, '\\"').replace(/[\r\n]/g, "");
     const encoded = encodeURIComponent(doc.originalName);
     const disposition = `${dispositionType}; filename="${safeOriginal}"; filename*=UTF-8''${encoded}`;
 
-    return new Response(stream as unknown as BodyInit, {
+    return new Response(buffer as unknown as BodyInit, {
       headers: {
         "Content-Type": safeMime,
         "Content-Length": fileStat.size.toString(),
         "Content-Disposition": disposition,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer",
       },
     });
-  } catch {
+  } catch (e) {
+    console.error("[download route] failed", e);
     return new Response("Unable to read file", { status: 500 });
   }
 }
