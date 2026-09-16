@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>estate-organiser</Name>
+  <Repository>ghcr.io/dougalbob/estate-organiser:latest</Repository>
+  <Registry>https://ghcr.io/</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/dougalbob/estate-tracking</Support>
+  <Project>https://github.com/dougalbob/estate-tracking</Project>
+  <Overview>Private, self-hosted Estate Organiser for two siblings administering an English estate. Keep the container behind Cloudflare Tunnel and Cloudflare Access. Create /mnt/user/appdata/estate-organiser/estate.env before starting.</Overview>
+  <Category>Other:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/dougalbob/estate-tracking/main/docs/estate-organiser-icon.svg</Icon>
+  <ExtraParams>--init</ExtraParams>
+  <Config Name="App data" Target="/data" Default="/mnt/user/appdata/estate-organiser" Mode="rw" Description="Persistent database, uploaded documents, and estate.env. The v1 container runs as root, so files created here will be owned by root." Type="Path" Display="always" Required="true" Mask="false" />
+  <Config Name="Web UI" Target="3000" Default="3000" Mode="tcp" Description="Estate Organiser HTTP port. Publish this only on the Unraid LAN; Cloudflare Tunnel should be the public entrance." Type="Port" Display="always" Required="true" Mask="false" />
+</Container>
