@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { X, Plus } from "lucide-react";
 import { RecordSummary } from "./record-summary";
 import { Button } from "./ui/button";
-import { saveRecord } from "@/app/actions";
+import { saveRecord, linkDocument } from "@/app/actions";
 import type { Snapshot } from "@/lib/records/store";
 import {
   label,
@@ -56,6 +56,16 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     : [];
   const [selectedProjects, setSelectedProjects] =
     useState<string[]>(linkedProjectIds);
+
+  // Document edit – existing links + quick add selectors for polished UX
+  const existingDocLinks =
+    editor.kind === "document" && editor.id
+      ? data.documentLinks.filter((l) => l.documentId === editor.id)
+      : [];
+  const [docLinkOrg, setDocLinkOrg] = useState<string>("");
+  const [docLinkProject, setDocLinkProject] = useState<string>("");
+  const [docLinkTask, setDocLinkTask] = useState<string>("");
+  const [docLinkSaving, setDocLinkSaving] = useState(false);
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
       onClose();
@@ -236,6 +246,32 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     try {
       const result = await saveRecord(editor.kind, input);
       if (result.ok) {
+        // For documents, also create optional links selected in the polished edit UI
+        if (editor.kind === "document") {
+          setDocLinkSaving(true);
+          const linksToCreate: Array<{ organisationId?: string | null; projectId?: string | null; taskId?: string | null }> = [];
+          if (docLinkOrg) linksToCreate.push({ organisationId: docLinkOrg });
+          if (docLinkProject) linksToCreate.push({ projectId: docLinkProject });
+          if (docLinkTask) linksToCreate.push({ taskId: docLinkTask });
+          for (const link of linksToCreate) {
+            try {
+              const res = await linkDocument({
+                documentId: result.id,
+                organisationId: (link as any).organisationId ?? null,
+                projectId: (link as any).projectId ?? null,
+                taskId: (link as any).taskId ?? null,
+                interactionId: null,
+              });
+              if (!res.ok) {
+                // Duplicate link is fine – ignore, but show other errors
+                if (!res.error.toLowerCase().includes("already")) {
+                  setError(res.error);
+                }
+              }
+            } catch {}
+          }
+          setDocLinkSaving(false);
+        }
         setDirty(false);
         router.refresh();
         onSaved(result.id);
@@ -297,7 +333,7 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
             <X size={21} />
           </button>
         </div>
-        <fieldset disabled={busy} className="form-fields">
+        <fieldset disabled={busy || docLinkSaving} className="form-fields">
           {editor.kind === "organisation" ? (
             <>
               <label>
@@ -442,20 +478,78 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 </select>
               </label>
               <p className="form-help">
-                The stored file itself is not changed here – only the friendly name and category. To replace the file, upload a new document and link it.
+                The file itself isn&apos;t changed here – only name and category. Links can be added below. Null is fine – not every document needs every link.
               </p>
+
+              {existingDocLinks.length > 0 && (
+                <fieldset className="follow-up">
+                  <legend>Current links – this file is reused</legend>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {existingDocLinks.map((l) => {
+                      const org = l.organisationId ? data.organisations.find((o) => o.id === l.organisationId)?.name : null;
+                      const proj = l.projectId ? data.projects.find((p) => p.id === l.projectId)?.name : null;
+                      const task = l.taskId ? data.tasks.find((t) => t.id === l.taskId)?.title : null;
+                      const note = l.interactionId ? data.interactions.find((i) => i.id === l.interactionId)?.title : null;
+                      return (
+                        <span key={l.id} className="badge" style={{ justifyContent: "flex-start" }}>
+                          {org ? `Contact: ${org}` : proj ? `Project: ${proj}` : task ? `Task: ${task}` : note ? `Note: ${note}` : "Link"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="form-help">Remove links from the Documents list – removing a link never deletes the file.</p>
+                </fieldset>
+              )}
+
+              <fieldset className="follow-up">
+                <legend>Add links – optional, leaner way to reuse</legend>
+                <p className="form-help">Pick any combination – all can be left empty. If a link already exists it will be ignored. This makes the edit feel more polished.</p>
+                <label>
+                  Contact (organisation)
+                  <select
+                    value={docLinkOrg}
+                    onChange={(e) => { setDocLinkOrg(e.target.value); setDirty(true); }}
+                  >
+                    <option value="">No contact link</option>
+                    {data.organisations.map((o) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Project
+                  <select
+                    value={docLinkProject}
+                    onChange={(e) => { setDocLinkProject(e.target.value); setDirty(true); }}
+                  >
+                    <option value="">No project link</option>
+                    {data.projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Task
+                  <select
+                    value={docLinkTask}
+                    onChange={(e) => { setDocLinkTask(e.target.value); setDirty(true); }}
+                  >
+                    <option value="">No task link</option>
+                    {data.tasks.slice(0, 100).map((t) => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                </label>
+              </fieldset>
+
               <dl className="details-grid">
                 <div>
-                  <dt>Original file</dt>
-                  <dd>{value("originalName")}</dd>
+                  <dt>File</dt>
+                  <dd>{value("friendlyName")} – {value("originalName")}</dd>
                 </div>
                 <div>
-                  <dt>Size</dt>
-                  <dd>
-                    {initial.size
-                      ? `${(Number(initial.size) / 1024).toFixed(1)} KB`
-                      : "Unknown"}
-                  </dd>
+                  <dt>Uploaded</dt>
+                  <dd>{initial.createdAt ? new Date(String(initial.createdAt)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Unknown"} by {String(initial.createdBy ?? "").split("@")[0] || "Unknown"}</dd>
                 </div>
               </dl>
             </>
@@ -609,13 +703,13 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
           <Button
             type="button"
             variant="outline"
-            disabled={busy}
+            disabled={busy || docLinkSaving}
             onClick={close}
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+          <Button type="submit" disabled={busy || docLinkSaving}>
+            {busy ? "Saving…" : docLinkSaving ? "Linking…" : "Save"}
           </Button>
         </div>
       </form>
