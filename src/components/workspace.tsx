@@ -92,16 +92,64 @@ function viewDocument(id: string) {
   if (typeof window === "undefined") return;
   window.open(`/api/documents/${id}/download`, "_blank", "noopener,noreferrer");
 }
-function downloadDocument(id: string, originalName?: string) {
+async function downloadDocument(id: string, originalName?: string) {
   if (typeof window === "undefined") return;
   const url = `/api/documents/${id}/download?download=1`;
-  const a = document.createElement("a");
-  a.href = url;
-  if (originalName) a.download = originalName;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  console.log("[download] attempting", url, originalName);
+  // 1) Synchronous anchor with download attr – must be in same tick as click to keep user gesture
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    if (originalName) a.setAttribute("download", originalName);
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try { a.remove(); } catch {} }, 1500);
+  } catch (e) {
+    console.warn("[download] anchor+download failed", e);
+  }
+  // 2) window.open synchronously – View uses this, often works in preview for attachment -> save dialog
+  try {
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    if (win) {
+      console.log("[download] window.open succeeded");
+      // Don't return yet – also try iframe/blob as extra safety
+    } else {
+      console.warn("[download] window.open returned null (popup blocked)");
+    }
+  } catch (e) {
+    console.warn("[download] window.open threw", e);
+  }
+  // 3) Hidden iframe – reliable for attachment downloads inside sandboxed iframes
+  try {
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    setTimeout(() => { try { iframe.remove(); } catch {} }, 6000);
+  } catch (e) {
+    console.warn("[download] iframe failed", e);
+  }
+  // 4) Async fetch blob + object URL – works around many iframe sandbox restrictions, triggers save dialog with original name
+  try {
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = originalName || `document-${id}`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try { URL.revokeObjectURL(blobUrl); a.remove(); } catch {}
+    }, 3000);
+    console.log("[download] blob method succeeded");
+    return;
+  } catch (e) {
+    console.warn("[download] blob method failed", e);
+  }
 }
 
 type DocUploadInitial = {
@@ -546,11 +594,26 @@ export function Workspace({
             type="button"
             onClick={() => downloadDocument(doc.id, doc.originalName)}
             className="subtle-button"
-            title="Download a copy – shows save dialog"
+            title="Download a copy – shows save dialog (tries multiple methods)"
           >
             <Download size={14} />
             Download
           </button>
+          <a
+            href={`/api/documents/${doc.id}/download?download=1`}
+            download={doc.originalName}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="subtle-button"
+            title="Direct link – right-click Save link as if button fails"
+            onClick={(e) => {
+              // Let right-click Save as work, but left-click also triggers JS robust download
+              e.preventDefault();
+              downloadDocument(doc.id, doc.originalName);
+            }}
+          >
+            Direct
+          </a>
           <button className="subtle-button" onClick={() => edit("document", doc.id)}>
             <Pencil size={14} />
             Edit
@@ -1653,17 +1716,48 @@ function DocumentViewerDialog({
           </div>
         )}
       </div>
+      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: "4px" }}>
+        <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
+          If download doesn&apos;t start, use direct link (right-click → Save as):{" "}
+          <a
+            href={`/api/documents/${doc.id}/download?download=1`}
+            download={doc.originalName}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ textDecoration: "underline" }}
+            onClick={(e) => {
+              // Let browser handle natively, but also log
+              console.log("[download] direct anchor clicked");
+            }}
+          >
+            {doc.originalName}
+          </a>
+        </p>
+        <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
+          URL: <code>{`/api/documents/${doc.id}/download?download=1`}</code>
+        </p>
+      </div>
       <div className="form-actions" style={{ justifyContent: "space-between" }}>
         <Button type="button" variant="outline" onClick={onClose}>
           <X size={14} /> Close – back to workspace
         </Button>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <Button type="button" variant="outline" onClick={() => viewDocument(doc.id)}>
             <Eye size={14} /> Open in new tab
           </Button>
           <Button type="button" variant="outline" onClick={() => downloadDocument(doc.id, doc.originalName)}>
             <Download size={14} /> Download – save dialog
           </Button>
+          <a
+            href={`/api/documents/${doc.id}/download?download=1`}
+            download={doc.originalName}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="button button-outline"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "14px" }}
+          >
+            <Download size={14} /> Direct link
+          </a>
         </div>
       </div>
     </dialog>

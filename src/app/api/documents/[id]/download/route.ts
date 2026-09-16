@@ -60,7 +60,10 @@ export async function GET(
         ? "attachment"
         : "inline";
 
-    const disposition = `${dispositionType}; filename="${encodeURIComponent(doc.originalName)}"; filename*=UTF-8''${encodeURIComponent(doc.originalName)}`;
+    // Proper Content-Disposition: filename is quoted-string (escape quotes), filename* is UTF-8 encoded for save dialog
+    const safeOriginal = doc.originalName.replace(/"/g, '\\"').replace(/[\r\n]/g, "");
+    const encoded = encodeURIComponent(doc.originalName);
+    const disposition = `${dispositionType}; filename="${safeOriginal}"; filename*=UTF-8''${encoded}`;
 
     return new Response(stream as unknown as BodyInit, {
       headers: {
