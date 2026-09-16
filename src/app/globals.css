@@ -1041,6 +1041,32 @@ summary {
   border-bottom: 0;
 }
 
+/* Backup and restore – deliberate, low-pressure recovery controls */
+.backup-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.backup-layout .panel {
+  margin: 0;
+  padding: 22px;
+}
+.backup-layout .form-fields {
+  gap: 12px;
+}
+.backup-note {
+  grid-column: 1 / -1;
+}
+.backup-note ul {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.backup-note li + li {
+  margin-top: 8px;
+}
+
 /* Estate finances – calm summaries, all figures from semantic tokens */
 .finance-grid {
   display: grid;
@@ -1136,6 +1162,12 @@ summary {
   }
 }
 @media (max-width: 700px) {
+  .backup-layout {
+    grid-template-columns: 1fr;
+  }
+  .backup-note {
+    grid-column: auto;
+  }
   .finance-grid {
     grid-template-columns: 1fr;
   }

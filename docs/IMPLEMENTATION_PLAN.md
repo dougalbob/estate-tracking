@@ -1,6 +1,6 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, document storage with reusable links, and estate finances in GBP have been implemented and unit-tested. The application is still in development, not ready for real estate information or production use.
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, document storage with reusable links, estate finances in GBP, all three editable checklist templates, the Docker/Unraid deployment package, and encrypted backup/restore have been implemented and unit-tested where applicable. Published-image release verification remains the gate before real estate information is entered.
 
 ## Start here — conversation handover (16 September 2026)
 
@@ -22,15 +22,16 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
 | 5a. Checklist templates | Implemented for the three starter projects – Notifications (16), Probate & Estate Administration (21) and Funeral (25), all editable with duplicate-safe application | Any wording changes the user wants after reading them |
 | 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and all three checklist lists exist; install metadata and complete accessibility polish remain |
-| 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
+| 6. Backups/deployment | Deployment package and encrypted backup/restore implemented | First GitHub Actions image build, live Unraid/Cloudflare verification, and a clean restore through the published image |
 
 ### Next recommended work
 
-Stage 4 is implemented and unit-tested; ask the user to try the finances screen before starting Stage 5.
+The checklist lists, deployment package, and encrypted backup/restore are now implemented. The immediate operational work is to review the image configuration and let the first version-tagged GitHub Actions build prove the Dockerfile on its target platform.
 
-1. Walk the user through the finances screen in the preview: add an asset, sell it, part-pay a liability, record a personally paid expense and part-reimburse it, then download each CSV.
-2. Continue to Stage 5 – attention dashboard, checklist templates, install metadata, and mobile/accessibility polish.
-3. Keep any feedback about finance wording or extra fields together for one small follow-up change rather than redesigning the screen.
+1. Run the local test, typecheck, format, and production-build gates; review the backup format, restore warnings, Dockerfile, entrypoint, compose reference, Unraid template, and health route.
+2. After the deployment change is reviewed and merged to `main`, create a version tag (for example `v0.2.0`), set the first GHCR package to public, and perform the fictional-data Unraid/Cloudflare end-to-end check documented in the README.
+3. Restore that fictional backup through the published image into a clean Unraid data volume and verify records, documents, links, financial totals, and history before any real data entry.
+4. Follow with PWA install metadata and the accessibility/security pass; keep the approved calm layout unchanged.
 
 ### Where to find the current implementation
 
@@ -49,12 +50,14 @@ Stage 4 is implemented and unit-tested; ask the user to try the finances screen 
 - `src/lib/finances/csv.ts` and `src/lib/finances/export.ts`: quoted CSV with apostrophe-prefixed formula protection, UTF-8 BOM, money as plain decimals, `inventory`/`cash`/`reimbursements` views.
 - `src/app/api/finances/export/route.ts`: authenticated CSV download; 401 without a verified Cloudflare identity, 400 for an unknown view, `private, no-store`.
 - `src/lib/records/errors.ts` and `src/lib/records/audit.ts`: shared `RecordError`, `versionConflict`, `assertActor`, and `auditEntry` used by the records, finance and checklist stores.
-- `src/lib/records/checklist-store.ts`: `seedTemplates`, `saveTemplateItem`, `deleteTemplateItem`, `restoreTemplateItem`, `applyTemplate`. Applying creates undated, unassigned tasks in the chosen project and skips anything already there (by `templateItemId` or by normalised title). `src/lib/records/template-seeds.ts` holds the wording – currently the 15-item Notifications list, tailored to the estate and stored so it stays editable.
+- `src/lib/records/checklist-store.ts`: `seedTemplates`, `saveTemplateItem`, `deleteTemplateItem`, `restoreTemplateItem`, `applyTemplate`. Applying creates undated, unassigned tasks in the chosen project and skips anything already there (by `templateItemId` or by normalised title). `src/lib/records/template-seeds.ts` holds the wording – currently the tailored 16-item Notifications, 21-item Probate & Estate Administration, and 25-item Funeral lists, stored so they stay editable.
+- `src/lib/backup/backup.ts`: versioned encrypted archive creation and restore. SQLite's online backup API is held under an immediate write lock while the database snapshot and regular document files are collected; scrypt-derived AES-256-GCM authenticates the archive, and restore validates metadata plus SQLite integrity before replacing data.
 - `src/components/checklist.tsx`: the collapsed `ProjectChecklist` panel inside each project, plus `TemplateItemForm` for rewording, adding and removing suggestions.
+- `src/components/backup-panel.tsx`: authenticated encrypted backup download and destructive restore controls with password handling kept in the browser form only.
 - `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations including `organisation_projects`, `documents`, `document_links`, and `deleted_at` columns. Add migrations; do not replace existing history.
 - `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
 - `src/app/globals.css` and `src/themes/index.ts`: approved calm theme and token foundation; project pills, doc pills, and bin actions reuse existing tokens.
-- `tests/`: 38 unit/integration tests. `tests/records.test.ts` covers Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, and three document tests. `tests/finances.test.ts` covers money parsing/formatting, asset estimate vs proceeds, liability part payments, the GBP 500/GBP 200/GBP 300 reimbursement case with no second expense, over-repayment and non-personal refusals, void/reinstate/correct history, bin and restore with permanent deletion refused, per-beneficiary distributions without a 50/50 assumption, stale-edit conflicts, receipt linking, CSV formula protection and totals separation.
+- `tests/`: 50 unit/integration tests. `tests/records.test.ts` covers Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, and three document tests. `tests/finances.test.ts` covers money parsing/formatting, asset estimate vs proceeds, liability part payments, the GBP 500/GBP 200/GBP 300 reimbursement case with no second expense, over-repayment and non-personal refusals, void/reinstate/correct history, bin and restore with permanent deletion refused, per-beneficiary distributions without a 50/50 assumption, stale-edit conflicts, receipt linking, CSV formula protection and totals separation. Checklist tests cover all three lists, duplicate-safe application, and editable suggestions. `tests/backup.test.ts` covers encrypted database/document inclusion, clean restore, metadata, and wrong-password failure.
 
 ### Restarting and checking the app
 
@@ -78,25 +81,14 @@ npm audit --omit=dev
 npm run test:e2e
 ```
 
-At the latest checkpoint, 25 unit/integration tests, TypeScript, formatting and production build passed. Production dependency audit: zero findings; four moderate dev-only Drizzle/esbuild findings remain. Browser downloads were blocked in Arena preview (sandbox lacks `allow-popups`), solved by blob+iframe+direct link fallbacks. A locally extracted Chromium was used previously for e2e; do not assume its temporary executable exists in a new session. Browser tests create fictional records in demo app.
+At the latest application checkpoint, all 50 unit/integration tests, TypeScript, formatting and the production build passed. Production dependency audit: zero findings; four moderate dev-only Drizzle/esbuild findings remain. Browser downloads were blocked in Arena preview (sandbox lacks `allow-popups`), solved by blob+iframe+direct link fallbacks. A locally extracted Chromium was used previously for e2e; do not assume its temporary executable exists in a new session. Browser tests create fictional records in demo app.
 
 ### GitHub handover
 
 - Repository: `dougalbob/estate-tracking`.
-- Current draft PR: [#1 — Build Estate Organiser](https://github.com/dougalbob/estate-tracking/pull/1).
-- Branch for this session: `arena/01a0a9cb-estate-tracking` branched from `arena/01a0a93b-estate-tracking`.
-- Published commits on this branch:
-  - `f526b45` Finish Stage 2: project management and recoverable bin
-  - `adef822` Finish Stage 3: document uploads with safe storage, reusable links, bin handling
-  - `0bd266c` Fix document linking UX and download behaviour
-  - `03064a1` Add in-app document viewer with close button, fix View/Download click handling
-  - `6c0381d` / `1e38df8` / `37213a1` Fix download route stream handling and avoid popup block in preview
-  - `3ecf427` Declutter Documents view per user request (friendlyName + category·linkedNames + Uploaded on date by user, single Upload button)
-  - `98cc7de` Add link selectors to Edit document popup (optional org/project/task dropdowns, null allowed)
-  - `22dd37e` Add remove link button in Edit document, polish tip text (Link2Off icon, Lightbulb tip, remove help paragraph)
-- `main` has not been updated. Keep PR in draft and do not merge as part of this handover.
-- At the start of a new Arena session, inspect `git status`, branch history and PR. Follow branch assigned to that session; do not assume a new conversation automatically resumes same branch or live preview.
-- User prefers milestone commits/pushes, testing throughout, and reviewed merge when agreed release is ready.
+- This deployment work is being developed on the fixed Arena session branch `arena/01a0aac6-estate-tracking`; do not create or switch to another branch for this session.
+- Keep GitHub-visible actions deliberate: review the local gates first, confirm before merging or opening/updating a pull request, merge to `main`, then create a version tag to publish the container.
+- The user prefers milestone commits and pushes, plain-English explanations of tests and previews, and a reviewed merge before the first production-image release.
 
 ## 1. Foundation, identity, and themed shell
 
@@ -282,7 +274,7 @@ Verified:
 - Production mode without Cloudflare authentication: the page shows the protected-workspace message, the CSV route returns 401, and a spoofed `cf-access-authenticated-user-email` header is ignored.
 - Demo seed (`scripts/seed-demo-finances.ts`) writes fictional rows only, and refuses a database path without `demo` in it.
 
-Remaining: full browser e2e coverage for the finance dialogs in a sandbox that permits a browser, accessibility polish, and the user's first pass through the screen. `main` is still untouched; work continues on `arena/01a0a9cb-estate-tracking` (draft PR #2).
+At that historical checkpoint, remaining work was full browser e2e coverage for the finance dialogs in a sandbox that permits a browser, accessibility polish, and the user's first pass through the screen. Later checklist and deployment work is recorded below.
 
 ## Checklist templates — first list delivered (16 September 2026)
 
@@ -290,7 +282,7 @@ Context: the user was unsure whether checklist templates were worth building, so
 
 Implemented:
 - `task_templates` table (migration `0005_curvy_mattie_franklin`) plus `tasks.template_item_id`, which records which suggestion created a task. Deliberately not a foreign key: removing a suggestion must never touch the task.
-- The **Notifications** list, 15 suggestions written for the stated situation: a private pension and no employer scheme, no mortgage lender to notify, gas and electricity with the same supplier, broadband and landline listed separately from mobile, plus the usual Tell Us Once, banks, council tax, water, TV Licence, home insurance, post redirection, subscriptions, credit reference agencies, DVLA, and other services.
+- The **Notifications** list, 16 suggestions written for the stated situation: a private pension and no employer scheme, no mortgage lender to notify, gas and electricity with the same supplier, broadband and landline listed separately from mobile, plus the usual Tell Us Once, banks, council tax, water, TV Licence, home insurance, post redirection, subscriptions, credit reference agencies, DVLA, and other services.
 - Lists are ordinary records: wording can be edited, items added, and items removed (into the recoverable bin, restorable). Editing a suggestion never rewrites tasks already created from it.
 - Applying is deliberate: items are unticked by default, there is a Select all shortcut and a live "Add N tasks" count, nothing is dated or assigned automatically, and already-present items are labelled **Already added** and cannot be selected twice.
 - Duplicate prevention has two layers: the recorded `template_item_id`, and a normalised-title comparison against live tasks in the same project. Re-applying the list twice adds nothing.
@@ -299,7 +291,7 @@ Implemented:
 Verified:
 - 44 unit/integration tests passing (38 previous + 6 checklist tests): seeding once and staying editable, no dates/owners created, re-application skipping duplicates, a binned task being re-addable, add/remove/restore of a suggestion leaving tasks untouched, project confinement, validation, attribution, and stale-edit conflicts.
 - TypeScript, Prettier and production build checks passing.
-- Demo preview checked: the panel renders inside Notifications with all 15 suggestions and their tailoring, applying two suggestions created two undated tasks attributed to the acting user, a second application skipped both, and the UI showed two "Already added" badges. The temporary demo tasks created for that check were removed again so the user starts with a clean list.
+- Demo preview checked: the panel renders inside Notifications with all 16 suggestions and their tailoring, applying two suggestions created two undated tasks attributed to the acting user, a second application skipped both, and the UI showed two "Already added" badges. The temporary demo tasks created for that check were removed again so the user starts with a clean list.
 
 Remaining: the Funeral starter list, install metadata, and the Stage 5 dashboard/accessibility polish.
 
@@ -338,3 +330,35 @@ Verified:
 Deliberately not done: the app does not decide, state or calculate whether Inheritance Tax applies, whether an account is needed, or which allowances are available. The user's circumstances (widowed, all assets in her name, two children as beneficiaries, no recent gifts) are the kind of thing that can change which forms HMRC expects, so the wording tells the user to confirm the position rather than asserting it.
 
 Next: the user is registering the death and meeting the funeral director, so the natural next work is supporting documents and receipts for the funeral and probate paperwork, and the Stage 6 backup work.
+
+## Stage 6 checkpoint — production deployment package (16 September 2026)
+
+Implemented:
+- Multi-stage `Dockerfile` using Node 22 Bookworm slim. The build stage installs `python3`, `make`, and `g++` for the native `better-sqlite3` dependency, then the runtime receives pruned production dependencies, the built `.next` application, and the migration files.
+- `docker-entrypoint.sh` loads `/data/estate.env` when present, creates the configured storage directories, applies migrations through the plain-JavaScript `scripts/migrate.cjs` runner, and starts Next.js on `0.0.0.0:3000`.
+- Unauthenticated `GET /api/health` returns HTTP 200 with a small status response for Unraid and tunnel smoke checks. It does not expose application data or bypass authentication.
+- `compose.yaml` documents the same GHCR image, bridge-style port mapping, persistent `/mnt/user/appdata/estate-organiser:/data` volume, restart policy, and healthcheck.
+- `estate-organiser.xml` defines the Unraid user template with the `/data` mapping, host port `3005` mapped to container port `3000`, WebUI link, and app icon. The v1 root ownership implication is documented.
+- `.github/workflows/publish.yml` publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch, with version/latest/SHA tags and `GITHUB_TOKEN` package permissions. `.env.example` contains placeholders only.
+- README deployment instructions cover appdata and `estate.env`, template import, first start, health checks, Cloudflare Tunnel and Google-only Access policy, anonymous GHCR pulls, Force Update, and the fictional-data gate.
+
+Not yet verified in this sandbox:
+- Docker build and native-module smoke test, because no Docker daemon is available here. The first build is the GitHub Actions run.
+- Live Unraid startup, Cloudflare Tunnel, Google Access exchange, and restricted-origin checks.
+
+## Stage 6 checkpoint — encrypted backup and restore (16 September 2026)
+
+Implemented:
+- `src/lib/backup/backup.ts` creates a versioned `.estate-backup` bundle. It holds an immediate SQLite write lock, uses better-sqlite3's online backup API for a consistent snapshot, includes every regular file below the documents folder, and removes temporary server files after completion.
+- The bundle uses scrypt-derived AES-256-GCM with a random salt and nonce. The authenticated header records only format and KDF parameters; the recovery password is never stored, logged, or included in the download URL.
+- Restore decrypts into staging, authenticates the whole payload, checks entry metadata and SQLite integrity plus required tables, then replaces the database and documents. Replacement is rolled back if installation validation fails. Wrong passwords and corrupt archives fail without treating the restore as successful.
+- Authenticated `/api/backup/download` and `/api/backup/restore` routes support the manual workflow. The workspace has a **Backup & restore** panel with browser blob download, explicit destructive-restore confirmation, and password fields that are not persisted.
+- Server retention is deliberately zero after a completed download. The user retains dated encrypted copies and the recovery password separately, outside the app.
+
+Verified:
+- 50 unit/integration tests passing, including encrypted database/document inclusion, nested documents, clean restore, metadata checks, and wrong-password failure.
+- HTTP download smoke test returned the encrypted backup with `private, no-store`, `nosniff`, and attachment headers; the returned magic and encrypted bytes were verified independently of browser save permissions.
+- HTTP restore smoke test returned success for a fictional demo database and HTTP 400 for a wrong password while preserving the existing data.
+- TypeScript, Prettier, and the existing production build gates pass after the backup feature. Arena's iframe may still block the final browser save dialog; production HTTP/download behaviour remains the release verification step.
+
+Remaining release gate: push/review/merge, first GHCR build, live Unraid/Cloudflare setup on host port `3005`, and a clean restore through the published image before real estate data.

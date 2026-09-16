@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Estate Organiser">
+  <rect width="128" height="128" rx="28" fill="#e8f0ed"/>
+  <path d="M25 58 64 27l39 31v43a8 8 0 0 1-8 8H33a8 8 0 0 1-8-8Z" fill="#447d78"/>
+  <path d="M43 109V70h42v39M52 82h24M52 94h24" fill="none" stroke="#f8f4ec" stroke-linecap="round" stroke-width="7"/>
+  <path d="m17 60 47-38 47 38" fill="none" stroke="#274b49" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+</svg>

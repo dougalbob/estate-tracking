@@ -4,9 +4,9 @@
 
 ## Status and purpose
 
-**Core workflow, project management, and recoverable deletion now implemented.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
+**Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
-The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery will be staged, but these are all core requirements. This is a fresh start with no existing data to import; funeral arrangements and estate administration are both outstanding.
+The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery is staged, but these are all core requirements. This is a fresh start with no existing data to import; fictional data remains the only permitted data until the production release verification is complete.
 
 The app serves **one estate in England and exactly two equal users/beneficiaries**. Everything is shared. There is no public registration, additional role system, private-to-one-user data, or multi-estate support.
 
@@ -151,16 +151,63 @@ Primary database and document storage remain on Unraid. Remote traffic passes th
 
 ## Backups and deployment
 
-Target deployment: a single application Docker container on Unraid, with persistent SQLite and document storage in a mapped data volume. Cloudflare tunnel configuration is separate infrastructure.
+The deployment package is now implemented for a single application Docker container on Unraid, with persistent SQLite and document storage in `/mnt/user/appdata/estate-organiser`. Cloudflare Tunnel and Cloudflare Access remain separate infrastructure. The container listens internally on port `3000`, while Unraid publishes host port `3005` to avoid a conflict on the server. It uses bridge networking and runs as root in v1 so that the first install is predictable; files created under the appdata mapping will therefore be owned by root.
 
-- Create a consistent backup of both database and documents, encrypted before download.
-- Initial workflow: manually download to the user's laptop, then copy to cloud storage.
-- Keep the recovery password safely outside the app. Losing it can make the backup unrecoverable.
-- Show when a backup was successfully created; do not claim that laptop/cloud copies succeeded without evidence.
-- Supply restoration instructions and test a full restore before release.
-- Scheduled transfer to a laptop is not part of the initial workflow.
+**Safety gate:** the encrypted backup and restore stage is implemented and tested locally, but the production release verification is still outstanding. The app creates a consistent SQLite snapshot, includes the documents folder, encrypts the bundle with a user-managed recovery password, validates the authenticated backup before replacement, and keeps no server-side retention copy after download. A raw copy of a live SQLite file is not an adequate backup strategy because this app uses WAL mode.
 
-Docker commands, environment variables, retention/storage limits, and operational details will be documented when implemented. A raw copy of a live SQLite file is not an adequate backup strategy.
+### Backup and restore workflow
+
+Open **Backup & restore** in the workspace. Why the password is entered in the form: it is used only for this operation, is never stored by the app, and is not placed in a URL or log. Why the file is versioned and authenticated: a wrong password, damaged file, or tampered archive must fail rather than produce a plausible partial restore.
+
+- **Create encrypted backup:** enter a recovery password of at least 12 characters. The server uses SQLite's online backup API while holding a write lock, copies the database snapshot and every regular file below `/data/documents`, then encrypts a versioned bundle with scrypt-derived AES-256-GCM. The browser receives an `.estate-backup` download; Arena may still block the final save action, but the HTTP response and encrypted bytes can be tested independently.
+- **Restore backup:** choose an `.estate-backup` file and enter the same recovery password. The server authenticates and decrypts the whole archive into staging, checks its metadata and SQLite integrity, then replaces the database and documents. A failed validation leaves the existing installation in place. Restoring is destructive, so the UI asks for confirmation first.
+- **Retention:** the application deliberately retains no completed backup on Unraid. Keep dated copies on the user's own device/cloud storage, keep the password separately, and retain more than one known-good copy. Scheduled transfer is not part of this first workflow.
+- **Restore testing:** local automated tests cover a fictional database, nested documents, wrong passwords, archive validation, and a clean restore. The release gate still requires one restore through the published image on a clean Unraid data volume before real records are entered.
+
+### Deployment files
+
+- `Dockerfile` is a multi-stage Node 22 image. The build stage installs `python3`, `make`, and `g++` so `better-sqlite3` can compile if a platform-specific prebuilt binary is unavailable; the runtime stage contains only production dependencies, the built Next.js app, migrations, and the plain-JavaScript migration runner.
+- `docker-entrypoint.sh` loads `/data/estate.env` if present, runs migrations, and starts Next.js on the container's `0.0.0.0:3000`.
+- `compose.yaml` is a portable reference using the same GHCR image, host port `3005` mapped to container port `3000`, and the `/mnt/user/appdata/estate-organiser:/data` mapping.
+- `estate-organiser.xml` is the Unraid user-template import. It defines the `/data` mapping, host port `3005` to container port `3000`, bridge network, and WebUI link.
+- `src/app/api/backup/` and `src/lib/backup/` provide authenticated encrypted download/restore with a versioned archive format; the workspace exposes it under **Backup & restore**.
+- `.github/workflows/publish.yml` builds and publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch. A version tag produces the version tag, `latest`, and a git-SHA tag.
+
+### Unraid installation
+
+These steps deliberately explain why each file is used. Do not put real credentials in Git, chat, or the Docker template.
+
+1. **Create the persistent folder first.** The folder is the durable boundary for the database, documents, migrations' state, and the environment file; replacing the container must not replace the estate data.
+
+   ```text
+   /mnt/user/appdata/estate-organiser/
+   ```
+
+   Copy `.env.example` to `/mnt/user/appdata/estate-organiser/estate.env` using an Unraid terminal, an SMB share, or VS Code Remote. Fill in `CF_ACCESS_ISSUER`, `CF_ACCESS_AUDIENCE`, and exactly two addresses in `AUTH_USER_EMAILS`. Keep `DATABASE_PATH=/data/estate.sqlite` and `DOCUMENTS_PATH=/data/documents` unless there is a deliberate storage change. Set `DEV_AUTH_ENABLED=false`; it is ignored outside development and must never be used for an installation containing real records.
+
+   Restrict the file to the administrator where practical, for example with `chmod 600 /mnt/user/appdata/estate-organiser/estate.env`. The container reads this file at startup because an Unraid template cannot pass Docker's `--env-file` option.
+
+2. **Import the Unraid template.** Copy `estate-organiser.xml` into `/boot/config/plugins/dockerMan/templates-user/`, then open Docker → Add Container → User Templates → Estate Organiser. The template makes the image, bridge network, `/data` path, and host-port mapping (`3005` on Unraid → `3000` in the container) consistent rather than relying on manually re-entered values. Confirm that the host path is exactly `/mnt/user/appdata/estate-organiser`, the host port is `3005`, and the image is `ghcr.io/dougalbob/estate-organiser:latest`.
+
+3. **Start and smoke-test the container.** On the first start, the entrypoint creates the configured directories, applies all pending Drizzle migrations, and only then starts the web server. Check the container log for `Database migrations complete.` and open this unauthenticated health URL from the Unraid LAN:
+
+   ```text
+   http://<unraid-lan-ip>:3005/api/health
+   ```
+
+   It should return HTTP 200 with `{"status":"ok"}`. The same endpoint is used by the compose healthcheck. A failed health check means the process or image is not ready; it does not bypass Cloudflare Access.
+
+4. **Configure the existing Cloudflare Tunnel.** Add a public hostname such as `estate.<your-domain>` whose service is `http://<unraid-lan-ip>:3005`. The origin should remain a LAN address; do not point browser code at localhost and do not expose the Unraid port directly to the internet. The app's security headers include `private, no-store` caching, `nosniff`, and a restrictive referrer policy so documents and records are not browser/proxy-cached.
+
+5. **Protect the hostname with Cloudflare Access.** Create a Self-hosted Access application for the hostname. Configure Google as the only enabled identity provider for this application (set up Google in Zero Trust → Settings → Authentication → Login methods if it is not already available). Add an Allow policy whose Include rule contains only the two real email addresses. Do not use a broad “everyone” rule. The application independently verifies the Access JWT issuer, audience, expiry, and email allowlist, so a spoofed email header is not sufficient.
+
+6. **Complete the end-to-end check with fictional data.** Visit the public hostname, sign in with each allowed Google account, confirm that both can see the protected workspace, create a clearly fictional organisation and task, reload, and confirm persistence. Check `/api/health` from the LAN, upload a fictional document, create an encrypted backup, and confirm that an unauthenticated/private-window request to its document download URL fails. Delete the fictional rows afterwards. Do not begin real data entry until the published image has passed a clean restore exercise.
+
+### Release and update flow
+
+After review, merge the deployment change to `main`, then create and push a version tag such as `v0.2.0`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. After the first publish, set the package visibility to **Public** in GitHub → Packages → `estate-organiser` → Package settings; Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
+
+The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available; the first build is the GitHub Actions run.
 
 ## Proposed technology
 
@@ -203,7 +250,7 @@ NEXT_TELEMETRY_DISABLED=1 npm start
 
 Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
 
-Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, and estate finances in GBP as integer pence with CSV exports, are also implemented. Checklist templates, backups, deployment, install metadata, and a full accessibility/security review are still upcoming; this is **not ready for real estate data or production use**.
+Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, estate finances in GBP as integer pence with CSV exports, the three editable starter checklists, and encrypted backup/restore are also implemented. Docker/Unraid deployment packaging is now present, while the first published-image restore exercise, install metadata, and a full accessibility/security review remain before the app is used for real estate data.
 
 ### Browser workflow test
 
@@ -216,9 +263,9 @@ npm run test:e2e
 
 The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
 
-Run `npm run format:check` for source formatting checks. The unit suite (38 tests) covers shared records, documents, and the finance rules described above, including the GBP 500/200/300 reimbursement case, part payments, voids, and CSV formula protection.
+Run `npm run format:check` for source formatting checks. The unit suite (50 tests) covers shared records, documents, checklist templates, finances, and encrypted backup/restore, including the GBP 500/200/300 reimbursement case, part payments, voids, CSV formula protection, document inclusion, clean restore, and wrong-password failure.
 
-Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Full Cloudflare/Unraid, browser accessibility, backup, and restore verification are still outstanding.
+Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Published-image Unraid/Cloudflare, browser accessibility, and clean production restore verification remain outstanding.
 
 ## Licence
 
