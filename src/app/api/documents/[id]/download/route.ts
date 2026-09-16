@@ -2,14 +2,12 @@ import { currentUser } from "@/lib/auth/current-user";
 import { authConfiguration } from "@/lib/auth/verify";
 import { database } from "@/lib/db";
 import { recordStore } from "@/lib/records/store";
-import { documents } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
 import { fullPath } from "@/lib/documents/storage";
 import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   let user;
@@ -26,8 +24,9 @@ export async function GET(
   const store = recordStore(database(), users);
   const snap = store.snapshot();
   const { id } = await params;
+  const url = new URL(request.url);
+  const forceDownload = url.searchParams.get("download") === "1";
 
-  // Check both active and deleted? Only allow download of active documents, not those in bin, to avoid confusion
   const doc =
     snap.documents.find((d) => d.id === id) ||
     snap.deletedDocuments.find((d) => d.id === id);
@@ -51,15 +50,17 @@ export async function GET(
     const fileStat = await stat(path);
     const stream = createReadStream(path);
 
-    // Prevent unsafe inline execution – serve as attachment with safe mime
-    const safeMime = doc.mimeType.startsWith("image/") || doc.mimeType === "application/pdf"
-      ? doc.mimeType
-      : "application/octet-stream";
+    const safeMime =
+      doc.mimeType.startsWith("image/") || doc.mimeType === "application/pdf"
+        ? doc.mimeType
+        : "application/octet-stream";
 
-    // For images and PDFs, allow inline viewing but with nosniff and safe disposition
-    const disposition = safeMime.startsWith("image/") || safeMime === "application/pdf"
-      ? `inline; filename="${encodeURIComponent(doc.originalName)}"; filename*=UTF-8''${encodeURIComponent(doc.originalName)}`
-      : `attachment; filename="${encodeURIComponent(doc.originalName)}"; filename*=UTF-8''${encodeURIComponent(doc.originalName)}`;
+    const dispositionType =
+      forceDownload || !(safeMime.startsWith("image/") || safeMime === "application/pdf")
+        ? "attachment"
+        : "inline";
+
+    const disposition = `${dispositionType}; filename="${encodeURIComponent(doc.originalName)}"; filename*=UTF-8''${encodeURIComponent(doc.originalName)}`;
 
     return new Response(stream as unknown as BodyInit, {
       headers: {

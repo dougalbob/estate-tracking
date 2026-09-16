@@ -24,6 +24,7 @@ import {
   FileText,
   Link2,
   X,
+  Eye,
 } from "lucide-react";
 import {
   switchDemoUser,
@@ -87,6 +88,20 @@ const formatSize = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+type DocUploadInitial = {
+  organisationId?: string;
+  interactionId?: string;
+  taskId?: string;
+  projectId?: string;
+};
+type LinkPickerInitial = {
+  documentId?: string;
+  organisationId?: string;
+  interactionId?: string;
+  taskId?: string;
+  projectId?: string;
+};
+
 export function Workspace({
   user,
   users,
@@ -107,15 +122,8 @@ export function Workspace({
     [docCategory, setDocCategory] = useState("all"),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
-    [docUpload, setDocUpload] = useState<{
-      organisationId?: string;
-      interactionId?: string;
-      taskId?: string;
-      projectId?: string;
-    } | null>(null),
-    [linkPicker, setLinkPicker] = useState<{
-      documentId: string;
-    } | null>(null);
+    [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
+    [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null);
 
   const router = useRouter();
   useEffect(() => {
@@ -155,6 +163,7 @@ export function Workspace({
       .filter((op) => op.organisationId === orgId)
       .map((op) => op.projectId);
 
+  // Direct links only
   const getLinkedDocuments = (filter: {
     organisationId?: string;
     interactionId?: string;
@@ -173,7 +182,38 @@ export function Workspace({
     return data.documents.filter((d) => linkIds.includes(d.id));
   };
 
+  // Enhanced for org detail: direct + via projects + via its notes/tasks
+  const getLinkedDocumentsForOrg = (orgId: string) => {
+    const directIds = new Set(
+      data.documentLinks
+        .filter((l) => l.organisationId === orgId)
+        .map((l) => l.documentId),
+    );
+    const projIds = organisationProjectIds(orgId);
+    const viaProjectIds = data.documentLinks
+      .filter((l) => l.projectId && projIds.includes(l.projectId))
+      .map((l) => l.documentId);
+    const viaInteractionIds = data.documentLinks
+      .filter((l) => {
+        if (!l.interactionId) return false;
+        const inter = data.interactions.find((i) => i.id === l.interactionId);
+        return inter?.organisationId === orgId;
+      })
+      .map((l) => l.documentId);
+    const viaTaskIds = data.documentLinks
+      .filter((l) => {
+        if (!l.taskId) return false;
+        const t = data.tasks.find((t) => t.id === l.taskId);
+        return t?.organisationId === orgId;
+      })
+      .map((l) => l.documentId);
+    const all = new Set([...directIds, ...viaProjectIds, ...viaInteractionIds, ...viaTaskIds]);
+    return data.documents.filter((d) => all.has(d.id));
+  };
+
   const getDocumentLinks = (docId: string) => data.documentLinks.filter((l) => l.documentId === docId);
+  const getDirectLinksForOrg = (docId: string, orgId: string) =>
+    data.documentLinks.filter((l) => l.documentId === docId && l.organisationId === orgId);
 
   const openTasks = data.tasks.filter(
     (t) => !["done", "cancelled"].includes(t.status),
@@ -379,8 +419,22 @@ export function Workspace({
             {docs.map((d) => (
               <div key={d.id} className="doc-inline">
                 <FileText size={14} />
-                <a href={`/api/documents/${d.id}/download`} className="text-link">
-                  {d.friendlyName}
+                <span>{d.friendlyName}</span>
+                <a
+                  href={`/api/documents/${d.id}/download`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="subtle-button"
+                  title="View in new tab"
+                >
+                  <Eye size={12} /> View
+                </a>
+                <a
+                  href={`/api/documents/${d.id}/download?download=1`}
+                  className="subtle-button"
+                  title="Download file"
+                >
+                  <Download size={12} /> Download
                 </a>
                 <span className="badge">{d.category ? label(d.category) : "No category"}</span>
               </div>
@@ -400,6 +454,13 @@ export function Workspace({
             >
               <FileText size={14} />
               Attach document
+            </button>
+            <button
+              className="subtle-button"
+              onClick={() => setLinkPicker({ interactionId: note.id })}
+            >
+              <Link2 size={14} />
+              Link existing
             </button>
           </div>
         </div>
@@ -455,7 +516,21 @@ export function Workspace({
           </p>
         </div>
         <div className="row-actions">
-          <a href={`/api/documents/${doc.id}/download`} className="subtle-button">
+          <a
+            href={`/api/documents/${doc.id}/download`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="subtle-button"
+            title="View document in new tab – does not leave this page"
+          >
+            <Eye size={14} />
+            View
+          </a>
+          <a
+            href={`/api/documents/${doc.id}/download?download=1`}
+            className="subtle-button"
+            title="Download to your computer"
+          >
             <Download size={14} />
             Download
           </a>
@@ -611,7 +686,7 @@ export function Workspace({
                   : view === "bin"
                     ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
                     : view === "documents"
-                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. Removing a link does not delete the file. All downloads need the same access as the rest of the app."
+                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in a new tab so you stay in the app; Download saves a copy to your computer."
                       : "Everything you need, shared between the two of you."}
               </p>
             </div>
@@ -806,8 +881,8 @@ export function Workspace({
                                 .join(", ")}
                             </>
                           )}
-                          {getLinkedDocuments({ organisationId: o.id }).length > 0 && (
-                            <> · {getLinkedDocuments({ organisationId: o.id }).length} docs</>
+                          {getLinkedDocumentsForOrg(o.id).length > 0 && (
+                            <> · {getLinkedDocumentsForOrg(o.id).length} docs</>
                           )}
                         </small>
                       </span>
@@ -907,30 +982,39 @@ export function Workspace({
                       <FileText size={14} />
                       Upload
                     </Button>
-                    <Button variant="outline" onClick={() => setLinkPicker({ documentId: "" })}>
+                    <Button variant="outline" onClick={() => setLinkPicker({ organisationId: organisation.id })}>
                       <Link2 size={14} />
                       Link existing
                     </Button>
                   </div>
                 </div>
                 <div style={{ padding: "0 24px 16px" }}>
-                  {getLinkedDocuments({ organisationId: organisation.id }).map((d) => (
-                    <DocumentLinkRow
-                      key={d.id}
-                      doc={d}
-                      links={getDocumentLinks(d.id).filter((l) => l.organisationId === organisation.id)}
-                      onUnlink={async (linkId) => {
-                        const res = await unlinkDocument(linkId);
-                        if (!res.ok) setError(res.error);
-                        else {
-                          setMessage("Link removed – document itself stays.");
-                          router.refresh();
-                        }
-                      }}
-                    />
-                  ))}
-                  {!getLinkedDocuments({ organisationId: organisation.id }).length && (
-                    <p className="form-help">No documents linked yet. Upload a certificate or link an existing file – it can be reused elsewhere.</p>
+                  {getLinkedDocumentsForOrg(organisation.id).map((d) => {
+                    const directLinks = getDirectLinksForOrg(d.id, organisation.id);
+                    const allLinks = getDocumentLinks(d.id);
+                    const isDirect = directLinks.length > 0;
+                    const viaProject = allLinks.some((l) => l.projectId && organisationProjectIds(organisation.id).includes(l.projectId));
+                    return (
+                      <DocumentLinkRow
+                        key={d.id}
+                        doc={d}
+                        directLinks={directLinks}
+                        allLinks={allLinks}
+                        isDirect={isDirect}
+                        viaProject={viaProject}
+                        onUnlink={async (linkId) => {
+                          const res = await unlinkDocument(linkId);
+                          if (!res.ok) setError(res.error);
+                          else {
+                            setMessage("Link removed – document itself stays.");
+                            router.refresh();
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                  {!getLinkedDocumentsForOrg(organisation.id).length && (
+                    <p className="form-help">No documents linked yet. Upload a certificate or link an existing file – it can be reused elsewhere. If you linked a document to a project that this organisation belongs to, it will also appear here.</p>
                   )}
                 </div>
               </section>
@@ -1143,10 +1227,14 @@ export function Workspace({
                       {docs.map((d) => (
                         <span key={d.id} className="badge">
                           <FileText size={10} /> {d.friendlyName}
+                          <a href={`/api/documents/${d.id}/download`} target="_blank" rel="noopener noreferrer" className="subtle-button" style={{ marginLeft: "4px" }}><Eye size={10} /></a>
                         </span>
                       ))}
                       <button className="subtle-button" onClick={() => setDocUpload({ projectId: p.id })}>
                         <FileText size={12} /> Attach doc
+                      </button>
+                      <button className="subtle-button" onClick={() => setLinkPicker({ projectId: p.id })}>
+                        <Link2 size={12} /> Link existing
                       </button>
                     </div>
                     <div style={{ borderTop: "1px solid var(--border)" }}>
@@ -1210,7 +1298,7 @@ export function Workspace({
                 </Button>
               </div>
               <p className="form-help" style={{ marginBottom: "12px" }}>
-                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed. Original filenames are kept for download but storage uses safe generated names.
+                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. View opens in a new tab so you stay in the app; Download saves a copy to your computer. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed.
               </p>
               <section className="panel">
                 {filteredDocs.map(documentRow)}
@@ -1399,9 +1487,6 @@ export function Workspace({
             setMessage("Document uploaded and linked. Stored once, reusable everywhere.");
             setDocUpload(null);
             router.refresh();
-            if (id) {
-              setView("documents");
-            }
           }}
           onError={setError}
         />
@@ -1409,7 +1494,7 @@ export function Workspace({
       {linkPicker && (
         <DocumentLinkPicker
           data={data}
-          documentId={linkPicker.documentId}
+          initial={linkPicker}
           onClose={() => setLinkPicker(null)}
           onLinked={() => {
             setMessage("Document linked – one file, many places.");
@@ -1425,28 +1510,54 @@ export function Workspace({
 
 function DocumentLinkRow({
   doc,
-  links,
+  directLinks,
+  allLinks,
+  isDirect,
+  viaProject,
   onUnlink,
 }: {
   doc: Snapshot["documents"][number];
-  links: Snapshot["documentLinks"];
+  directLinks: Snapshot["documentLinks"];
+  allLinks: Snapshot["documentLinks"];
+  isDirect: boolean;
+  viaProject?: boolean;
   onUnlink: (linkId: string) => void;
 }) {
   return (
     <div className="doc-inline-row">
       <FileText size={14} />
-      <a href={`/api/documents/${doc.id}/download`} className="text-link">
-        {doc.friendlyName}
-      </a>
+      <span style={{ fontWeight: 600 }}>{doc.friendlyName}</span>
       <span className="badge">{doc.category ? label(doc.category) : "No category"}</span>
       <span className="badge">{formatSize(doc.size)}</span>
-      <div className="row-actions" style={{ marginLeft: "auto" }}>
-        {links.map((l) => (
+      {!isDirect && viaProject && <span className="badge">via project</span>}
+      <div className="row-actions" style={{ marginLeft: "auto", gap: "6px" }}>
+        <a
+          href={`/api/documents/${doc.id}/download`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="subtle-button"
+          title="View in new tab – you stay in the app"
+        >
+          <Eye size={12} /> View
+        </a>
+        <a
+          href={`/api/documents/${doc.id}/download?download=1`}
+          className="subtle-button"
+          title="Download a copy to your computer"
+        >
+          <Download size={12} /> Download
+        </a>
+        {directLinks.map((l) => (
           <button key={l.id} className="subtle-button danger" onClick={() => onUnlink(l.id)}>
             <X size={12} />
             Remove link
           </button>
         ))}
+        {!isDirect && (
+          <span className="form-help" style={{ fontSize: "10px" }}>
+            Linked via {allLinks.map((l) => l.projectId ? `project ${l.projectId}` : l.taskId ? "task" : l.interactionId ? "note" : "other").join(", ")}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1460,7 +1571,7 @@ function DocumentUploadDialog({
   onError,
 }: {
   data: Snapshot;
-  initial: { organisationId?: string; interactionId?: string; taskId?: string; projectId?: string };
+  initial: DocUploadInitial;
   onClose: () => void;
   onUploaded: (id: string) => void;
   onError: (msg: string) => void;
@@ -1469,15 +1580,34 @@ function DocumentUploadDialog({
   const [busy, setBusy] = useState(false);
   const [friendlyName, setFriendlyName] = useState("");
   const [category, setCategory] = useState("");
-  const [orgId, setOrgId] = useState(initial.organisationId ?? "");
-  const [intId, setIntId] = useState(initial.interactionId ?? "");
-  const [taskId, setTaskId] = useState(initial.taskId ?? "");
-  const [projId, setProjId] = useState(initial.projectId ?? "");
+  const [linkKind, setLinkKind] = useState<"none" | "organisation" | "interaction" | "task" | "project">(
+    initial.organisationId ? "organisation" : initial.interactionId ? "interaction" : initial.taskId ? "task" : initial.projectId ? "project" : "none",
+  );
+  const [linkId, setLinkId] = useState(
+    initial.organisationId ?? initial.interactionId ?? initial.taskId ?? initial.projectId ?? "",
+  );
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
+
+  // When initial changes, sync linkKind/linkId (for safety)
+  useEffect(() => {
+    if (initial.organisationId) {
+      setLinkKind("organisation");
+      setLinkId(initial.organisationId);
+    } else if (initial.interactionId) {
+      setLinkKind("interaction");
+      setLinkId(initial.interactionId);
+    } else if (initial.taskId) {
+      setLinkKind("task");
+      setLinkId(initial.taskId);
+    } else if (initial.projectId) {
+      setLinkKind("project");
+      setLinkId(initial.projectId);
+    }
+  }, [initial]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1485,15 +1615,19 @@ function DocumentUploadDialog({
       onError("Choose a file first");
       return;
     }
+    if (linkKind !== "none" && !linkId) {
+      onError("Choose where to link it, or select No link");
+      return;
+    }
     setBusy(true);
     const fd = new FormData();
     fd.set("file", file);
     fd.set("friendlyName", friendlyName || file.name.replace(/\.[^/.]+$/, ""));
     if (category) fd.set("category", category);
-    if (orgId) fd.set("organisationId", orgId);
-    if (intId) fd.set("interactionId", intId);
-    if (taskId) fd.set("taskId", taskId);
-    if (projId) fd.set("projectId", projId);
+    if (linkKind === "organisation" && linkId) fd.set("organisationId", linkId);
+    if (linkKind === "interaction" && linkId) fd.set("interactionId", linkId);
+    if (linkKind === "task" && linkId) fd.set("taskId", linkId);
+    if (linkKind === "project" && linkId) fd.set("projectId", linkId);
     const res = await uploadDocument(fd);
     setBusy(false);
     if (!res.ok) {
@@ -1539,49 +1673,65 @@ function DocumentUploadDialog({
             </select>
           </label>
           <p className="form-help">
-            In production files go to <code>/mnt/user/appdata/estate-organiser/documents</code> (container path <code>/data/documents</code>). Demo mode uses <code>./data/demo-documents</code>. Storage names are generated safely – original name is kept for download.
+            In production files go to <code>/mnt/user/appdata/estate-organiser/documents</code> (container path <code>/data/documents</code>). Demo mode uses <code>./data/demo-documents</code>. Storage names are generated safely – original name is kept for download. View opens in a new tab so you stay in the app; Download saves a copy.
           </p>
           <fieldset className="follow-up">
             <legend>Link to (optional – you can link later too)</legend>
-            <div className="form-grid">
+            <label>
+              Link kind
+              <select value={linkKind} onChange={(e) => { const k = e.target.value as any; setLinkKind(k); setLinkId(""); }}>
+                <option value="none">No link yet – just store</option>
+                <option value="organisation">Organisation (contact)</option>
+                <option value="interaction">Interaction / Note</option>
+                <option value="task">Task</option>
+                <option value="project">Project</option>
+              </select>
+            </label>
+            {linkKind === "organisation" && (
               <label>
                 Organisation
-                <select value={orgId} onChange={(e) => setOrgId(e.target.value)}>
-                  <option value="">No organisation</option>
+                <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                  <option value="">Choose organisation…</option>
                   {data.organisations.map((o) => (
                     <option key={o.id} value={o.id}>{o.name}</option>
                   ))}
                 </select>
               </label>
+            )}
+            {linkKind === "interaction" && (
               <label>
                 Interaction / Note
-                <select value={intId} onChange={(e) => setIntId(e.target.value)}>
-                  <option value="">No note</option>
+                <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                  <option value="">Choose note…</option>
                   {data.interactions.slice(0, 100).map((n) => (
-                    <option key={n.id} value={n.id}>{n.title}</option>
+                    <option key={n.id} value={n.id}>{n.title} – {n.detail.slice(0, 40)}</option>
                   ))}
                 </select>
               </label>
+            )}
+            {linkKind === "task" && (
               <label>
                 Task
-                <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
-                  <option value="">No task</option>
+                <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                  <option value="">Choose task…</option>
                   {data.tasks.slice(0, 100).map((t) => (
                     <option key={t.id} value={t.id}>{t.title}</option>
                   ))}
                 </select>
               </label>
+            )}
+            {linkKind === "project" && (
               <label>
                 Project
-                <select value={projId} onChange={(e) => setProjId(e.target.value)}>
-                  <option value="">No project</option>
+                <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                  <option value="">Choose project…</option>
                   {data.projects.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </label>
-            </div>
-            <p className="form-help">Pick at most one here – after upload you can link the same file to many records from the Documents list.</p>
+            )}
+            <p className="form-help">Pick exactly one place here – after upload you can link the same file to many records from the Documents list. This fixes the earlier issue where picking multiple caused the link to fail.</p>
           </fieldset>
         </fieldset>
         <div className="form-actions">
@@ -1595,21 +1745,26 @@ function DocumentUploadDialog({
 
 function DocumentLinkPicker({
   data,
-  documentId,
+  initial,
   onClose,
   onLinked,
   onError,
 }: {
   data: Snapshot;
-  documentId: string;
+  initial: LinkPickerInitial;
   onClose: () => void;
   onLinked: () => void;
   onError: (msg: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
-  const [target, setTarget] = useState<{ kind: "organisation" | "interaction" | "task" | "project"; id: string } | null>(null);
-  const [docId, setDocId] = useState(documentId);
+  const [docId, setDocId] = useState(initial.documentId ?? "");
+  const [linkKind, setLinkKind] = useState<"organisation" | "interaction" | "task" | "project">(
+    initial.organisationId ? "organisation" : initial.interactionId ? "interaction" : initial.taskId ? "task" : initial.projectId ? "project" : "organisation",
+  );
+  const [linkId, setLinkId] = useState(
+    initial.organisationId ?? initial.interactionId ?? initial.taskId ?? initial.projectId ?? "",
+  );
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -1621,16 +1776,16 @@ function DocumentLinkPicker({
       onError("Choose a document first");
       return;
     }
-    if (!target) {
+    if (!linkId) {
       onError("Choose where to link it");
       return;
     }
     setBusy(true);
     const input: any = { documentId: docId };
-    if (target.kind === "organisation") input.organisationId = target.id;
-    if (target.kind === "interaction") input.interactionId = target.id;
-    if (target.kind === "task") input.taskId = target.id;
-    if (target.kind === "project") input.projectId = target.id;
+    if (linkKind === "organisation") input.organisationId = linkId;
+    if (linkKind === "interaction") input.interactionId = linkId;
+    if (linkKind === "task") input.taskId = linkId;
+    if (linkKind === "project") input.projectId = linkId;
     const res = await linkDocument(input);
     setBusy(false);
     if (!res.ok) onError(res.error);
@@ -1659,44 +1814,61 @@ function DocumentLinkPicker({
               ))}
             </select>
           </label>
-          <p className="form-help">Removing a link never deletes the file or its other links. Store once, reuse everywhere.</p>
+          <p className="form-help">Removing a link never deletes the file or its other links. Store once, reuse everywhere. View opens in new tab; Download saves a copy.</p>
           <label>
-            Link to organisation
-            <select onChange={(e) => e.target.value && setTarget({ kind: "organisation", id: e.target.value })}>
-              <option value="">Pick organisation…</option>
-              {data.organisations.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
-              ))}
+            Link to what?
+            <select value={linkKind} onChange={(e) => { setLinkKind(e.target.value as any); setLinkId(""); }}>
+              <option value="organisation">Organisation (contact)</option>
+              <option value="interaction">Interaction / Note</option>
+              <option value="task">Task</option>
+              <option value="project">Project</option>
             </select>
           </label>
-          <label>
-            Or interaction / note
-            <select onChange={(e) => e.target.value && setTarget({ kind: "interaction", id: e.target.value })}>
-              <option value="">Pick note…</option>
-              {data.interactions.slice(0, 100).map((n) => (
-                <option key={n.id} value={n.id}>{n.title}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Or task
-            <select onChange={(e) => e.target.value && setTarget({ kind: "task", id: e.target.value })}>
-              <option value="">Pick task…</option>
-              {data.tasks.slice(0, 100).map((t) => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Or project
-            <select onChange={(e) => e.target.value && setTarget({ kind: "project", id: e.target.value })}>
-              <option value="">Pick project…</option>
-              {data.projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
-          {target && <p className="form-help">Will link to {target.kind}: {target.id}</p>}
+          {linkKind === "organisation" && (
+            <label>
+              Organisation
+              <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                <option value="">Pick organisation…</option>
+                {data.organisations.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {linkKind === "interaction" && (
+            <label>
+              Interaction / Note
+              <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                <option value="">Pick note…</option>
+                {data.interactions.slice(0, 100).map((n) => (
+                  <option key={n.id} value={n.id}>{n.title}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {linkKind === "task" && (
+            <label>
+              Task
+              <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                <option value="">Pick task…</option>
+                {data.tasks.slice(0, 100).map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {linkKind === "project" && (
+            <label>
+              Project
+              <select value={linkId} onChange={(e) => setLinkId(e.target.value)} required>
+                <option value="">Pick project…</option>
+                {data.projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {linkId && <p className="form-help">Will link document to {linkKind}: {linkId}</p>}
         </fieldset>
         <div className="form-actions">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
