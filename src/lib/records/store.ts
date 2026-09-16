@@ -7,6 +7,8 @@ import {
   interactionInput,
   taskInput,
   projectInput,
+  documentInput,
+  documentLinkInput,
 } from "./validation";
 const {
   organisations,
@@ -15,6 +17,8 @@ const {
   projects,
   revisions,
   organisationProjects,
+  documents,
+  documentLinks,
 } = schema;
 export class RecordError extends Error {
   constructor(
@@ -164,6 +168,13 @@ export function recordStore(
           .where(isNull(projects.deletedAt))
           .all(),
         organisationProjects: db.select().from(organisationProjects).all(),
+        documents: db
+          .select()
+          .from(documents)
+          .where(isNull(documents.deletedAt))
+          .orderBy(desc(documents.createdAt))
+          .all(),
+        documentLinks: db.select().from(documentLinks).all(),
         deletedOrganisations: db
           .select()
           .from(organisations)
@@ -183,6 +194,11 @@ export function recordStore(
           .select()
           .from(projects)
           .where(isNotNull(projects.deletedAt))
+          .all(),
+        deletedDocuments: db
+          .select()
+          .from(documents)
+          .where(isNotNull(documents.deletedAt))
           .all(),
         revisions: db
           .select()
@@ -454,8 +470,221 @@ export function recordStore(
         return id;
       });
     },
+    saveDocument(raw: unknown, actor: string) {
+      actorCheck(actor);
+      const input = documentInput.parse(raw);
+      return db.transaction(() => {
+        const before = input.id
+          ? db.select().from(documents).where(eq(documents.id, input.id)).get()
+          : undefined;
+        if (
+          input.id &&
+          (!before || before.deletedAt || before.version !== input.version)
+        )
+          conflict();
+        const { id: suppliedId, version, ...values } = input;
+        const id = suppliedId || randomUUID();
+        const now = new Date();
+        if (before) {
+          const after = {
+            ...before,
+            friendlyName: values.friendlyName,
+            category: values.category,
+            version: before.version + 1,
+            updatedAt: now,
+          };
+          if (
+            !db
+              .update(documents)
+              .set(after)
+              .where(and(eq(documents.id, id), eq(documents.version, version!)))
+              .run().changes
+          )
+            conflict();
+          audit(
+            "document",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+          );
+        } else {
+          throw new RecordError(
+            "Use the upload action to create documents",
+            "validation",
+          );
+        }
+        return id;
+      });
+    },
+    createDocumentFromUpload(
+      upload: {
+        friendlyName: string;
+        originalName: string;
+        storageName: string;
+        mimeType: string;
+        size: number;
+        category: string | null;
+      },
+      actor: string,
+    ) {
+      actorCheck(actor);
+      return db.transaction(() => {
+        const id = randomUUID();
+        const now = new Date();
+        const record = {
+          id,
+          friendlyName: upload.friendlyName,
+          originalName: upload.originalName,
+          storageName: upload.storageName,
+          mimeType: upload.mimeType,
+          size: upload.size,
+          category: upload.category,
+          version: 1,
+          createdBy: actor,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        db.insert(documents).values(record).run();
+        audit("document", id, actor, null, record);
+        return id;
+      });
+    },
+    linkDocument(raw: unknown, actor: string) {
+      actorCheck(actor);
+      const input = documentLinkInput.parse(raw);
+      return db.transaction(() => {
+        const doc = db
+          .select()
+          .from(documents)
+          .where(eq(documents.id, input.documentId))
+          .get();
+        if (!doc || doc.deletedAt)
+          throw new RecordError("Document no longer available");
+        const count = [
+          input.organisationId,
+          input.interactionId,
+          input.taskId,
+          input.projectId,
+        ].filter(Boolean).length;
+        if (count !== 1)
+          throw new RecordError("Link a document to exactly one record");
+        if (input.organisationId) {
+          if (
+            !db
+              .select()
+              .from(organisations)
+              .where(
+                and(
+                  eq(organisations.id, input.organisationId),
+                  isNull(organisations.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError("Organisation no longer available");
+        }
+        if (input.interactionId) {
+          const note = db
+            .select()
+            .from(interactions)
+            .where(eq(interactions.id, input.interactionId))
+            .get();
+          if (!note || note.deletedAt)
+            throw new RecordError("Note no longer available");
+        }
+        if (input.taskId) {
+          const t = db.select().from(tasks).where(eq(tasks.id, input.taskId)).get();
+          if (!t || t.deletedAt)
+            throw new RecordError("Task no longer available");
+        }
+        if (input.projectId) {
+          if (
+            !db
+              .select()
+              .from(projects)
+              .where(
+                and(
+                  eq(projects.id, input.projectId),
+                  isNull(projects.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError("Project no longer available");
+        }
+        const existing = db
+          .select()
+          .from(documentLinks)
+          .where(
+            and(
+              eq(documentLinks.documentId, input.documentId),
+              input.organisationId
+                ? eq(documentLinks.organisationId, input.organisationId)
+                : isNull(documentLinks.organisationId),
+              input.interactionId
+                ? eq(documentLinks.interactionId, input.interactionId)
+                : isNull(documentLinks.interactionId),
+              input.taskId
+                ? eq(documentLinks.taskId, input.taskId)
+                : isNull(documentLinks.taskId),
+              input.projectId
+                ? eq(documentLinks.projectId, input.projectId)
+                : isNull(documentLinks.projectId),
+            ),
+          )
+          .get();
+        if (existing) return existing.id;
+        const id = randomUUID();
+        db.insert(documentLinks)
+          .values({
+            id,
+            documentId: input.documentId,
+            organisationId: input.organisationId,
+            interactionId: input.interactionId,
+            taskId: input.taskId,
+            projectId: input.projectId,
+          })
+          .run();
+        audit("document_link", id, actor, null, {
+          documentId: input.documentId,
+          organisationId: input.organisationId,
+          interactionId: input.interactionId,
+          taskId: input.taskId,
+          projectId: input.projectId,
+        });
+        return id;
+      });
+    },
+    unlinkDocument(linkId: string, actor: string) {
+      actorCheck(actor);
+      return db.transaction(() => {
+        const before = db
+          .select()
+          .from(documentLinks)
+          .where(eq(documentLinks.id, linkId))
+          .get();
+        if (!before) throw new RecordError("Link no longer available");
+        db.delete(documentLinks).where(eq(documentLinks.id, linkId)).run();
+        audit(
+          "document_link",
+          linkId,
+          actor,
+          before as unknown as Record<string, unknown>,
+          { id: linkId, deleted: true },
+          "deleted",
+        );
+        return linkId;
+      });
+    },
     deleteRecord(
-      kind: "organisation" | "interaction" | "task" | "project",
+      kind:
+        | "organisation"
+        | "interaction"
+        | "task"
+        | "project"
+        | "document",
       id: string,
       version: number,
       actor: string,
@@ -688,12 +917,67 @@ export function recordStore(
               "deleted",
             );
           }
+        } else if (kind === "document") {
+          const before = db
+            .select()
+            .from(documents)
+            .where(eq(documents.id, id))
+            .get();
+          if (!before) conflict();
+          if (before.version !== version) conflict();
+          if (permanent) {
+            if (!before.deletedAt)
+              throw new RecordError(
+                "Move this document to the bin before permanent deletion",
+              );
+            db.delete(documents).where(eq(documents.id, id)).run();
+            audit(
+              "document",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              { id, storageName: before.storageName },
+              "permanently_deleted",
+            );
+            return { id, storageName: before.storageName };
+          } else {
+            if (before.deletedAt)
+              throw new RecordError("This document is already in the bin");
+            const now = new Date();
+            const after = {
+              ...before,
+              version: before.version + 1,
+              updatedAt: now,
+              deletedAt: now,
+            };
+            if (
+              !db
+                .update(documents)
+                .set(after)
+                .where(and(eq(documents.id, id), eq(documents.version, version)))
+                .run().changes
+            )
+              conflict();
+            audit(
+              "document",
+              id,
+              actor,
+              before as unknown as Record<string, unknown>,
+              after as unknown as Record<string, unknown>,
+              "deleted",
+            );
+          }
         }
-        return id;
+        return { id };
       });
     },
     restoreRecord(
-      kind: "organisation" | "interaction" | "task" | "project",
+      kind:
+        | "organisation"
+        | "interaction"
+        | "task"
+        | "project"
+        | "document",
       id: string,
       version: number,
       actor: string,
@@ -892,6 +1176,37 @@ export function recordStore(
             conflict();
           audit(
             "project",
+            id,
+            actor,
+            before as unknown as Record<string, unknown>,
+            after as unknown as Record<string, unknown>,
+            "restored",
+          );
+        } else if (kind === "document") {
+          const before = db
+            .select()
+            .from(documents)
+            .where(eq(documents.id, id))
+            .get();
+          if (!before) conflict();
+          if (!before.deletedAt || before.version !== version) conflict();
+          const now = new Date();
+          const after = {
+            ...before,
+            version: before.version + 1,
+            updatedAt: now,
+            deletedAt: null,
+          };
+          if (
+            !db
+              .update(documents)
+              .set(after)
+              .where(and(eq(documents.id, id), eq(documents.version, version)))
+              .run().changes
+          )
+            conflict();
+          audit(
+            "document",
             id,
             actor,
             before as unknown as Record<string, unknown>,

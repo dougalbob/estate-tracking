@@ -79,6 +79,36 @@ export const organisationProjects = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.organisationId, t.projectId] })],
 );
+export const documents = sqliteTable("documents", {
+  id: text("id").primaryKey(),
+  friendlyName: text("friendly_name").notNull(),
+  originalName: text("original_name").notNull(),
+  storageName: text("storage_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  size: integer("size").notNull(),
+  category: text("category"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
+export const documentLinks = sqliteTable("document_links", {
+  id: text("id").primaryKey(),
+  documentId: text("document_id")
+    .notNull()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  organisationId: text("organisation_id").references(() => organisations.id, {
+    onDelete: "cascade",
+  }),
+  interactionId: text("interaction_id").references(() => interactions.id, {
+    onDelete: "cascade",
+  }),
+  taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
+});
 export const revisions = sqliteTable("revisions", {
   id: text("id").primaryKey(),
   entity: text("entity").notNull(),

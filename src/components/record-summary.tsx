@@ -20,6 +20,13 @@ const captions: Record<string, string> = {
   dueDate: "Due date",
   followUpDate: "Follow-up date",
   deadline: "Confirmed deadline",
+  friendlyName: "Friendly name",
+  originalName: "Original file",
+  storageName: "Stored as",
+  mimeType: "Type",
+  size: "Size",
+  category: "Category",
+  documentId: "Document",
 };
 export function RecordSummary({
   record,
@@ -57,8 +64,15 @@ export function RecordSummary({
       );
       return names.join(" · ") || "Not set";
     }
+    if (key === "documentId")
+      return (
+        data.documents.find((d) => d.id === value)?.friendlyName ??
+        data.deletedDocuments.find((d) => d.id === value)?.friendlyName ??
+        "Linked document"
+      );
     if (key === "assignee") return String(value).split("@")[0];
-    if (key === "status" || key === "kind") return label(String(value));
+    if (key === "status" || key === "kind" || key === "category")
+      return label(String(value));
     if (key === "occurredAt")
       return new Intl.DateTimeFormat("en-GB", {
         dateStyle: "medium",
@@ -70,6 +84,11 @@ export function RecordSummary({
         dateStyle: "medium",
         timeZone: "UTC",
       }).format(new Date(String(value)));
+    if (key === "size" && typeof value === "number") {
+      if (value < 1024) return `${value} B`;
+      if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+      return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    }
     if (Array.isArray(value)) return value.join(" · ") || "Not set";
     return String(value);
   }

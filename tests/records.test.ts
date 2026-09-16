@@ -524,3 +524,163 @@ test("restore fails if linked organisation or project is in bin", () => {
     sqlite.close();
   }
 });
+
+test("documents: upload, edit friendlyName/category, link reusable, unlink preserves file", () => {
+  const { sqlite, store } = setup();
+  try {
+    const docId = store.createDocumentFromUpload(
+      {
+        friendlyName: "Death Certificate",
+        originalName: "scan.pdf",
+        storageName: "abc123.pdf",
+        mimeType: "application/pdf",
+        size: 1024,
+        category: "certificate",
+      },
+      users[0],
+    );
+    let snap = store.snapshot();
+    assert.equal(snap.documents.length, 1);
+    assert.equal(snap.documents[0].friendlyName, "Death Certificate");
+
+    // Edit friendlyName/category via saveDocument
+    store.saveDocument(
+      {
+        id: docId,
+        version: 1,
+        friendlyName: "Cert - Updated",
+        category: "correspondence",
+        originalName: "scan.pdf",
+        storageName: "abc123.pdf",
+        mimeType: "application/pdf",
+        size: 1024,
+      },
+      users[1],
+    );
+    snap = store.snapshot();
+    assert.equal(snap.documents[0].friendlyName, "Cert - Updated");
+    assert.equal(snap.documents[0].category, "correspondence");
+    assert.equal(snap.documents[0].createdBy, users[0]);
+    assert.equal(snap.documents[0].version, 2);
+
+    // Link to organisation and task – reusable
+    const orgId = store.saveOrganisation(org, users[0]);
+    const taskId = store.saveTask({ ...task, organisationId: orgId }, users[0]);
+    const link1 = store.linkDocument(
+      { documentId: docId, organisationId: orgId },
+      users[0],
+    );
+    const link2 = store.linkDocument(
+      { documentId: docId, taskId },
+      users[0],
+    );
+    snap = store.snapshot();
+    assert.equal(snap.documentLinks.length, 2);
+    // Idempotent – same link again returns same id
+    const link1Dup = store.linkDocument(
+      { documentId: docId, organisationId: orgId },
+      users[0],
+    );
+    assert.equal(link1Dup, link1);
+    assert.equal(store.snapshot().documentLinks.length, 2);
+
+    // Unlink preserves file
+    store.unlinkDocument(link1, users[0]);
+    snap = store.snapshot();
+    assert.equal(snap.documentLinks.length, 1);
+    assert.equal(snap.documents.length, 1);
+    assert.equal(snap.documentLinks[0].id, link2);
+
+    // Validation: link to exactly one record
+    assert.throws(() =>
+      store.linkDocument(
+        { documentId: docId, organisationId: orgId, taskId },
+        users[0],
+      ),
+    );
+    assert.throws(() =>
+      store.linkDocument({ documentId: docId }, users[0] as any),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("documents: bin preserves file and links, permanent delete removes file reference and retains history", () => {
+  const { sqlite, store } = setup();
+  try {
+    const docId = store.createDocumentFromUpload(
+      {
+        friendlyName: "Will",
+        originalName: "will.pdf",
+        storageName: "will123.pdf",
+        mimeType: "application/pdf",
+        size: 2048,
+        category: "legal",
+      },
+      users[0],
+    );
+    const orgId = store.saveOrganisation(org, users[0]);
+    store.linkDocument({ documentId: docId, organisationId: orgId }, users[0]);
+
+    // Soft delete – moves to bin, link still in DB (filtered in UI)
+    store.deleteRecord("document", docId, 1, users[0], false);
+    let snap = store.snapshot();
+    assert.equal(snap.documents.length, 0);
+    assert.equal(snap.deletedDocuments.length, 1);
+    assert.equal(snap.documentLinks.length, 1, "link remains after soft delete");
+
+    // Restore
+    store.restoreRecord("document", docId, 2, users[0]);
+    snap = store.snapshot();
+    assert.equal(snap.documents.length, 1);
+    assert.equal(snap.deletedDocuments.length, 0);
+
+    // Permanent delete requires bin first
+    assert.throws(() =>
+      store.deleteRecord("document", docId, 3, users[0], true),
+    );
+    store.deleteRecord("document", docId, 3, users[0], false);
+    const res = store.deleteRecord("document", docId, 4, users[0], true) as any;
+    assert.equal(res.storageName, "will123.pdf");
+    snap = store.snapshot();
+    assert.equal(snap.documents.length, 0);
+    assert.equal(snap.deletedDocuments.length, 0);
+    assert.equal(snap.documentLinks.length, 0, "cascade removes links on permanent delete");
+    assert.ok(
+      snap.revisions.some((r) => r.entity === "document" && r.entityId === docId),
+      "revision history retained",
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("documents: deleting linked record does not delete document, only unlinks", () => {
+  const { sqlite, store } = setup();
+  try {
+    const docId = store.createDocumentFromUpload(
+      {
+        friendlyName: "Bank Letter",
+        originalName: "letter.pdf",
+        storageName: "letter.pdf",
+        mimeType: "application/pdf",
+        size: 512,
+        category: "correspondence",
+      },
+      users[0],
+    );
+    const orgId = store.saveOrganisation(org, users[0]);
+    store.linkDocument({ documentId: docId, organisationId: orgId }, users[0]);
+    assert.equal(store.snapshot().documentLinks.length, 1);
+
+    // Soft + permanent delete org – document must survive, link removed via cascade
+    store.deleteRecord("organisation", orgId, 1, users[0], false);
+    store.deleteRecord("organisation", orgId, 2, users[0], true);
+    let snap = store.snapshot();
+    assert.equal(snap.documents.length, 1, "document not cascade-deleted with org");
+    assert.equal(snap.documentLinks.length, 0, "org link removed");
+  } finally {
+    sqlite.close();
+  }
+});

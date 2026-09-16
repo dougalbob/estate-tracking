@@ -12,6 +12,16 @@ export const taskStatuses = [
   "done",
   "cancelled",
 ] as const;
+export const documentCategories = [
+  "certificate",
+  "correspondence",
+  "financial",
+  "identification",
+  "legal",
+  "property",
+  "receipt",
+  "other",
+] as const;
 const optionalText = z
   .string()
   .trim()
@@ -80,6 +90,23 @@ export const projectInput = z.object({
   ...common,
   name: z.string().trim().min(1, "A project name is required").max(200),
 });
+export const documentInput = z.object({
+  ...common,
+  friendlyName: z
+    .string()
+    .trim()
+    .min(1, "A friendly name is required")
+    .max(200),
+  category: z.enum(documentCategories).nullable().default(null),
+  // originalName, storageName, mimeType, size are set server-side from upload
+});
+export const documentLinkInput = z.object({
+  documentId: z.string().min(1),
+  organisationId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
+  interactionId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
+  taskId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
+  projectId: z.string().trim().min(1).nullable().optional().transform((v) => (v ? v.trim() : null) || null),
+});
 export const deleteInput = z.object({
   ...common,
   permanent: z.boolean().optional().default(false),
@@ -88,6 +115,8 @@ export type OrganisationInput = z.input<typeof organisationInput>;
 export type TaskInput = z.input<typeof taskInput>;
 export type InteractionInput = z.input<typeof interactionInput>;
 export type ProjectInput = z.input<typeof projectInput>;
+export type DocumentInput = z.input<typeof documentInput>;
+export type DocumentLinkInput = z.input<typeof documentLinkInput>;
 export const label = (value: string) =>
   value
     .split("_")
@@ -112,3 +141,14 @@ export function londonToday(now = new Date()) {
     day: "2-digit",
   }).format(now);
 }
+export const allowedMimeTypes = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/tiff",
+  "image/heic",
+  "image/heif",
+  "text/plain",
+] as const;
+export const maxDocumentSizeBytes = 20 * 1024 * 1024; // 20 MB

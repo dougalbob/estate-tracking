@@ -20,8 +20,19 @@ import {
   ArchiveRestore,
   Archive,
   AlertTriangle,
+  Download,
+  FileText,
+  Link2,
+  X,
 } from "lucide-react";
-import { switchDemoUser, deleteRecord, restoreRecord } from "@/app/actions";
+import {
+  switchDemoUser,
+  deleteRecord,
+  restoreRecord,
+  uploadDocument,
+  linkDocument,
+  unlinkDocument,
+} from "@/app/actions";
 import { RecordSummary } from "./record-summary";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -33,7 +44,9 @@ import {
   label,
   londonToday,
   taskStatuses,
+  documentCategories,
 } from "@/lib/records/validation";
+
 const sections = [
   {
     id: "contacts",
@@ -56,6 +69,7 @@ const sections = [
     description: "Important paperwork, kept together and easy to find.",
   },
 ];
+
 const formatTime = (value: string | Date | number) =>
   new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
@@ -67,6 +81,12 @@ const formatDate = (value: string) =>
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(new Date(value));
+const formatSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export function Workspace({
   user,
   users,
@@ -83,12 +103,24 @@ export function Workspace({
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("open"),
     [owner, setOwner] = useState("all"),
+    [docQuery, setDocQuery] = useState(""),
+    [docCategory, setDocCategory] = useState("all"),
     [message, setMessage] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [docUpload, setDocUpload] = useState<{
+      organisationId?: string;
+      interactionId?: string;
+      taskId?: string;
+      projectId?: string;
+    } | null>(null),
+    [linkPicker, setLinkPicker] = useState<{
+      documentId: string;
+    } | null>(null);
+
   const router = useRouter();
   useEffect(() => {
     const refresh = () => {
-      if (!editor && !history && document.visibilityState === "visible")
+      if (!editor && !history && !docUpload && !linkPicker && document.visibilityState === "visible")
         router.refresh();
     };
     const interval = window.setInterval(refresh, 30000);
@@ -97,7 +129,8 @@ export function Workspace({
       window.clearInterval(interval);
       window.removeEventListener("focus", refresh);
     };
-  }, [editor, history, router]);
+  }, [editor, history, docUpload, linkPicker, router]);
+
   const organisation = data.organisations.find((o) => o.id === selected);
   const names = (email: string | null) =>
     email ? email.split("@")[0] : "Unassigned";
@@ -121,6 +154,27 @@ export function Workspace({
     data.organisationProjects
       .filter((op) => op.organisationId === orgId)
       .map((op) => op.projectId);
+
+  const getLinkedDocuments = (filter: {
+    organisationId?: string;
+    interactionId?: string;
+    taskId?: string;
+    projectId?: string;
+  }) => {
+    const linkIds = data.documentLinks
+      .filter((l) => {
+        if (filter.organisationId && l.organisationId === filter.organisationId) return true;
+        if (filter.interactionId && l.interactionId === filter.interactionId) return true;
+        if (filter.taskId && l.taskId === filter.taskId) return true;
+        if (filter.projectId && l.projectId === filter.projectId) return true;
+        return false;
+      })
+      .map((l) => l.documentId);
+    return data.documents.filter((d) => linkIds.includes(d.id));
+  };
+
+  const getDocumentLinks = (docId: string) => data.documentLinks.filter((l) => l.documentId === docId);
+
   const openTasks = data.tasks.filter(
     (t) => !["done", "cancelled"].includes(t.status),
   );
@@ -134,6 +188,7 @@ export function Workspace({
     setSelected(null);
     setHistory(null);
     setQuery("");
+    setDocQuery("");
     setError("");
   }
   function edit(kind: Editor["kind"], id?: string, organisationId?: string) {
@@ -153,7 +208,7 @@ export function Workspace({
     );
   }
   async function handleDelete(
-    kind: "organisation" | "interaction" | "task" | "project",
+    kind: "organisation" | "interaction" | "task" | "project" | "document",
     id: string,
     version: number,
     permanent = false,
@@ -162,14 +217,18 @@ export function Workspace({
     if (!permanent) {
       if (
         !window.confirm(
-          "Move this to the recoverable bin? You can restore it later. Linked notes and tasks will not be deleted.",
+          kind === "document"
+            ? "Move this document to the recoverable bin? You can restore it later. Its links will be kept."
+            : "Move this to the recoverable bin? You can restore it later. Linked notes, tasks, and documents will not be deleted.",
         )
       )
         return;
     } else {
       if (
         !window.confirm(
-          "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks and notes will be kept but unlinked.",
+          kind === "document"
+            ? "Permanently delete this document and its file? This cannot be undone. The edit history will remain, but the file will be removed."
+            : "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks and notes will be kept but unlinked.",
         )
       )
         return;
@@ -177,9 +236,7 @@ export function Workspace({
         "To confirm permanent deletion, type DELETE in capitals",
       );
       if (second !== "DELETE") {
-        setError(
-          "Permanent deletion cancelled – confirmation text did not match.",
-        );
+        setError("Permanent deletion cancelled – confirmation text did not match.");
         return;
       }
     }
@@ -197,7 +254,7 @@ export function Workspace({
     }
   }
   async function handleRestore(
-    kind: "organisation" | "interaction" | "task" | "project",
+    kind: "organisation" | "interaction" | "task" | "project" | "document",
     id: string,
     version: number,
   ) {
@@ -213,6 +270,7 @@ export function Workspace({
   function taskRow(t: Snapshot["tasks"][number]) {
     const date = attentionDate(t),
       source = data.interactions.find((n) => n.id === t.interactionId);
+    const docs = getLinkedDocuments({ taskId: t.id });
     return (
       <div className="task-row" key={t.id}>
         <span className="task-icon">
@@ -229,6 +287,7 @@ export function Workspace({
             {t.projectId && projectName(t.projectId) && (
               <> · {projectName(t.projectId)}</>
             )}
+            {docs.length > 0 && <> · {docs.length} document{docs.length > 1 ? "s" : ""}</>}
           </p>
           <p>
             {label(t.status)}
@@ -251,6 +310,15 @@ export function Workspace({
             >
               From: {source.title}
             </button>
+          )}
+          {docs.length > 0 && (
+            <div className="doc-pills">
+              {docs.map((d) => (
+                <span key={d.id} className="badge">
+                  <FileText size={10} /> {d.friendlyName}
+                </span>
+              ))}
+            </div>
           )}
         </div>
         <div className="row-actions">
@@ -276,6 +344,7 @@ export function Workspace({
     );
   }
   function noteCard(note: Snapshot["interactions"][number]) {
+    const docs = getLinkedDocuments({ interactionId: note.id });
     return (
       <article className="panel note-card" key={note.id}>
         <div className="section-heading">
@@ -305,12 +374,34 @@ export function Workspace({
           </div>
         </div>
         <p className="note-detail">{note.detail}</p>
+        {docs.length > 0 && (
+          <div className="doc-list" style={{ padding: "0 24px 12px" }}>
+            {docs.map((d) => (
+              <div key={d.id} className="doc-inline">
+                <FileText size={14} />
+                <a href={`/api/documents/${d.id}/download`} className="text-link">
+                  {d.friendlyName}
+                </a>
+                <span className="badge">{d.category ? label(d.category) : "No category"}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="note-meta">
           <small>
             Recorded {formatTime(note.createdAt)}
             {note.version > 1 ? " · Edited" : ""}
           </small>
-          {historyButton("interaction", note.id)}
+          <div className="row-actions">
+            {historyButton("interaction", note.id)}
+            <button
+              className="subtle-button"
+              onClick={() => setDocUpload({ interactionId: note.id })}
+            >
+              <FileText size={14} />
+              Attach document
+            </button>
+          </div>
         </div>
         {data.tasks.filter((t) => t.interactionId === note.id).map(taskRow)}
         <div className="panel-footer">
@@ -331,6 +422,61 @@ export function Workspace({
       </article>
     );
   }
+
+  function documentRow(doc: Snapshot["documents"][number]) {
+    const links = getDocumentLinks(doc.id);
+    const linkedNames = links
+      .map((l) => {
+        if (l.organisationId) return orgName(l.organisationId);
+        if (l.interactionId) return data.interactions.find((i) => i.id === l.interactionId)?.title ?? "Note";
+        if (l.taskId) return data.tasks.find((t) => t.id === l.taskId)?.title ?? "Task";
+        if (l.projectId) return projectName(l.projectId);
+        return null;
+      })
+      .filter(Boolean);
+    return (
+      <div className="task-row" key={doc.id}>
+        <span className="task-icon">
+          <FileText size={18} />
+        </span>
+        <div className="task-copy">
+          <button className="record-title" onClick={() => edit("document", doc.id)}>
+            {doc.friendlyName}
+          </button>
+          <p>
+            {doc.originalName} · {formatSize(doc.size)} · {names(doc.createdBy)}
+            {doc.category && <> · {label(doc.category)}</>}
+          </p>
+          <p>
+            {linkedNames.length > 0 ? linkedNames.join(" · ") : "No links yet – reusable across records"}
+          </p>
+          <p>
+            <small>Stored as {doc.storageName.slice(0, 8)}… · {formatTime(doc.createdAt)}</small>
+          </p>
+        </div>
+        <div className="row-actions">
+          <a href={`/api/documents/${doc.id}/download`} className="subtle-button">
+            <Download size={14} />
+            Download
+          </a>
+          <button className="subtle-button" onClick={() => edit("document", doc.id)}>
+            <Pencil size={14} />
+            Edit
+          </button>
+          <button className="subtle-button" onClick={() => setLinkPicker({ documentId: doc.id })}>
+            <Link2 size={14} />
+            Link
+          </button>
+          {historyButton("document", doc.id)}
+          <button className="subtle-button" onClick={() => handleDelete("document", doc.id, doc.version)}>
+            <Trash2 size={14} />
+            Bin
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const title =
     view === "overview"
       ? "Your overview"
@@ -342,16 +488,39 @@ export function Workspace({
             ? "Unfiled notes"
             : view === "projects"
               ? "Your projects"
-              : view === "bin"
-                ? "Recoverable bin"
-                : view === "finances"
-                  ? "Estate finances"
-                  : "Documents";
+              : view === "documents"
+                ? "Documents"
+                : view === "bin"
+                  ? "Recoverable bin"
+                  : view === "finances"
+                    ? "Estate finances"
+                    : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
     data.deletedTasks.length +
-    data.deletedProjects.length;
+    data.deletedProjects.length +
+    data.deletedDocuments.length;
+
+  const filteredDocs = [...data.documents].filter((d) => {
+    const q = docQuery.toLowerCase();
+    const matchesQuery =
+      !q ||
+      [d.friendlyName, d.originalName, d.category ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(q) ||
+      getDocumentLinks(d.id).some((l) => {
+        if (l.organisationId) return orgName(l.organisationId).toLowerCase().includes(q);
+        if (l.interactionId) return (data.interactions.find((i) => i.id === l.interactionId)?.title ?? "").toLowerCase().includes(q);
+        if (l.taskId) return (data.tasks.find((t) => t.id === l.taskId)?.title ?? "").toLowerCase().includes(q);
+        if (l.projectId) return (projectName(l.projectId) ?? "").toLowerCase().includes(q);
+        return false;
+      });
+    const matchesCategory = docCategory === "all" || (d.category ?? "") === docCategory;
+    return matchesQuery && matchesCategory;
+  });
+
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -440,14 +609,24 @@ export function Workspace({
                 {view === "overview"
                   ? "See what needs attention and pick up where you left off."
                   : view === "bin"
-                    ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation."
-                    : "Everything you need, shared between the two of you."}
+                    ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
+                    : view === "documents"
+                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. Removing a link does not delete the file. All downloads need the same access as the rest of the app."
+                      : "Everything you need, shared between the two of you."}
               </p>
             </div>
-            <Button onClick={() => edit("interaction")}>
-              <Plus size={18} />
-              Quick note
-            </Button>
+            <div className="row-actions">
+              {view === "documents" && (
+                <Button variant="outline" onClick={() => setDocUpload({})}>
+                  <FileText size={16} />
+                  Upload document
+                </Button>
+              )}
+              <Button onClick={() => edit("interaction")}>
+                <Plus size={18} />
+                Quick note
+              </Button>
+            </div>
           </div>
           {message && (
             <p role="status" className="success-message">
@@ -509,7 +688,7 @@ export function Workspace({
                         <div>
                           <p>
                             <strong>{names(r.actor)}</strong> {r.action}{" "}
-                            {String(r.after.name ?? r.after.title ?? r.entity)}.
+                            {String(r.after.name ?? r.after.title ?? r.after.friendlyName ?? r.entity)}.
                           </p>
                           <small>{formatTime(r.at)}</small>
                         </div>
@@ -541,7 +720,7 @@ export function Workspace({
                     <p>{s.description}</p>
                     <span className="coming">
                       {s.id === "documents"
-                        ? "Document uploads are coming next"
+                        ? `${data.documents.length} documents · Open list`
                         : "Open " + s.title.toLowerCase()}
                     </span>
                   </button>
@@ -627,6 +806,9 @@ export function Workspace({
                                 .join(", ")}
                             </>
                           )}
+                          {getLinkedDocuments({ organisationId: o.id }).length > 0 && (
+                            <> · {getLinkedDocuments({ organisationId: o.id }).length} docs</>
+                          )}
                         </small>
                       </span>
                       <span className="badge">{label(o.status)}</span>
@@ -711,13 +893,46 @@ export function Workspace({
                 {organisationProjectIds(organisation.id).length > 0 && (
                   <div
                     className="project-pills"
-                    style={{ padding: "0 24px 18px" }}
+                    style={{ padding: "0 24px 12px" }}
                   >
                     {organisationProjectIds(organisation.id).map((pid) => (
                       <span key={pid}>{projectName(pid)}</span>
                     ))}
                   </div>
                 )}
+                <div className="section-heading" style={{ borderTop: "1px solid var(--border)" }}>
+                  <h3>Documents</h3>
+                  <div className="row-actions">
+                    <Button variant="outline" onClick={() => setDocUpload({ organisationId: organisation.id })}>
+                      <FileText size={14} />
+                      Upload
+                    </Button>
+                    <Button variant="outline" onClick={() => setLinkPicker({ documentId: "" })}>
+                      <Link2 size={14} />
+                      Link existing
+                    </Button>
+                  </div>
+                </div>
+                <div style={{ padding: "0 24px 16px" }}>
+                  {getLinkedDocuments({ organisationId: organisation.id }).map((d) => (
+                    <DocumentLinkRow
+                      key={d.id}
+                      doc={d}
+                      links={getDocumentLinks(d.id).filter((l) => l.organisationId === organisation.id)}
+                      onUnlink={async (linkId) => {
+                        const res = await unlinkDocument(linkId);
+                        if (!res.ok) setError(res.error);
+                        else {
+                          setMessage("Link removed – document itself stays.");
+                          router.refresh();
+                        }
+                      }}
+                    />
+                  ))}
+                  {!getLinkedDocuments({ organisationId: organisation.id }).length && (
+                    <p className="form-help">No documents linked yet. Upload a certificate or link an existing file – it can be reused elsewhere.</p>
+                  )}
+                </div>
               </section>
               <div className="list-toolbar">
                 <h2>Interaction history</h2>
@@ -871,7 +1086,7 @@ export function Workspace({
                 Projects group tasks and organisations. Organisations can belong
                 to multiple projects; tasks have one optional project. Rename
                 projects any time. Deleting a project does not delete its tasks
-                – it just unlinks them.
+                – it just unlinks them. Documents can be linked to projects too.
               </p>
               {data.projects.map((p) => {
                 const linkedOrgs = data.organisationProjects
@@ -880,6 +1095,7 @@ export function Workspace({
                     data.organisations.find((o) => o.id === op.organisationId),
                   )
                   .filter(Boolean) as Snapshot["organisations"];
+                const docs = getLinkedDocuments({ projectId: p.id });
                 return (
                   <section className="panel project-panel spaced" key={p.id}>
                     <div className="section-heading">
@@ -890,7 +1106,7 @@ export function Workspace({
                             data.tasks.filter((t) => t.projectId === p.id)
                               .length
                           }{" "}
-                          tasks · {linkedOrgs.length} organisations
+                          tasks · {linkedOrgs.length} organisations · {docs.length} docs
                         </p>
                       </div>
                       <div className="row-actions">
@@ -923,10 +1139,18 @@ export function Workspace({
                         ))}
                       </div>
                     )}
+                    <div style={{ padding: "0 24px 12px", borderTop: linkedOrgs.length ? "1px solid var(--border)" : "0", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {docs.map((d) => (
+                        <span key={d.id} className="badge">
+                          <FileText size={10} /> {d.friendlyName}
+                        </span>
+                      ))}
+                      <button className="subtle-button" onClick={() => setDocUpload({ projectId: p.id })}>
+                        <FileText size={12} /> Attach doc
+                      </button>
+                    </div>
                     <div style={{ borderTop: "1px solid var(--border)" }}>
-                      {data.tasks
-                        .filter((t) => t.projectId === p.id)
-                        .map(taskRow)}
+                      {data.tasks.filter((t) => t.projectId === p.id).map(taskRow)}
                       {!data.tasks.some((t) => t.projectId === p.id) && (
                         <p className="empty-state">
                           No tasks assigned to this project yet.
@@ -952,6 +1176,63 @@ export function Workspace({
               )}
             </>
           )}
+          {view === "documents" && (
+            <>
+              <div className="list-toolbar">
+                <div style={{ display: "flex", gap: "12px", flex: 1, flexWrap: "wrap" }}>
+                  <label className="search-label">
+                    Search documents
+                    <input
+                      type="search"
+                      placeholder="Search name, category, or linked record…"
+                      value={docQuery}
+                      onChange={(e) => setDocQuery(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Category
+                    <select
+                      value={docCategory}
+                      onChange={(e) => setDocCategory(e.target.value)}
+                    >
+                      <option value="all">All categories</option>
+                      {documentCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {label(c)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <Button onClick={() => setDocUpload({})}>
+                  <Plus size={16} />
+                  Upload document
+                </Button>
+              </div>
+              <p className="form-help" style={{ marginBottom: "12px" }}>
+                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed. Original filenames are kept for download but storage uses safe generated names.
+              </p>
+              <section className="panel">
+                {filteredDocs.map(documentRow)}
+                {!filteredDocs.length && (
+                  <div className="empty-state">
+                    <FolderOpen size={26} />
+                    <h2>{data.documents.length ? "No matching documents" : "Your document space"}</h2>
+                    <p>
+                      {data.documents.length
+                        ? "Adjust your search or category filter."
+                        : "Upload a certificate, screenshot, or scanned letter. Give it a friendly name and link it to organisations, notes, tasks, or projects. One file can be reused everywhere."}
+                    </p>
+                    {!data.documents.length && (
+                      <Button onClick={() => setDocUpload({})}>
+                        Upload your first document
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
           {view === "bin" && (
             <>
               <div className="panel">
@@ -962,7 +1243,7 @@ export function Workspace({
                       Ordinary deletions go here. No automatic purge. Permanent
                       deletion needs explicit confirmation and keeps the history
                       entry. Deleting an organisation never deletes its notes,
-                      tasks, or documents.
+                      tasks, or documents. Document files stay until permanent deletion.
                     </p>
                   </div>
                   <span className="badge">{binCount} items</span>
@@ -989,6 +1270,11 @@ export function Workspace({
                   items: data.deletedProjects,
                   label: "Projects",
                 },
+                {
+                  kind: "document" as const,
+                  items: data.deletedDocuments,
+                  label: "Documents",
+                },
               ].map((group) => (
                 <section className="panel spaced" key={group.kind}>
                   <div className="section-heading">
@@ -1004,16 +1290,18 @@ export function Workspace({
                           <Phone size={16} />
                         ) : group.kind === "task" ? (
                           <ListTodo size={16} />
+                        ) : group.kind === "document" ? (
+                          <FileText size={16} />
                         ) : (
                           <BookOpen size={16} />
                         )}
                       </span>
                       <div className="task-copy">
-                        <strong>{item.name ?? item.title}</strong>
+                        <strong>{item.name ?? item.title ?? item.friendlyName}</strong>
                         <p>
                           {item.detail
                             ? item.detail.slice(0, 120)
-                            : item.reference || item.mainContact || ""}
+                            : item.reference || item.mainContact || item.originalName || ""}
                         </p>
                         <p>
                           <small>
@@ -1059,18 +1347,13 @@ export function Workspace({
               ))}
             </>
           )}
-          {["documents", "finances"].includes(view) && (
+          {view === "finances" && (
             <section className="panel empty-state">
-              <FolderOpen size={28} />
-              <h2>
-                {view === "documents"
-                  ? "Your document space is coming next"
-                  : "Financial tracking is a later milestone"}
-              </h2>
+              <Wallet size={28} />
+              <h2>Financial tracking is a later milestone</h2>
               <p>
-                {view === "documents"
-                  ? "Friendly names, reusable attachments, and one central list. Uploads are not available yet."
-                  : "Assets, liabilities, expenses, and reimbursements in GBP. No tax or entitlement calculations."}
+                Assets, liabilities, expenses, and reimbursements in GBP. No tax
+                or entitlement calculations.
               </p>
             </section>
           )}
@@ -1093,6 +1376,8 @@ export function Workspace({
               setSelected(id);
             } else if (editor.kind === "project") {
               setView("projects");
+            } else if (editor.kind === "document") {
+              setView("documents");
             }
             setEditor(null);
           }}
@@ -1105,9 +1390,323 @@ export function Workspace({
           onClose={() => setHistory(null)}
         />
       )}
+      {docUpload && (
+        <DocumentUploadDialog
+          data={data}
+          initial={docUpload}
+          onClose={() => setDocUpload(null)}
+          onUploaded={(id) => {
+            setMessage("Document uploaded and linked. Stored once, reusable everywhere.");
+            setDocUpload(null);
+            router.refresh();
+            if (id) {
+              setView("documents");
+            }
+          }}
+          onError={setError}
+        />
+      )}
+      {linkPicker && (
+        <DocumentLinkPicker
+          data={data}
+          documentId={linkPicker.documentId}
+          onClose={() => setLinkPicker(null)}
+          onLinked={() => {
+            setMessage("Document linked – one file, many places.");
+            setLinkPicker(null);
+            router.refresh();
+          }}
+          onError={setError}
+        />
+      )}
     </div>
   );
 }
+
+function DocumentLinkRow({
+  doc,
+  links,
+  onUnlink,
+}: {
+  doc: Snapshot["documents"][number];
+  links: Snapshot["documentLinks"];
+  onUnlink: (linkId: string) => void;
+}) {
+  return (
+    <div className="doc-inline-row">
+      <FileText size={14} />
+      <a href={`/api/documents/${doc.id}/download`} className="text-link">
+        {doc.friendlyName}
+      </a>
+      <span className="badge">{doc.category ? label(doc.category) : "No category"}</span>
+      <span className="badge">{formatSize(doc.size)}</span>
+      <div className="row-actions" style={{ marginLeft: "auto" }}>
+        {links.map((l) => (
+          <button key={l.id} className="subtle-button danger" onClick={() => onUnlink(l.id)}>
+            <X size={12} />
+            Remove link
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DocumentUploadDialog({
+  data,
+  initial,
+  onClose,
+  onUploaded,
+  onError,
+}: {
+  data: Snapshot;
+  initial: { organisationId?: string; interactionId?: string; taskId?: string; projectId?: string };
+  onClose: () => void;
+  onUploaded: (id: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [friendlyName, setFriendlyName] = useState("");
+  const [category, setCategory] = useState("");
+  const [orgId, setOrgId] = useState(initial.organisationId ?? "");
+  const [intId, setIntId] = useState(initial.interactionId ?? "");
+  const [taskId, setTaskId] = useState(initial.taskId ?? "");
+  const [projId, setProjId] = useState(initial.projectId ?? "");
+  const [file, setFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) {
+      onError("Choose a file first");
+      return;
+    }
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("file", file);
+    fd.set("friendlyName", friendlyName || file.name.replace(/\.[^/.]+$/, ""));
+    if (category) fd.set("category", category);
+    if (orgId) fd.set("organisationId", orgId);
+    if (intId) fd.set("interactionId", intId);
+    if (taskId) fd.set("taskId", taskId);
+    if (projId) fd.set("projectId", projId);
+    const res = await uploadDocument(fd);
+    setBusy(false);
+    if (!res.ok) {
+      onError(res.error);
+    } else {
+      if ((res as any).warning) onError((res as any).warning);
+      onUploaded(res.id);
+    }
+  }
+
+  return (
+    <dialog ref={dialog} className="record-dialog" onCancel={(e) => { e.preventDefault(); onClose(); }}>
+      <form onSubmit={submit}>
+        <div className="dialog-heading">
+          <div>
+            <p className="eyebrow">STORE ONCE, LINK MANY TIMES</p>
+            <h2>Upload document</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} disabled={busy}>
+            <X size={21} />
+          </button>
+        </div>
+        <fieldset disabled={busy} className="form-fields">
+          <label>
+            File <small>PDF, image, or text – max 20 MB</small>
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf" required onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              setFile(f);
+              if (f && !friendlyName) setFriendlyName(f.name.replace(/\.[^/.]+$/, ""));
+            }} />
+          </label>
+          <label>
+            Friendly name
+            <input value={friendlyName} onChange={(e) => setFriendlyName(e.target.value)} required maxLength={200} placeholder="Death certificate – Bank1" />
+          </label>
+          <label>
+            Category
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">No category</option>
+              {documentCategories.map((c) => (
+                <option key={c} value={c}>{label(c)}</option>
+              ))}
+            </select>
+          </label>
+          <p className="form-help">
+            In production files go to <code>/mnt/user/appdata/estate-organiser/documents</code> (container path <code>/data/documents</code>). Demo mode uses <code>./data/demo-documents</code>. Storage names are generated safely – original name is kept for download.
+          </p>
+          <fieldset className="follow-up">
+            <legend>Link to (optional – you can link later too)</legend>
+            <div className="form-grid">
+              <label>
+                Organisation
+                <select value={orgId} onChange={(e) => setOrgId(e.target.value)}>
+                  <option value="">No organisation</option>
+                  {data.organisations.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Interaction / Note
+                <select value={intId} onChange={(e) => setIntId(e.target.value)}>
+                  <option value="">No note</option>
+                  {data.interactions.slice(0, 100).map((n) => (
+                    <option key={n.id} value={n.id}>{n.title}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Task
+                <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
+                  <option value="">No task</option>
+                  {data.tasks.slice(0, 100).map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Project
+                <select value={projId} onChange={(e) => setProjId(e.target.value)}>
+                  <option value="">No project</option>
+                  {data.projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="form-help">Pick at most one here – after upload you can link the same file to many records from the Documents list.</p>
+          </fieldset>
+        </fieldset>
+        <div className="form-actions">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Uploading…" : "Upload"}</Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+function DocumentLinkPicker({
+  data,
+  documentId,
+  onClose,
+  onLinked,
+  onError,
+}: {
+  data: Snapshot;
+  documentId: string;
+  onClose: () => void;
+  onLinked: () => void;
+  onError: (msg: string) => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState<{ kind: "organisation" | "interaction" | "task" | "project"; id: string } | null>(null);
+  const [docId, setDocId] = useState(documentId);
+
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!docId) {
+      onError("Choose a document first");
+      return;
+    }
+    if (!target) {
+      onError("Choose where to link it");
+      return;
+    }
+    setBusy(true);
+    const input: any = { documentId: docId };
+    if (target.kind === "organisation") input.organisationId = target.id;
+    if (target.kind === "interaction") input.interactionId = target.id;
+    if (target.kind === "task") input.taskId = target.id;
+    if (target.kind === "project") input.projectId = target.id;
+    const res = await linkDocument(input);
+    setBusy(false);
+    if (!res.ok) onError(res.error);
+    else onLinked();
+  }
+
+  return (
+    <dialog ref={dialog} className="record-dialog" onCancel={(e) => { e.preventDefault(); onClose(); }}>
+      <form onSubmit={submit}>
+        <div className="dialog-heading">
+          <div>
+            <p className="eyebrow">ONE FILE, MANY PLACES</p>
+            <h2>Link document</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} disabled={busy}>
+            <X size={21} />
+          </button>
+        </div>
+        <fieldset disabled={busy} className="form-fields">
+          <label>
+            Document
+            <select value={docId} onChange={(e) => setDocId(e.target.value)} required>
+              <option value="">Choose document</option>
+              {data.documents.map((d) => (
+                <option key={d.id} value={d.id}>{d.friendlyName} – {d.originalName}</option>
+              ))}
+            </select>
+          </label>
+          <p className="form-help">Removing a link never deletes the file or its other links. Store once, reuse everywhere.</p>
+          <label>
+            Link to organisation
+            <select onChange={(e) => e.target.value && setTarget({ kind: "organisation", id: e.target.value })}>
+              <option value="">Pick organisation…</option>
+              {data.organisations.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Or interaction / note
+            <select onChange={(e) => e.target.value && setTarget({ kind: "interaction", id: e.target.value })}>
+              <option value="">Pick note…</option>
+              {data.interactions.slice(0, 100).map((n) => (
+                <option key={n.id} value={n.id}>{n.title}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Or task
+            <select onChange={(e) => e.target.value && setTarget({ kind: "task", id: e.target.value })}>
+              <option value="">Pick task…</option>
+              {data.tasks.slice(0, 100).map((t) => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Or project
+            <select onChange={(e) => e.target.value && setTarget({ kind: "project", id: e.target.value })}>
+              <option value="">Pick project…</option>
+              {data.projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          {target && <p className="form-help">Will link to {target.kind}: {target.id}</p>}
+        </fieldset>
+        <div className="form-actions">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Linking…" : "Link"}</Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 function HistoryDialog({
   data,
   target,
@@ -1144,7 +1743,7 @@ function HistoryDialog({
       <p className="form-help">
         Times shown in Europe/London. Earlier versions remain available after
         edits. Permanent deletions keep this history entry; the record content
-        is no longer in the workspace.
+        is no longer in the workspace. Document files are removed only on permanent deletion.
       </p>
       {data.revisions
         .filter((r) => r.entity === target.kind && r.entityId === target.id)

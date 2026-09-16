@@ -10,9 +10,10 @@ import {
   label,
   organisationStatuses,
   taskStatuses,
+  documentCategories,
 } from "@/lib/records/validation";
 export type Editor = {
-  kind: "organisation" | "interaction" | "task" | "project";
+  kind: "organisation" | "interaction" | "task" | "project" | "document";
   id?: string;
   organisationId?: string;
   interactionId?: string;
@@ -33,7 +34,9 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
         ? data.interactions
         : editor.kind === "task"
           ? data.tasks
-          : data.projects;
+          : editor.kind === "project"
+            ? data.projects
+            : data.documents;
   const record = rows.find((r) => r.id === editor.id);
   const initial = (record ?? {}) as unknown as Record<string, unknown>;
   const value = (name: string, fallback = "") =>
@@ -46,7 +49,6 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
   const counter = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const [dirty, setDirty] = useState(false);
-  // For organisation project links
   const linkedProjectIds = editor.id
     ? data.organisationProjects
         .filter((op) => op.organisationId === editor.id)
@@ -215,6 +217,12 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
         ...base,
         name: get("name"),
       };
+    else if (editor.kind === "document")
+      input = {
+        ...base,
+        friendlyName: get("friendlyName"),
+        category: nullable("category"),
+      };
     else
       input = {
         ...base,
@@ -274,7 +282,9 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   ? "interaction or note"
                   : editor.kind === "task"
                     ? "task"
-                    : "project"}
+                    : editor.kind === "project"
+                      ? "project"
+                      : "document"}
             </h2>
           </div>
           <button
@@ -404,6 +414,51 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 belong to multiple projects.
               </p>
             </>
+          ) : editor.kind === "document" ? (
+            <>
+              <label>
+                Friendly name
+                <input
+                  name="friendlyName"
+                  required
+                  maxLength={200}
+                  defaultValue={value("friendlyName")}
+                  autoFocus
+                  placeholder="For example, Death certificate – Bank1"
+                />
+              </label>
+              <label>
+                Category
+                <select
+                  name="category"
+                  defaultValue={value("category")}
+                >
+                  <option value="">No category</option>
+                  {documentCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {label(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="form-help">
+                The stored file itself is not changed here – only the friendly name and category. To replace the file, upload a new document and link it.
+              </p>
+              <dl className="details-grid">
+                <div>
+                  <dt>Original file</dt>
+                  <dd>{value("originalName")}</dd>
+                </div>
+                <div>
+                  <dt>Size</dt>
+                  <dd>
+                    {initial.size
+                      ? `${(Number(initial.size) / 1024).toFixed(1)} KB`
+                      : "Unknown"}
+                  </dd>
+                </div>
+              </dl>
+            </>
           ) : (
             <>
               <label>
@@ -482,8 +537,7 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                     />
                   </label>
                   <p className="form-help">
-                    Recorded by the signed-in user. Document uploads will follow
-                    in a later milestone.
+                    Recorded by the signed-in user. Attach documents from the organisation or document list after saving.
                   </p>
                   <h3>
                     {editor.id ? "Add more follow-up tasks" : "Follow-up tasks"}
