@@ -88,6 +88,22 @@ const formatSize = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+function viewDocument(id: string) {
+  if (typeof window === "undefined") return;
+  window.open(`/api/documents/${id}/download`, "_blank", "noopener,noreferrer");
+}
+function downloadDocument(id: string, originalName?: string) {
+  if (typeof window === "undefined") return;
+  const url = `/api/documents/${id}/download?download=1`;
+  const a = document.createElement("a");
+  a.href = url;
+  if (originalName) a.download = originalName;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 type DocUploadInitial = {
   organisationId?: string;
   interactionId?: string;
@@ -123,12 +139,13 @@ export function Workspace({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
-    [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null);
+    [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null),
+    [viewingDoc, setViewingDoc] = useState<Snapshot["documents"][number] | null>(null);
 
   const router = useRouter();
   useEffect(() => {
     const refresh = () => {
-      if (!editor && !history && !docUpload && !linkPicker && document.visibilityState === "visible")
+      if (!editor && !history && !docUpload && !linkPicker && !viewingDoc && document.visibilityState === "visible")
         router.refresh();
     };
     const interval = window.setInterval(refresh, 30000);
@@ -137,7 +154,7 @@ export function Workspace({
       window.clearInterval(interval);
       window.removeEventListener("focus", refresh);
     };
-  }, [editor, history, docUpload, linkPicker, router]);
+  }, [editor, history, docUpload, linkPicker, viewingDoc, router]);
 
   const organisation = data.organisations.find((o) => o.id === selected);
   const names = (email: string | null) =>
@@ -420,22 +437,22 @@ export function Workspace({
               <div key={d.id} className="doc-inline">
                 <FileText size={14} />
                 <span>{d.friendlyName}</span>
-                <a
-                  href={`/api/documents/${d.id}/download`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc(d)}
                   className="subtle-button"
-                  title="View in new tab"
+                  title="View in app – close button returns you here"
                 >
                   <Eye size={12} /> View
-                </a>
-                <a
-                  href={`/api/documents/${d.id}/download?download=1`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadDocument(d.id, d.originalName)}
                   className="subtle-button"
-                  title="Download file"
+                  title="Download a copy – shows save dialog"
                 >
                   <Download size={12} /> Download
-                </a>
+                </button>
                 <span className="badge">{d.category ? label(d.category) : "No category"}</span>
               </div>
             ))}
@@ -516,24 +533,24 @@ export function Workspace({
           </p>
         </div>
         <div className="row-actions">
-          <a
-            href={`/api/documents/${doc.id}/download`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => setViewingDoc(doc)}
             className="subtle-button"
-            title="View document in new tab – does not leave this page"
+            title="View in app – close button returns you here"
           >
             <Eye size={14} />
             View
-          </a>
-          <a
-            href={`/api/documents/${doc.id}/download?download=1`}
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadDocument(doc.id, doc.originalName)}
             className="subtle-button"
-            title="Download to your computer"
+            title="Download a copy – shows save dialog"
           >
             <Download size={14} />
             Download
-          </a>
+          </button>
           <button className="subtle-button" onClick={() => edit("document", doc.id)}>
             <Pencil size={14} />
             Edit
@@ -686,7 +703,7 @@ export function Workspace({
                   : view === "bin"
                     ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
                     : view === "documents"
-                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in a new tab so you stay in the app; Download saves a copy to your computer."
+                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
                       : "Everything you need, shared between the two of you."}
               </p>
             </div>
@@ -1002,6 +1019,7 @@ export function Workspace({
                         allLinks={allLinks}
                         isDirect={isDirect}
                         viaProject={viaProject}
+                        onView={(doc) => setViewingDoc(doc)}
                         onUnlink={async (linkId) => {
                           const res = await unlinkDocument(linkId);
                           if (!res.ok) setError(res.error);
@@ -1227,7 +1245,8 @@ export function Workspace({
                       {docs.map((d) => (
                         <span key={d.id} className="badge">
                           <FileText size={10} /> {d.friendlyName}
-                          <a href={`/api/documents/${d.id}/download`} target="_blank" rel="noopener noreferrer" className="subtle-button" style={{ marginLeft: "4px" }}><Eye size={10} /></a>
+                          <button type="button" onClick={() => setViewingDoc(d)} className="subtle-button" style={{ marginLeft: "4px" }} title="View in app"><Eye size={10} /></button>
+                          <button type="button" onClick={() => downloadDocument(d.id, d.originalName)} className="subtle-button" title="Download"><Download size={10} /></button>
                         </span>
                       ))}
                       <button className="subtle-button" onClick={() => setDocUpload({ projectId: p.id })}>
@@ -1298,7 +1317,7 @@ export function Workspace({
                 </Button>
               </div>
               <p className="form-help" style={{ marginBottom: "12px" }}>
-                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. View opens in a new tab so you stay in the app; Download saves a copy to your computer. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed.
+                Files are stored locally in <code>{user.demo ? "./data/demo-documents" : "DOCUMENTS_PATH"}</code> (production: <code>/mnt/user/appdata/estate-organiser/documents</code> inside container as <code>/data/documents</code>). Stored once, linked many times. View opens in-app with a close button to return; Download shows a save dialog. Removing a link does not delete the file. Max 20 MB, PDF/images/text allowed.
               </p>
               <section className="panel">
                 {filteredDocs.map(documentRow)}
@@ -1504,6 +1523,12 @@ export function Workspace({
           onError={setError}
         />
       )}
+      {viewingDoc && (
+        <DocumentViewerDialog
+          doc={viewingDoc}
+          onClose={() => setViewingDoc(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1515,6 +1540,7 @@ function DocumentLinkRow({
   isDirect,
   viaProject,
   onUnlink,
+  onView,
 }: {
   doc: Snapshot["documents"][number];
   directLinks: Snapshot["documentLinks"];
@@ -1522,6 +1548,7 @@ function DocumentLinkRow({
   isDirect: boolean;
   viaProject?: boolean;
   onUnlink: (linkId: string) => void;
+  onView: (doc: Snapshot["documents"][number]) => void;
 }) {
   return (
     <div className="doc-inline-row">
@@ -1531,22 +1558,22 @@ function DocumentLinkRow({
       <span className="badge">{formatSize(doc.size)}</span>
       {!isDirect && viaProject && <span className="badge">via project</span>}
       <div className="row-actions" style={{ marginLeft: "auto", gap: "6px" }}>
-        <a
-          href={`/api/documents/${doc.id}/download`}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={() => onView(doc)}
           className="subtle-button"
-          title="View in new tab – you stay in the app"
+          title="View in app – close button returns you here"
         >
           <Eye size={12} /> View
-        </a>
-        <a
-          href={`/api/documents/${doc.id}/download?download=1`}
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadDocument(doc.id, doc.originalName)}
           className="subtle-button"
-          title="Download a copy to your computer"
+          title="Download a copy – shows save dialog"
         >
           <Download size={12} /> Download
-        </a>
+        </button>
         {directLinks.map((l) => (
           <button key={l.id} className="subtle-button danger" onClick={() => onUnlink(l.id)}>
             <X size={12} />
@@ -1560,6 +1587,86 @@ function DocumentLinkRow({
         )}
       </div>
     </div>
+  );
+}
+
+function DocumentViewerDialog({
+  doc,
+  onClose,
+}: {
+  doc: Snapshot["documents"][number];
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const isImage = doc.mimeType.startsWith("image/");
+  const isPdf = doc.mimeType === "application/pdf";
+  const src = `/api/documents/${doc.id}/download`;
+  return (
+    <dialog
+      ref={dialog}
+      className="record-dialog"
+      style={{ maxWidth: "90vw", width: "900px" }}
+      aria-label={`Viewing ${doc.friendlyName}`}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="dialog-heading">
+        <div>
+          <p className="eyebrow">VIEWING DOCUMENT</p>
+          <h2>{doc.friendlyName}</h2>
+          <p className="form-help" style={{ margin: 0 }}>
+            {doc.originalName} · {formatSize(doc.size)} · {doc.category ? label(doc.category) : "No category"} · {doc.mimeType}
+          </p>
+        </div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Close viewer">
+          <X size={21} />
+        </button>
+      </div>
+      <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px", alignItems: "center", background: "var(--muted, #f7f7f5)" }}>
+        {isImage ? (
+          <img
+            src={src}
+            alt={doc.friendlyName}
+            style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: "8px", boxShadow: "0 2px 12px rgba(0,0,0,0.12)" }}
+          />
+        ) : isPdf ? (
+          <iframe
+            src={src}
+            title={doc.friendlyName}
+            style={{ width: "100%", height: "70vh", border: "1px solid var(--border)", borderRadius: "8px", background: "white" }}
+          />
+        ) : (
+          <div style={{ width: "100%" }}>
+            <p className="form-help" style={{ marginBottom: "12px" }}>
+              Preview not available for this file type ({doc.mimeType}). You can download it or open in a new tab.
+            </p>
+            <iframe
+              src={src}
+              title={doc.friendlyName}
+              style={{ width: "100%", height: "50vh", border: "1px solid var(--border)", borderRadius: "8px", background: "white" }}
+            />
+          </div>
+        )}
+      </div>
+      <div className="form-actions" style={{ justifyContent: "space-between" }}>
+        <Button type="button" variant="outline" onClick={onClose}>
+          <X size={14} /> Close – back to workspace
+        </Button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <Button type="button" variant="outline" onClick={() => viewDocument(doc.id)}>
+            <Eye size={14} /> Open in new tab
+          </Button>
+          <Button type="button" variant="outline" onClick={() => downloadDocument(doc.id, doc.originalName)}>
+            <Download size={14} /> Download – save dialog
+          </Button>
+        </div>
+      </div>
+    </dialog>
   );
 }
 
@@ -1673,7 +1780,7 @@ function DocumentUploadDialog({
             </select>
           </label>
           <p className="form-help">
-            In production files go to <code>/mnt/user/appdata/estate-organiser/documents</code> (container path <code>/data/documents</code>). Demo mode uses <code>./data/demo-documents</code>. Storage names are generated safely – original name is kept for download. View opens in a new tab so you stay in the app; Download saves a copy.
+            In production files go to <code>/mnt/user/appdata/estate-organiser/documents</code> (container path <code>/data/documents</code>). Demo mode uses <code>./data/demo-documents</code>. Storage names are generated safely – original name is kept for download. View opens in-app with a close button; Download shows a save dialog.
           </p>
           <fieldset className="follow-up">
             <legend>Link to (optional – you can link later too)</legend>
@@ -1814,7 +1921,7 @@ function DocumentLinkPicker({
               ))}
             </select>
           </label>
-          <p className="form-help">Removing a link never deletes the file or its other links. Store once, reuse everywhere. View opens in new tab; Download saves a copy.</p>
+          <p className="form-help">Removing a link never deletes the file or its other links. Store once, reuse everywhere. View opens in-app with close button; Download shows save dialog.</p>
           <label>
             Link to what?
             <select value={linkKind} onChange={(e) => { setLinkKind(e.target.value as any); setLinkId(""); }}>
