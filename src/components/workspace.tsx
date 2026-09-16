@@ -90,13 +90,23 @@ const formatSize = (bytes: number) => {
 
 function viewDocument(id: string) {
   if (typeof window === "undefined") return;
-  window.open(`/api/documents/${id}/download`, "_blank", "noopener,noreferrer");
+  try {
+    const win = window.open(`/api/documents/${id}/download`, "_blank", "noopener,noreferrer");
+    if (!win) {
+      // Fallback if popup blocked (Arena preview sandbox): navigate in same tab – inline will show image/PDF
+      window.location.href = `/api/documents/${id}/download`;
+    }
+  } catch {
+    window.location.href = `/api/documents/${id}/download`;
+  }
 }
 async function downloadDocument(id: string, originalName?: string) {
   if (typeof window === "undefined") return;
   const url = `/api/documents/${id}/download?download=1`;
-  console.log("[download] attempting", url, originalName);
-  // 1) Synchronous anchor with download attr – must be in same tick as click to keep user gesture
+  const inIframe = (() => { try { return window.self !== window.top; } catch { return true; } })();
+  console.log("[download] attempting", url, originalName, inIframe ? "in iframe" : "top");
+
+  // 1) Anchor with download attr – must be synchronous, works if sandbox allows downloads
   try {
     const a = document.createElement("a");
     a.href = url;
@@ -108,19 +118,8 @@ async function downloadDocument(id: string, originalName?: string) {
   } catch (e) {
     console.warn("[download] anchor+download failed", e);
   }
-  // 2) window.open synchronously – View uses this, often works in preview for attachment -> save dialog
-  try {
-    const win = window.open(url, "_blank", "noopener,noreferrer");
-    if (win) {
-      console.log("[download] window.open succeeded");
-      // Don't return yet – also try iframe/blob as extra safety
-    } else {
-      console.warn("[download] window.open returned null (popup blocked)");
-    }
-  } catch (e) {
-    console.warn("[download] window.open threw", e);
-  }
-  // 3) Hidden iframe – reliable for attachment downloads inside sandboxed iframes
+
+  // 2) Hidden iframe – no popup permission needed, only download permission; works in many sandboxed contexts
   try {
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
@@ -130,7 +129,8 @@ async function downloadDocument(id: string, originalName?: string) {
   } catch (e) {
     console.warn("[download] iframe failed", e);
   }
-  // 4) Async fetch blob + object URL – works around many iframe sandbox restrictions, triggers save dialog with original name
+
+  // 3) Fetch blob + object URL – bypasses most sandbox restrictions, triggers save dialog with original name
   try {
     const res = await fetch(url, { credentials: "same-origin" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -149,6 +149,31 @@ async function downloadDocument(id: string, originalName?: string) {
     return;
   } catch (e) {
     console.warn("[download] blob method failed", e);
+  }
+
+  // 4) Only try window.open if not in iframe or popup allowed – Arena preview blocks this (allow-popups not set)
+  if (!inIframe) {
+    try {
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+      if (win) {
+        console.log("[download] window.open succeeded");
+        return;
+      }
+      console.warn("[download] window.open returned null");
+    } catch (e) {
+      console.warn("[download] window.open threw", e);
+    }
+  } else {
+    console.log("[download] in iframe – skipping window.open (needs allow-popups, blocked in Arena preview)");
+  }
+
+  // 5) Last resort: navigate current frame to download URL – attachment header triggers download without leaving app in most browsers
+  // This does NOT need allow-popups, only same-origin navigation which is allowed in sandbox
+  try {
+    console.log("[download] fallback to location.href");
+    window.location.href = url;
+  } catch (e) {
+    console.warn("[download] location.href failed", e);
   }
 }
 
@@ -602,15 +627,9 @@ export function Workspace({
           <a
             href={`/api/documents/${doc.id}/download?download=1`}
             download={doc.originalName}
-            target="_blank"
             rel="noopener noreferrer"
             className="subtle-button"
-            title="Direct link – right-click Save link as if button fails"
-            onClick={(e) => {
-              // Let right-click Save as work, but left-click also triggers JS robust download
-              e.preventDefault();
-              downloadDocument(doc.id, doc.originalName);
-            }}
+            title="Direct link – right-click Save link as if button fails (no popup needed)"
           >
             Direct
           </a>
@@ -1718,23 +1737,23 @@ function DocumentViewerDialog({
       </div>
       <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: "4px" }}>
         <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
-          If download doesn&apos;t start, use direct link (right-click → Save as):{" "}
+          If download doesn&apos;t start, use direct link (right-click → Save as). In Arena preview, popups are blocked (allow-popups not set) so window.open fails – this is preview-only, production will work normally:{" "}
           <a
             href={`/api/documents/${doc.id}/download?download=1`}
             download={doc.originalName}
-            target="_blank"
+            // No target=_blank to avoid needing allow-popups in sandboxed preview
             rel="noopener noreferrer"
             style={{ textDecoration: "underline" }}
             onClick={(e) => {
-              // Let browser handle natively, but also log
               console.log("[download] direct anchor clicked");
+              // Don't prevent default – let native download happen, especially for right-click Save as
             }}
           >
             {doc.originalName}
           </a>
         </p>
         <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
-          URL: <code>{`/api/documents/${doc.id}/download?download=1`}</code>
+          URL: <code>{`/api/documents/${doc.id}/download?download=1`}</code> – production is not sandboxed, so save dialog works. Preview iframe needs allow-downloads, not allow-popups.
         </p>
       </div>
       <div className="form-actions" style={{ justifyContent: "space-between" }}>
@@ -1743,7 +1762,7 @@ function DocumentViewerDialog({
         </Button>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
           <Button type="button" variant="outline" onClick={() => viewDocument(doc.id)}>
-            <Eye size={14} /> Open in new tab
+            <Eye size={14} /> Open in new tab (may be blocked in preview – use in-app view)
           </Button>
           <Button type="button" variant="outline" onClick={() => downloadDocument(doc.id, doc.originalName)}>
             <Download size={14} /> Download – save dialog
@@ -1751,12 +1770,11 @@ function DocumentViewerDialog({
           <a
             href={`/api/documents/${doc.id}/download?download=1`}
             download={doc.originalName}
-            target="_blank"
             rel="noopener noreferrer"
             className="button button-outline"
             style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "14px" }}
           >
-            <Download size={14} /> Direct link
+            <Download size={14} /> Direct link (no popup)
           </a>
         </div>
       </div>
