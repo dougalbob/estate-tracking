@@ -7,7 +7,11 @@ import * as schema from "./schema";
 let instance: ReturnType<typeof drizzle<typeof schema>> | undefined;
 export function database() {
   if (!instance) {
-    const path = process.env.DATABASE_PATH || "./data/estate.sqlite";
+    const path =
+      process.env.NODE_ENV === "development" &&
+      process.env.DEV_AUTH_ENABLED === "true"
+        ? "./data/demo.sqlite"
+        : process.env.DATABASE_PATH || "./data/estate.sqlite";
     mkdirSync(dirname(path), { recursive: true });
     const sqlite = new Database(path);
     sqlite.pragma("journal_mode = WAL");

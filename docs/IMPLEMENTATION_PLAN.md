@@ -92,10 +92,27 @@ No further product questionnaire is required before starting. Resolve technical 
 
 All six stages are required for the polished initial release. Run unit/integration tests, critical two-user end-to-end workflows, accessibility checks, authentication bypass checks, production container smoke tests, and a clean restore exercise. Record actual results and outstanding limitations; do not describe planned features as shipped.
 
-## Foundation checkpoint — 16 September 2026
+## Earlier foundation checkpoint — 16 September 2026
 
 Implemented: Next.js 16.3.5/React shell, semantic default-theme tokens and registry, responsive fictional overview, explicit development identity, JWT verification and two-user allowlist, initial organisation migration, and database connection foundation.
 
 Verified: eight automated authentication/database tests; TypeScript check; production build; HTTP checks for fictional preview rendering and a protected production page despite a spoofed email header. Migration applied successfully and repeat-application tested in memory. Production dependency audit: zero findings. Development tooling: four moderate findings in the Drizzle/esbuild chain remain unresolved.
 
-Not yet verified: full browser/accessibility review, live Cloudflare identity exchange, Unraid deployment, and additional-theme coverage. There are no record-write endpoints, uploads, backups, or functional task/note forms yet. The preview is explicitly layout-only. Stage 1 is not claimed complete.
+Not yet verified: full browser/accessibility review, live Cloudflare identity exchange, Unraid deployment, and additional-theme coverage. At that checkpoint, there were no record-write endpoints or functional task/note forms. That limitation is superseded by the core-workflow checkpoint below. Live deployment and complete accessibility verification remain outstanding.
+
+
+## Core-workflow checkpoint — 16 September 2026
+
+Implemented:
+- Organisation creation/editing, search, contact/reference details, and manual status changes.
+- Calls, emails, letters, web forms, and unfiled quick notes, including retrospective interaction time and immutable original attribution.
+- Multiple new follow-up tasks saved atomically with an interaction, plus standalone tasks and later follow-ups.
+- Two-user assignment or unassigned tasks, optional starter-project grouping, task states and three distinct date fields.
+- Saved-task overview, task search/status/owner filters, and other-user activity. Visible, idle screens refresh periodically and on window focus; editing drafts are not refreshed automatically.
+- Revision history with readable before/after fields and compare-and-save version checks. Conflict recovery keeps the draft, displays the latest record, and requires explicit review before another save.
+- Explicit warning/confirmation before resolving an organisation with open tasks; tasks remain unchanged.
+- Authenticated, validated server actions; development data isolated in `data/demo.sqlite`, with a development-only Alex/Jamie switch.
+
+Verified: 16 unit/integration tests; production build; TypeScript and formatting checks; Chromium end-to-end test using two independent user sessions, persistence across reload, revision history, conflict recovery, resolution warnings, task completion, and mobile quick capture without horizontal overflow. Standard browser download was blocked by the sandbox network; the browser run used a locally extracted Chromium instead. Generated browser binaries/screenshots and demo records are not tracked in Git.
+
+Remaining before Stage 2 is complete: project creation/renaming, organisation-project links, recoverable deletion and safe restore workflows. Documents, finances, templates, backups, deployment, installation metadata, full accessibility/security review, and live Cloudflare/Unraid validation remain later work. End-to-end tests add fictional example records and are intended only for the isolated demo preview.

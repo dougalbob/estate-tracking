@@ -4,7 +4,7 @@
 
 ## Status and purpose
 
-**Foundation in progress.** A theme-ready overview preview, server-side identity verification, an initial organisation schema/migration, and automated foundation tests now exist. The preview uses fictional examples and does not yet save records. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
+**Core workflow in progress.** Organisations, interactions/quick notes, and tasks can now be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. The feature sections below describe the agreed release scope, not a list of shipped functionality. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
 The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery will be staged, but these are all core requirements. This is a fresh start with no existing data to import; funeral arrangements and estate administration are both outstanding.
 
@@ -161,10 +161,12 @@ Requires Node.js 22 or newer.
 
 ```bash
 npm ci
-npm run db:migrate
-# Fictional, non-persistent UI preview only; never use this mode for real data
+DATABASE_PATH=./data/demo.sqlite npm run db:migrate
+# Fictional data only; never use this mode for real estate information
 DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev
 ```
+
+Demo mode always uses `./data/demo.sqlite`, regardless of `DATABASE_PATH`, so fictional records do not mix with the production database. The “Try as Alex/Jamie” control is development-only and lets you test attribution and the activity feed; it is unavailable in production.
 
 The development server binds to `0.0.0.0:3000` and allows Arena preview hosts. Do not expose development mode as a real estate installation. `.env.example` documents the production identity settings; configure those through your deployment environment. Database CLI commands read exported environment variables (they do not load `.env.local` themselves).
 
@@ -172,10 +174,26 @@ The development server binds to `0.0.0.0:3000` and allows Arena preview hosts. D
 npm test
 npm run typecheck
 NEXT_TELEMETRY_DISABLED=1 npm run build
+npm run db:migrate # Apply migrations to DATABASE_PATH, or ./data/estate.sqlite
 NEXT_TELEMETRY_DISABLED=1 npm start
 ```
 
-Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. All future data operations must independently enforce the identity guard. The UI currently uses section links to clearly labelled planned features rather than implemented CRUD screens.
+Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
+
+Project grouping is available with three starter projects. Project editing, organisation-project links, recoverable deletion, document uploads, finances, checklist templates, backups, and install metadata are still upcoming; this is **not ready for real estate data or production use**.
+
+### Browser workflow test
+
+With a development preview running, and only fictional data in use:
+
+```bash
+npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
+
+Run `npm run format:check` for source formatting checks.
 
 Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Full Cloudflare/Unraid, browser accessibility, backup, and restore verification are still outstanding.
 
