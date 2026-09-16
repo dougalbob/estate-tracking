@@ -20,7 +20,7 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 | 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
 | 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Full browser e2e for upload/link/download flows in restricted sandbox, accessibility polish |
 | 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
-| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture and responsive screens exist; templates, install metadata and complete accessibility polish remain |
+| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and the Notifications checklist list exist; the Funeral and Probate lists, install metadata and complete accessibility polish remain |
 | 6. Backups/deployment | Not implemented | Encrypted coordinated backup, restore tests, Docker/Unraid deployment and operational documentation |
 
 ### Next recommended work
@@ -47,7 +47,9 @@ Stage 4 is implemented and unit-tested; ask the user to try the finances screen 
 - `src/lib/finances/store.ts`: `saveFinanceRecord`, `saveFinanceMovement`, `setFinanceVoid`, `deleteFinance`, `restoreFinance`, spread into `recordStore` so the snapshot and all finance writes come from one entry point. Over-repayment and over-payment are refused with the remaining amount; reimbursements require a personally paid expense; a record with money against it cannot change type; permanent deletion always throws.
 - `src/lib/finances/csv.ts` and `src/lib/finances/export.ts`: quoted CSV with apostrophe-prefixed formula protection, UTF-8 BOM, money as plain decimals, `inventory`/`cash`/`reimbursements` views.
 - `src/app/api/finances/export/route.ts`: authenticated CSV download; 401 without a verified Cloudflare identity, 400 for an unknown view, `private, no-store`.
-- `src/lib/records/errors.ts` and `src/lib/records/audit.ts`: shared `RecordError`, `versionConflict`, `assertActor`, and `auditEntry` used by both the records store and the finance store.
+- `src/lib/records/errors.ts` and `src/lib/records/audit.ts`: shared `RecordError`, `versionConflict`, `assertActor`, and `auditEntry` used by the records, finance and checklist stores.
+- `src/lib/records/checklist-store.ts`: `seedTemplates`, `saveTemplateItem`, `deleteTemplateItem`, `restoreTemplateItem`, `applyTemplate`. Applying creates undated, unassigned tasks in the chosen project and skips anything already there (by `templateItemId` or by normalised title). `src/lib/records/template-seeds.ts` holds the wording – currently the 15-item Notifications list, tailored to the estate and stored so it stays editable.
+- `src/components/checklist.tsx`: the collapsed `ProjectChecklist` panel inside each project, plus `TemplateItemForm` for rewording, adding and removing suggestions.
 - `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations including `organisation_projects`, `documents`, `document_links`, and `deleted_at` columns. Add migrations; do not replace existing history.
 - `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
 - `src/app/globals.css` and `src/themes/index.ts`: approved calm theme and token foundation; project pills, doc pills, and bin actions reuse existing tokens.
@@ -280,3 +282,22 @@ Verified:
 - Demo seed (`scripts/seed-demo-finances.ts`) writes fictional rows only, and refuses a database path without `demo` in it.
 
 Remaining: full browser e2e coverage for the finance dialogs in a sandbox that permits a browser, accessibility polish, and the user's first pass through the screen. `main` is still untouched; work continues on `arena/01a0a9cb-estate-tracking` (draft PR #2).
+
+## Checklist templates — first list delivered (16 September 2026)
+
+Context: the user was unsure whether checklist templates were worth building, so the value was discussed and a single list was agreed as a trial rather than all three.
+
+Implemented:
+- `task_templates` table (migration `0005_curvy_mattie_franklin`) plus `tasks.template_item_id`, which records which suggestion created a task. Deliberately not a foreign key: removing a suggestion must never touch the task.
+- The **Notifications** list, 15 suggestions written for the stated situation: a private pension and no employer scheme, no mortgage lender to notify, gas and electricity with the same supplier, broadband and landline listed separately from mobile, plus the usual Tell Us Once, banks, council tax, water, TV Licence, home insurance, post redirection, subscriptions, credit reference agencies, DVLA, and other services.
+- Lists are ordinary records: wording can be edited, items added, and items removed (into the recoverable bin, restorable). Editing a suggestion never rewrites tasks already created from it.
+- Applying is deliberate: items are unticked by default, there is a Select all shortcut and a live "Add N tasks" count, nothing is dated or assigned automatically, and already-present items are labelled **Already added** and cannot be selected twice.
+- Duplicate prevention has two layers: the recorded `template_item_id`, and a normalised-title comparison against live tasks in the same project. Re-applying the list twice adds nothing.
+- Each project shows its list collapsed behind a "Starter checklist" summary so the calm default layout is unchanged.
+
+Verified:
+- 44 unit/integration tests passing (38 previous + 6 checklist tests): seeding once and staying editable, no dates/owners created, re-application skipping duplicates, a binned task being re-addable, add/remove/restore of a suggestion leaving tasks untouched, project confinement, validation, attribution, and stale-edit conflicts.
+- TypeScript, Prettier and production build checks passing.
+- Demo preview checked: the panel renders inside Notifications with all 15 suggestions and their tailoring, applying two suggestions created two undated tasks attributed to the acting user, a second application skipped both, and the UI showed two "Already added" badges. The temporary demo tasks created for that check were removed again so the user starts with a clean list.
+
+Remaining: the Funeral and Probate starter lists (deliberately not written yet – the user wants to judge the Notifications list first), install metadata, and the Stage 5 dashboard/accessibility polish.

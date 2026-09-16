@@ -24,7 +24,7 @@ import {
 import { MoneyError } from "@/lib/finances/money";
 
 type Kind = "organisation" | "interaction" | "task" | "project" | "document";
-type BinKind = Kind | "finance_record" | "finance_movement";
+type BinKind = Kind | "finance_record" | "finance_movement" | "template_item";
 
 export async function saveRecord(kind: Kind, input: unknown) {
   try {
@@ -164,6 +164,61 @@ export async function setFinanceVoid(input: unknown) {
     return {
       ok: false as const,
       error: "Unable to change this record. Check your access and try again.",
+      code: "unavailable",
+    };
+  }
+}
+
+/** Turns selected checklist suggestions into ordinary, undated tasks. */
+export async function applyTemplate(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const result = store.applyTemplate(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, ...result };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues.map((i) => i.message).join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error: "Unable to add these suggestions. Please try again.",
+      code: "unavailable",
+    };
+  }
+}
+
+export async function saveTemplateItem(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const id = store.saveTemplateItem(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues.map((i) => i.message).join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error: "Unable to save this checklist item. Your draft has been kept.",
       code: "unavailable",
     };
   }
@@ -389,6 +444,11 @@ export async function deleteRecord(
       ? ["alex@example.invalid", "jamie@example.invalid"]
       : authConfiguration(process.env).users;
     const store = recordStore(database(), users);
+    if (kind === "template_item") {
+      store.deleteTemplateItem(id, version, user.email, permanent);
+      revalidatePath("/");
+      return { ok: true as const };
+    }
     if (kind === "finance_record" || kind === "finance_movement") {
       store.deleteFinance(
         kind === "finance_record" ? "record" : "movement",
@@ -438,6 +498,11 @@ export async function restoreRecord(
       ? ["alex@example.invalid", "jamie@example.invalid"]
       : authConfiguration(process.env).users;
     const store = recordStore(database(), users);
+    if (kind === "template_item") {
+      store.restoreTemplateItem(id, version, user.email);
+      revalidatePath("/");
+      return { ok: true as const };
+    }
     if (kind === "finance_record" || kind === "finance_movement") {
       store.restoreFinance(
         kind === "finance_record" ? "record" : "movement",

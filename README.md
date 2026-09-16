@@ -79,6 +79,8 @@ Provide editable, England-relevant starter checklists for the three starter proj
 
 Templates may cover Tell Us Once, banks, post redirection, subscriptions, DVLA, funeral suppliers, and estate administration. They are organisational suggestions, not legal instructions or a guarantee of completeness.
 
+Implemented so far: the **Notifications** list (15 suggestions, written for this estate – a private pension rather than an employer scheme, no mortgage, gas and electricity with one supplier, and broadband and mobile listed separately). Lists live in the database, so any line can be reworded, removed, or added to. Each project shows its list collapsed behind a "Starter checklist" summary; nothing is created until items are ticked and added, no dates or owners are set, and anything already in that project – including a task created from the same suggestion – is marked **Already added** and skipped on re-application. Removing a suggestion never touches tasks already created from it, and removed suggestions go to the recoverable bin. Funeral and Probate & Estate Administration lists are still to come.
+
 ## Documents
 
 - Store files locally, including PDFs, screenshots, and scanned documents.

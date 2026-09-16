@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, desc, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, asc, desc, isNull, isNotNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "../db/schema";
 import { RecordError, assertActor, versionConflict } from "./errors";
 import { auditEntry } from "./audit";
 import { financeStore } from "../finances/store";
+import { checklistStore } from "./checklist-store";
+import { templateSeeds } from "./template-seeds";
 import {
   organisationInput,
   interactionInput,
@@ -24,6 +26,7 @@ const {
   documentLinks,
   financeRecords,
   financeMovements,
+  taskTemplates,
 } = schema;
 export { RecordError };
 export function recordStore(
@@ -31,6 +34,7 @@ export function recordStore(
   users: string[],
 ) {
   const finances = financeStore(db, users);
+  const checklist = checklistStore(db, users);
   function actorCheck(actor: string) {
     assertActor(users, actor);
   }
@@ -131,6 +135,10 @@ export function recordStore(
   }
   return {
     ...finances,
+    ...checklist,
+    seedTemplates() {
+      checklist.seedTemplates(templateSeeds);
+    },
     snapshot() {
       return {
         organisations: db
@@ -151,6 +159,17 @@ export function recordStore(
           .where(isNull(projects.deletedAt))
           .all(),
         organisationProjects: db.select().from(organisationProjects).all(),
+        taskTemplates: db
+          .select()
+          .from(taskTemplates)
+          .where(isNull(taskTemplates.deletedAt))
+          .orderBy(asc(taskTemplates.sortOrder), asc(taskTemplates.title))
+          .all(),
+        deletedTaskTemplates: db
+          .select()
+          .from(taskTemplates)
+          .where(isNotNull(taskTemplates.deletedAt))
+          .all(),
         documents: db
           .select()
           .from(documents)

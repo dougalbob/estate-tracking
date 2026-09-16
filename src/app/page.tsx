@@ -30,5 +30,6 @@ export default async function Page() {
     : authConfiguration(process.env).users;
   const store = recordStore(database(), users);
   store.seedProjects();
+  store.seedTemplates();
   return <Workspace user={user} users={users} data={store.snapshot()} />;
 }

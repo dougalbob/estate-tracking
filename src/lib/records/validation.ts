@@ -139,6 +139,20 @@ export const documentLinkInput = z.object({
     .optional()
     .transform((v) => (v ? v.trim() : null) || null),
 });
+export const templateItemInput = z.object({
+  ...common,
+  projectId: z.string().min(1),
+  title: z.string().trim().min(1, "A short title is required").max(300),
+  detail: z.string().trim().max(2000).default(""),
+});
+export const applyTemplateInput = z.object({
+  projectId: z.string().min(1),
+  itemIds: z
+    .array(z.string().min(1))
+    .min(1, "Choose at least one item")
+    .max(100),
+});
+export type TemplateItemInput = z.input<typeof templateItemInput>;
 export const deleteInput = z.object({
   ...common,
   permanent: z.boolean().optional().default(false),

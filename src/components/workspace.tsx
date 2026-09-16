@@ -31,6 +31,7 @@ import {
   TrendingDown,
   HandCoins,
   PoundSterling,
+  ListChecks,
 } from "lucide-react";
 import {
   switchDemoUser,
@@ -51,6 +52,7 @@ import {
   FinanceVoidDialog,
   type FinanceRecordEditor,
 } from "./finance-forms";
+import { ProjectChecklist } from "./checklist";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
 import {
@@ -73,7 +75,8 @@ type BinKind =
   | "project"
   | "document"
   | "finance_record"
-  | "finance_movement";
+  | "finance_movement"
+  | "template_item";
 
 const sections = [
   {
@@ -1021,7 +1024,8 @@ export function Workspace({
     data.deletedProjects.length +
     data.deletedDocuments.length +
     data.deletedFinanceRecords.length +
-    data.deletedFinanceMovements.length;
+    data.deletedFinanceMovements.length +
+    data.deletedTaskTemplates.length;
 
   const financeRecords = [...data.financeRecords]
     .filter((record) => {
@@ -1790,6 +1794,17 @@ export function Workspace({
                         <Link2 size={12} /> Link existing
                       </button>
                     </div>
+                    {data.taskTemplates.some((i) => i.projectId === p.id) && (
+                      <ProjectChecklist
+                        projectId={p.id}
+                        items={data.taskTemplates.filter(
+                          (i) => i.projectId === p.id,
+                        )}
+                        tasks={data.tasks.filter((t) => t.projectId === p.id)}
+                        onMessage={setMessage}
+                        onError={setError}
+                      />
+                    )}
                     <div style={{ borderTop: "1px solid var(--border)" }}>
                       {data.tasks
                         .filter((t) => t.projectId === p.id)
@@ -1946,6 +1961,12 @@ export function Workspace({
                   label: "Payments & reimbursements",
                   permanent: false,
                 },
+                {
+                  kind: "template_item" as const,
+                  items: data.deletedTaskTemplates,
+                  label: "Checklist suggestions",
+                  permanent: true,
+                },
               ].map((group) => (
                 <section className="panel spaced" key={group.kind}>
                   <div className="section-heading">
@@ -1967,6 +1988,8 @@ export function Workspace({
                           <Wallet size={16} />
                         ) : group.kind === "finance_movement" ? (
                           <PoundSterling size={16} />
+                        ) : group.kind === "template_item" ? (
+                          <ListChecks size={16} />
                         ) : (
                           <BookOpen size={16} />
                         )}

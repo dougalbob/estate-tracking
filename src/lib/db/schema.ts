@@ -61,6 +61,11 @@ export const tasks = sqliteTable("tasks", {
   dueDate: text("due_date"),
   followUpDate: text("follow_up_date"),
   deadline: text("deadline"),
+  /**
+   * Which checklist suggestion created this task, if any. Deliberately not a
+   * foreign key: removing a suggestion from a list must never touch the task.
+   */
+  templateItemId: text("template_item_id"),
   version: integer("version").notNull().default(1),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
@@ -174,6 +179,26 @@ export const financeMovements = sqliteTable("finance_movements", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
+/**
+ * Checklist template items: the editable suggestion lists shown inside a project.
+ * They create nothing on their own – a user selects the ones that apply, and the
+ * task that results is an ordinary task from then on.
+ */
+export const taskTemplates = sqliteTable("task_templates", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  detail: text("detail").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
+
 export const revisions = sqliteTable("revisions", {
   id: text("id").primaryKey(),
   entity: text("entity").notNull(),

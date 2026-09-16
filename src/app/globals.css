@@ -1143,3 +1143,80 @@ summary {
     font-size: 15px;
   }
 }
+/* Checklist suggestions inside a project – hidden until wanted */
+.checklist-panel {
+  border-top: 1px solid var(--border);
+  padding: 0 24px;
+}
+.checklist-panel summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.checklist-panel summary .badge {
+  margin-left: auto;
+  font-weight: 400;
+}
+.checklist-body {
+  padding-bottom: 16px;
+}
+.checklist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.checklist-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--background);
+}
+.checklist-item.already-added {
+  opacity: 0.75;
+}
+.checklist-tick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.checklist-tick input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+.checklist-tick span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.checklist-detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 0 28px;
+}
+.checklist-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.checklist-actions .form-help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+@media (max-width: 700px) {
+  .checklist-panel {
+    padding: 0 16px;
+  }
+  .checklist-detail {
+    margin-left: 0;
+  }
+}
