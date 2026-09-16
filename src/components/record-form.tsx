@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Link2Off, Lightbulb, Trash2 } from "lucide-react";
 import { RecordSummary } from "./record-summary";
 import { Button } from "./ui/button";
-import { saveRecord, linkDocument } from "@/app/actions";
+import { saveRecord, linkDocument, unlinkDocument } from "@/app/actions";
 import type { Snapshot } from "@/lib/records/store";
 import {
   label,
@@ -62,6 +62,10 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     editor.kind === "document" && editor.id
       ? data.documentLinks.filter((l) => l.documentId === editor.id)
       : [];
+  const [localDocLinks, setLocalDocLinks] = useState(existingDocLinks);
+  useEffect(() => {
+    setLocalDocLinks(existingDocLinks);
+  }, [existingDocLinks.length]);
   const [docLinkOrg, setDocLinkOrg] = useState<string>("");
   const [docLinkProject, setDocLinkProject] = useState<string>("");
   const [docLinkTask, setDocLinkTask] = useState<string>("");
@@ -481,29 +485,56 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 The file itself isn&apos;t changed here – only name and category. Links can be added below. Null is fine – not every document needs every link.
               </p>
 
-              {existingDocLinks.length > 0 && (
+              {localDocLinks.length > 0 && (
                 <fieldset className="follow-up">
                   <legend>Current links – this file is reused</legend>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {existingDocLinks.map((l) => {
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {localDocLinks.map((l) => {
                       const org = l.organisationId ? data.organisations.find((o) => o.id === l.organisationId)?.name : null;
                       const proj = l.projectId ? data.projects.find((p) => p.id === l.projectId)?.name : null;
                       const task = l.taskId ? data.tasks.find((t) => t.id === l.taskId)?.title : null;
                       const note = l.interactionId ? data.interactions.find((i) => i.id === l.interactionId)?.title : null;
                       return (
-                        <span key={l.id} className="badge" style={{ justifyContent: "flex-start" }}>
-                          {org ? `Contact: ${org}` : proj ? `Project: ${proj}` : task ? `Task: ${task}` : note ? `Note: ${note}` : "Link"}
-                        </span>
+                        <div key={l.id} style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
+                          <span className="badge" style={{ justifyContent: "flex-start", flex: 1 }}>
+                            {org ? `Contact: ${org}` : proj ? `Project: ${proj}` : task ? `Task: ${task}` : note ? `Note: ${note}` : "Link"}
+                          </span>
+                          <button
+                            type="button"
+                            className="subtle-button danger"
+                            title="Remove this link – file itself stays"
+                            disabled={busy || docLinkSaving}
+                            onClick={async () => {
+                              if (!window.confirm("Remove this link? The file itself will stay and can be reused elsewhere.")) return;
+                              setDocLinkSaving(true);
+                              setError("");
+                              const res = await unlinkDocument(l.id);
+                              setDocLinkSaving(false);
+                              if (!res.ok) {
+                                setError(res.error);
+                              } else {
+                                setLocalDocLinks((prev) => prev.filter((x) => x.id !== l.id));
+                                setDirty(true);
+                                router.refresh();
+                              }
+                            }}
+                          >
+                            <Link2Off size={14} />
+                            Remove
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
-                  <p className="form-help">Remove links from the Documents list – removing a link never deletes the file.</p>
+                  <p className="form-help" style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
+                    <Lightbulb size={14} />
+                    Tip: removing a link(s) does not delete the file
+                  </p>
                 </fieldset>
               )}
 
               <fieldset className="follow-up">
                 <legend>Add links – optional, leaner way to reuse</legend>
-                <p className="form-help">Pick any combination – all can be left empty. If a link already exists it will be ignored. This makes the edit feel more polished.</p>
                 <label>
                   Contact (organisation)
                   <select
