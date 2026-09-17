@@ -55,6 +55,7 @@ button,
 .task-row,
 .record-title,
 .contact-row,
+.task-org,
 .project-pill,
 .doc-pills,
 .doc-inline-row,
@@ -1130,6 +1131,111 @@ summary {
 }
 .doc-pill-name:disabled {
   color: var(--muted);
+}
+/*
+ * The contact name on a task row, tappable. It opens a small popup with the
+ * number, email and reference so the task stays underneath. Underline and icon
+ * carry the cue as well as colour, it is a real button so the keyboard reaches
+ * it, and the negative margin widens the tap area without moving the text.
+ */
+.task-org {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  margin: -5px -6px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  text-underline-offset: 2px;
+}
+.task-org:hover {
+  background: var(--accent);
+  text-decoration-color: var(--primary);
+}
+.task-org:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The popup itself: narrower than a form, because it is read and dismissed. */
+.contact-quick-dialog {
+  width: min(460px, calc(100vw - 30px));
+}
+.contact-quick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+}
+.contact-quick-item dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.contact-quick-item dd {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.contact-quick-value {
+  font-weight: 600;
+}
+.contact-quick-empty {
+  color: var(--muted);
+}
+/* Several numbers on a contact are listed one per line, each with its own copy. */
+.contact-quick-item .contact-quick-phones {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.contact-quick-phone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The number is the call, not a button beside it — so it reads as a link. */
+.contact-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border-radius: 8px;
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.contact-call:hover {
+  background: var(--accent);
+}
+.contact-call:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.contact-copy {
+  min-height: 44px;
+}
+.contact-copy:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.copy-state {
+  margin: 0;
 }
 .doc-list {
   display: flex;
