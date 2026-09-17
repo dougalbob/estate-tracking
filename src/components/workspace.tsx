@@ -9,6 +9,7 @@ import {
   Leaf,
   ListTodo,
   LockKeyhole,
+  Paperclip,
   Plus,
   Users,
   Wallet,
@@ -54,6 +55,12 @@ import {
   type FinanceRecordEditor,
 } from "./finance-forms";
 import { ProjectChecklist } from "./checklist";
+import {
+  formatSize,
+  fileTooLarge,
+  postDocumentUpload,
+  uploadErrorMessage,
+} from "./document-upload";
 import { BackupPanel } from "./backup-panel";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
@@ -65,7 +72,6 @@ import {
   documentCategories,
   financeKinds,
   movementKindFor,
-  maxDocumentSizeBytes,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
@@ -122,11 +128,22 @@ const formatDate = (value: string | Date) =>
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(new Date(value));
-const formatSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+/**
+ * How many documents are attached. Deliberately a chip rather than a few words
+ * in a long line of metadata: a receipt attached to a payment is easy to miss,
+ * and missing it leads to the same paperwork being filed twice.
+ */
+function DocumentCount({ count }: { count: number }) {
+  return (
+    <span
+      className="doc-count"
+      title={`${count} document${count > 1 ? "s" : ""} attached`}
+    >
+      <Paperclip size={11} aria-hidden />
+      {count} document{count > 1 ? "s" : ""}
+    </span>
+  );
+}
 
 function viewDocument(id: string) {
   if (typeof window === "undefined") return;
@@ -661,9 +678,7 @@ export function Workspace({
             {record.projectId && projectName(record.projectId)
               ? ` · ${projectName(record.projectId)}`
               : ""}
-            {docs.length > 0
-              ? ` · ${docs.length} document${docs.length > 1 ? "s" : ""}`
-              : ""}
+            {docs.length > 0 && <DocumentCount count={docs.length} />}
           </p>
           <p>{money.filter(Boolean).join(" · ")}</p>
           {record.voidedAt && record.voidReason && (
@@ -744,12 +759,7 @@ export function Workspace({
             {t.projectId && projectName(t.projectId) && (
               <> · {projectName(t.projectId)}</>
             )}
-            {docs.length > 0 && (
-              <>
-                {" "}
-                · {docs.length} document{docs.length > 1 ? "s" : ""}
-              </>
-            )}
+            {docs.length > 0 && <DocumentCount count={docs.length} />}
           </p>
           <p>
             {label(t.status)}
@@ -2473,12 +2483,22 @@ export function Workspace({
           data={data}
           users={users}
           onClose={() => setFinanceEditor(null)}
-          onSaved={() => {
-            setMessage("Saved. The totals below reflect the new figure.");
+          onSaved={(id, note) => {
+            setMessage(
+              note
+                ? `Saved. The totals below reflect the new figure.${note}`
+                : "Saved. The totals below reflect the new figure.",
+            );
             setView("finances");
             setFinanceEditor(null);
             router.refresh();
           }}
+          onAttachDocument={(recordId) =>
+            setDocUpload({ financeRecordId: recordId })
+          }
+          onLinkExisting={(recordId) =>
+            setLinkPicker({ financeRecordId: recordId })
+          }
         />
       )}
       {movementRecord && (
@@ -2854,10 +2874,9 @@ function DocumentUploadDialog({
       onError("Choose a file first");
       return;
     }
-    if (file.size > maxDocumentSizeBytes) {
-      onError(
-        `File too large – ${formatSize(file.size)} exceeds ${formatSize(maxDocumentSizeBytes)} limit. Try a smaller file or compress the scan.`,
-      );
+    const sizeProblem = fileTooLarge(file);
+    if (sizeProblem) {
+      onError(sizeProblem);
       return;
     }
     if (linkKind !== "none" && !linkId) {
@@ -2879,87 +2898,21 @@ function DocumentUploadDialog({
       if (linkKind === "task" && linkId) fd.set("taskId", linkId);
       if (linkKind === "project" && linkId) fd.set("projectId", linkId);
       if (linkKind === "finance" && linkId) fd.set("financeRecordId", linkId);
-      console.log(
-        `[upload] starting ${file.name} ${formatSize(file.size)} as ${fd.get("friendlyName")}`,
-      );
 
-      // Prefer Route Handler (/api/documents/upload) – it streams and avoids Server Actions 1 MB default.
-      // Fall back to Server Action if route is missing (older image) – but show error instead of hanging.
-      let res: { ok: boolean; id?: string; error?: string; warning?: string };
-      try {
-        const response = await fetch("/api/documents/upload", {
-          method: "POST",
-          body: fd,
-          credentials: "same-origin",
-        });
-        const body = (await response.json().catch(() => ({}))) as {
-          ok?: boolean;
-          id?: string;
-          error?: string;
-          warning?: string;
-        };
-        if (!response.ok) {
-          res = {
-            ok: false,
-            error:
-              body.error ||
-              `Upload failed (HTTP ${response.status}). Check docker logs estate-organiser and free space (df -h /mnt/user/appdata/estate-organiser).`,
-          };
-        } else {
-          res = {
-            ok: true,
-            id: body.id,
-            warning: body.warning,
-          } as any;
-          if (!res.id && (body as any).id) res.id = (body as any).id;
-          // If API returned ok:true but no id, treat as error
-          if (!res.id && !body.warning) {
-            // Some versions return {ok:true,id}
-            res = body as any;
-          }
-        }
-      } catch (fetchErr) {
-        console.warn(
-          "[upload] fetch to /api/documents/upload failed, falling back to server action",
-          fetchErr,
-        );
-        // Fallback to server action (needs bodySizeLimit 25mb in next.config.ts)
-        res = await uploadDocument(fd);
-      }
-
+      const res = await postDocumentUpload(fd);
       if (!res.ok) {
-        console.warn(`[upload] server returned error: ${(res as any).error}`);
-        onError((res as any).error || "Upload failed");
+        console.warn(`[upload] server returned error: ${res.error}`);
+        onError(res.error || "Upload failed");
+      } else if (res.warning) {
+        onError(res.warning);
+      } else if (res.id) {
+        onUploaded(res.id);
       } else {
-        if ((res as any).warning) onError((res as any).warning);
-        if ((res as any).id) onUploaded((res as any).id);
-        else onError("Upload succeeded but no id returned – check logs");
+        onError("Upload succeeded but no id returned – check logs");
       }
     } catch (err) {
       console.error("[upload] failed", err);
-      const message =
-        err instanceof Error ? err.message : String(err ?? "Unknown error");
-      if (
-        message.includes("413") ||
-        message.toLowerCase().includes("body exceeded") ||
-        message.toLowerCase().includes("too large")
-      ) {
-        onError(
-          `Upload too large for server (413). Server limit is ${formatSize(maxDocumentSizeBytes)}. Check next.config.ts bodySizeLimit (now 25mb) and try a smaller file. Original: ${message}`,
-        );
-      } else if (
-        message.includes("502") ||
-        message.includes("504") ||
-        message.toLowerCase().includes("failed to fetch")
-      ) {
-        onError(
-          `Upload failed – network/tunnel error (502/504 or fetch failure). Check container logs (docker logs estate-organiser), Cloudflare Tunnel status, and try again. Original: ${message}`,
-        );
-      } else {
-        onError(
-          `Unable to upload – ${message}. Check container logs (docker logs estate-organiser) and free space (df -h /mnt/user/appdata/estate-organiser).`,
-        );
-      }
+      onError(uploadErrorMessage(err));
     } finally {
       setBusy(false);
     }
