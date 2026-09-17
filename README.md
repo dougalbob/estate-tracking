@@ -97,12 +97,12 @@ Neither list quotes a threshold, rate, fee or figure: each line points at GOV.UK
 
 ### Document upload troubleshooting (production)
 
-Uploads are limited to 20 MB per file (`maxDocumentSizeBytes`) and the server allows 25 MB request bodies (`serverActions.bodySizeLimit` in `next.config.ts` + a dedicated `/api/documents/upload` route that streams multipart bodies and avoids the Server Actions 1 MB default). If an upload fails:
+Uploads are limited to 20 MB per file (`maxDocumentSizeBytes`) and the server allows 25 MB request bodies (`experimental.serverActions.bodySizeLimit` in `next.config.ts` + a dedicated `/api/documents/upload` route that streams multipart bodies and avoids the Server Actions 1 MB default). If an upload fails:
 
 1. **Retry an upload** — if it fails, the dialog now shows the error instead of hanging. Client-side size is checked before sending, and the dialog catches network/server errors with a message.
 2. **Container logs** at the moment of the attempt: `docker logs estate-organiser` – look for `[upload]` or `[upload:api]` lines with file name, size, and write result. `ENOSPC` means disk full, other codes point at permission/storage issues.
 3. **Free space** on the data volume: `df -h /mnt/user/appdata/estate-organiser` — a full disk fails uploads specifically while other saves still work. The server now returns `507` with a disk-full message when `ENOSPC` is detected.
-4. **Small file vs large file** — upload a tiny text file first. If small works but large fails, you are hitting a body-size limit: check `next.config.ts` has `serverActions.bodySizeLimit: \"25mb\"` (both top-level and `experimental.serverActions`), rebuild the image, and Force Update on Unraid. The `/api/documents/upload` route handler also bypasses the Server Actions limit.
+4. **Small file vs large file** — upload a tiny text file first. If small works but large fails, you are hitting a body-size limit: check `next.config.ts` has `experimental.serverActions.bodySizeLimit: "25mb"` (it must be nested under `experimental` – a top-level `serverActions` key is not valid in Next 16 and fails the build with `TS2353`), rebuild the image, and Force Update on Unraid. The `/api/documents/upload` route handler also bypasses the Server Actions limit.
 5. **Browser DevTools → Network** on a failed attempt: `413` = body too big (increase limit or compress scan), `502/504` = Cloudflare Tunnel or edge trouble (check tunnel status, `docker logs`, and retry), *no response* / `failed to fetch` = a stall or connectivity drop (retry, check tunnel logs, and container health at `/api/health`).
 
 Common fixes after an image update: ensure `public/` is copied in the Dockerfile runtime stage (PWA assets), `next.config.ts` is present in the runtime image (it is copied from the build stage), and the container was Force Updated after the release.

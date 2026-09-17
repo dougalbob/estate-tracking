@@ -3,9 +3,9 @@ const config: NextConfig = {
   devIndicators: false,
   allowedDevOrigins: ["*.e2b.app", "localhost", "127.0.0.1"],
   serverExternalPackages: ["better-sqlite3"],
-  serverActions: {
-    bodySizeLimit: "25mb",
-  },
+  // NOTE: in Next 16 the key is only valid under `experimental` – a top-level
+  // `serverActions` is not read and fails the production type check
+  // (TS2353: 'serverActions' does not exist in type 'NextConfig').
   experimental: {
     serverActions: {
       bodySizeLimit: "25mb",
