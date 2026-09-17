@@ -1,8 +1,38 @@
 # Estate Organiser — Implementation Plan
 
-The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, document storage with reusable links, estate finances in GBP, all three editable checklist templates, the Docker/Unraid deployment package, and encrypted backup/restore have been implemented and unit-tested where applicable. Published-image release verification remains the gate before real estate information is entered.
+## Current state — 17 September 2026
+
+Read this before the dated sections below. They are kept as a record, and some of them describe work that has since shipped.
+
+| Item | Position today |
+|---|---|
+| Live release | **v0.2.5**, built by GitHub Actions and published to GHCR; v0.2.0–v0.2.4 preceded it on 16–17 September 2026 |
+| Build source of truth | `.github/workflows/publish.yml`, triggered by pushing a `v*` tag. Only a tag publishes an image |
+| Data in use | **Real estate records and real documents.** The installation is live on Unraid behind Cloudflare Access, and both users work in it |
+| Verified in production | Both users signing in; document upload; **an encrypted backup created and restored, with the records confirmed afterwards**; the PWA installed on Android with the Cloudflare Access Bypass rules in place |
+| Automated gates | **61 unit/integration tests**, `tsc --noEmit`, `prettier --check` and `next build` all pass on the released commit |
+| Still outstanding | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support |
+| Version numbering | The next release after v0.2.5 is v0.2.6. Tags are the version source of truth; `package.json` is kept in step for tidiness |
+
+### Sandbox facts a new session must know
+
+- **No Docker daemon here.** The container image cannot be built in the Arena sandbox; only GitHub Actions builds and publishes it.
+- **`npm ci` fails on `better-sqlite3`** because node-gyp tries to compile and the node headers are blocked. Use **`npm ci --ignore-scripts`**: `better-sqlite3` ships prebuilt binaries in its npm tarball, so the unit suite still runs normally.
+- **Nothing local persists between sessions.** The workspace is re-cloned from GitHub each time; `node_modules`, `.next` and caches are not kept. Only pushed commits survive.
+- **Do not assume a browser is available.** `npm run test:e2e` needs a Chromium that the sandbox cannot download, so plan on unit tests, the type check, the production build and a dev-server smoke test unless a browser is known to be installed.
+- **Session branches are per-session.** Work on whatever branch the current Arena session created, normally `arena/<session-id>-estate-tracking`. Never reuse or switch to a branch name copied from an older session or from an older copy of this document.
+
+### Release lessons (expensive to rediscover)
+
+1. **In Next 16, `serverActions` must be nested inside `experimental` in `next.config.ts`.** A top-level `serverActions` key is silently ignored and fails the production type check with `TS2353`, which breaks the image build rather than the dev server. The correct form is `experimental: { serverActions: { bodySizeLimit: "25mb" } }`. A comment in `next.config.ts` records this so it is not re-broken.
+2. **A failed publish is safe but must be recovered deliberately.** If the workflow fails, no image is pushed and `latest` does not move, so the running installation is unaffected — nothing is broken, nothing is released either. Fix the cause on the session branch, merge to `main`, then re-point the same tag at the new merge commit (`git tag -f -a vX.Y.Z -m "<same message>" origin/main` and `git push -f origin vX.Y.Z`). That is safe *only* while no image exists for the failed tag. Confirm success with `gh run watch`, then verify the tags exist on the package with `gh api "/users/dougalbob/packages/container/estate-organiser/versions?per_page=3" --jq '.[] | "\(.metadata.container.tags|join(","))  created:\(.created_at)"'`.
+3. **A green local build is not a green image.** v0.2.3 failed to serve the PWA because the Dockerfile did not copy `public/` into the runtime stage while the local build was fine. Check the Dockerfile when adding files that the runtime serves directly.
 
 ## Start here — conversation handover (16 September 2026)
+
+> The user-feedback notes below still hold. The progress table and the work list immediately after them are the position as at 16 September; where they say something is "remaining", compare with the current state above, which supersedes them.
+
+The [README](../README.md) is the agreed product scope. These stages order implementation; they do not demote later core features to optional extras. The core contact → interaction → follow-up workflow, project creation/renaming, organisation-to-project links, recoverable deletion with safe restore, document storage with reusable links, estate finances in GBP, all three editable checklist templates, the Docker/Unraid deployment package, and encrypted backup/restore are all implemented, unit-tested where applicable, and released. Published-image release verification was completed on 17 September 2026, and the installation now holds real estate information.
 
 ### User feedback and working style
 
@@ -12,38 +42,39 @@ The [README](../README.md) is the agreed product scope. These stages order imple
 - Product decisions in the README are agreed. Do not restart the requirements questionnaire unless a genuinely new decision is needed.
 - Production document storage agreed as `/mnt/user/appdata/estate-organiser/documents` (container `/data/documents` via Docker volume). Demo mode isolates to `./data/demo-documents` so fictional files never mix with real ones.
 
-### Progress at a glance
+### Progress at a glance (as at 16 September 2026 — see Current state above)
 
-| Stage | Status | Remaining work |
+| Stage | Status | Position on 17 September 2026 |
 |---|---|---|
-| 1. Foundation | Implemented baseline | Full accessibility/security review, additional-theme coverage, and real Cloudflare/Unraid verification remain |
-| 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Full browser e2e coverage for new bin/project flows in restricted sandbox, accessibility polish |
-| 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Full browser e2e for upload/link/download flows in restricted sandbox, accessibility polish |
-| 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Full browser e2e for the finance flows, accessibility polish, and any feedback from the user's first pass |
-| 5a. Checklist templates | Implemented for the three starter projects – Notifications (16), Probate & Estate Administration (21) and Funeral (25), all editable with duplicate-safe application | Any wording changes the user wants after reading them |
-| 5. Dashboard/mobile/templates | Partly implemented | Dashboard, filters, quick capture, responsive screens and all three checklist lists exist; install metadata and complete accessibility polish remain |
-| 6. Backups/deployment | Deployment package and encrypted backup/restore implemented | First GitHub Actions image build, live Unraid/Cloudflare verification, and a clean restore through the published image |
+| 1. Foundation | Implemented baseline | Real Cloudflare/Unraid verification is done and both users sign in. Accessibility/security review and additional-theme coverage remain |
+| 2. Shared records | Implemented – core workflow, projects, and recoverable bin | Unchanged; browser e2e still needs a machine with a browser, so bin/project flows are covered by unit tests and manual use |
+| 3. Documents | Implemented – upload, reusable links, viewer, protected downloads, bin handling, decluttered UX | Upload is verified in production (v0.2.4 raised the body limit and added the streaming route); browser e2e still unavailable in the sandbox |
+| 4. Finances | Implemented – assets, liabilities, income, expenses, personal funding, reimbursements, distributions, three summaries, CSV exports, void/correction history | Unchanged; no further feedback from the user's first pass yet |
+| 5a. Checklist templates | Implemented for the three starter projects – Notifications (16), Probate & Estate Administration (21) and Funeral (25), all editable with duplicate-safe application | Unchanged; any wording changes the user wants are still welcome |
+| 5. Dashboard/mobile/templates | Implemented | Dashboard, filters, quick capture, responsive screens, all three checklist lists and the installable PWA are in place and the app is installed on Android. Accessibility polish remains |
+| 6. Backups/deployment | Deployment package and encrypted backup/restore implemented, released and verified | The GitHub Actions build ran first at v0.2.0 and on every release since; the live Unraid/Cloudflare check and a restore through the published image were completed on 17 September 2026 |
 
-### Next recommended work
+### What was recommended next on 16 September — all four items completed
 
-The checklist lists, deployment package, and encrypted backup/restore are now implemented. The immediate operational work is to review the image configuration and let the first version-tagged GitHub Actions build prove the Dockerfile on its target platform.
+Kept as a record. Each item below was actioned; the outcome is stated so a future session does not repeat it.
 
-1. Run the local test, typecheck, format, and production-build gates; review the backup format, restore warnings, Dockerfile, entrypoint, compose reference, Unraid template, and health route.
-2. After the deployment change is reviewed and merged to `main`, create a version tag (for example `v0.2.0`), set the first GHCR package to public, and perform the fictional-data Unraid/Cloudflare end-to-end check documented in the README.
-3. Restore that fictional backup through the published image into a clean Unraid data volume and verify records, documents, links, financial totals, and history before any real data entry.
-4. Follow with PWA install metadata and the accessibility/security pass; keep the approved calm layout unchanged.
+1. Run the local gates and review the backup format, restore warnings, Dockerfile, entrypoint, compose reference, Unraid template and health route — **done**; the gates run on every release.
+2. Merge to `main`, create a version tag, make the GHCR package public and perform the end-to-end check — **done**; v0.2.0 shipped on 16 September and v0.2.1–v0.2.5 followed, with the package public and the checks completed.
+3. Restore a backup through the published image and verify records, documents, links, totals and history before real data entry — **done on 17 September 2026** on the live installation, with the records confirmed afterwards.
+4. Add PWA install metadata and run the accessibility/security pass — **the PWA is done and installed on the user's phone**; the accessibility/security pass is the one item still outstanding.
 
 ### Where to find the current implementation
 
-- `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, projects, documents (decluttered row: friendlyName + category·linkedNames + Uploaded on date by user), recoverable bin, history and demo-user switch, plus delete/restore handling, in-app document viewer dialog, multi-method download fallback (anchor+download, hidden iframe, fetch blob+object URL, direct link) to handle Arena preview sandbox `allow-popups` restriction.
-- `src/components/record-form.tsx`: organisation (multi-project checkboxes), interaction, task, and project forms, follow-ups, conflict/draft recovery. Document edit now: `Current links – this file is reused` section showing each `documentLink` with badge and Remove button using `Link2Off` icon calling `unlinkDocument(id)`, local state `localDocLinks` syncing via effect, Tip line with `Lightbulb` icon "Tip: removing a link(s) does not delete the file". Add links fieldset with 3 optional dropdowns (organisation, project, task) nullable – on save after `saveRecord` succeeds, iterates selected values and calls `linkDocument({documentId, organisationId/projectId/taskId, interactionId:null})`, ignoring duplicate "already" errors. File never deleted on unlink.
+- `src/components/workspace.tsx`: navigation, overview, contacts, task lists, notes, projects, documents (decluttered row: friendlyName + category·linkedNames + Uploaded on date by user), recoverable bin, history and demo-user switch, plus delete/restore handling, in-app document viewer dialog, multi-method download fallback (anchor+download, hidden iframe, fetch blob+object URL, direct link) to handle Arena preview sandbox `allow-popups` restriction. v0.2.5 added `TaskLinkPicker`, the dialog behind **Link existing task** on a contact: it lists only tasks with no contact, filters by the note's organisation where a task came from a note, searches by title and detail, and sends only `{ taskId, organisationId, version }`.
+- `src/components/record-form.tsx`: organisation (multi-project checkboxes), interaction, task, and project forms, follow-ups, conflict/draft recovery. The Organisation list is **controlled** in v0.2.5 so a contact created from the dialog can show as the chosen one, and it carries an extra `+ New contact…` option that reveals name (required), email and phone. Choosing it sends the record with no organisation and the contact details separately, and a single server action creates both. Document edit now: `Current links – this file is reused` section showing each `documentLink` with badge and Remove button using `Link2Off` icon calling `unlinkDocument(id)`, local state `localDocLinks` syncing via effect, Tip line with `Lightbulb` icon "Tip: removing a link(s) does not delete the file". Add links fieldset with 3 optional dropdowns (organisation, project, task) nullable – on save after `saveRecord` succeeds, iterates selected values and calls `linkDocument({documentId, organisationId/projectId/taskId, interactionId:null})`, ignoring duplicate "already" errors. File never deleted on unlink.
 - `src/components/finance-forms.tsx`: `FinanceRecordForm` (kind, title, pounds amount, date, category, paid-personally/beneficiary, organisation, project, notes; version-conflict aware), `FinanceMovementDialog` (add proceeds/payment/reimbursement, list recorded movements with void/bin, linked receipts with View/Download/Remove link, attach or link existing document), and `FinanceVoidDialog` (reason required, reinstate supported).
 - `src/components/record-summary.tsx`: readable history and comparison fields, aware of deleted records, project links, and documents.
-- `src/app/actions.ts`: authenticated server actions for save, soft-delete, restore, permanent delete, `uploadDocument`, `linkDocument`, `unlinkDocument`. Upload validates size (20 MB), safe storage name, creates document + optional initial link transactionally, keeps file on link failure.
+- `src/app/actions.ts`: authenticated server actions for save, soft-delete, restore, permanent delete, `uploadDocument`, `linkDocument`, `unlinkDocument`, and from v0.2.5 `linkTaskToOrganisation` and `saveRecordWithNewOrganisation`. Upload validates size (20 MB), safe storage name, creates document + optional initial link transactionally, keeps file on link failure.
+- `src/app/api/documents/upload/route.ts`: streaming multipart upload added in v0.2.4 so a 20 MB file is not bound by the Server Action 1 MB default; the browser prefers this route and falls back to the `uploadDocument` action. `next.config.ts` raises `experimental.serverActions.bodySizeLimit` to `25mb` and must keep it nested under `experimental`.
 - `src/app/api/documents/[id]/download/route.ts`: protected download, uses `readFile` buffer to avoid `ReadableStream already closed` on concurrent downloads, sets safe Content-Disposition with original name, inline vs attachment via `?download=1`, checks auth and deleted state.
 - `src/lib/documents/storage.ts`: `documentsPath()` returns `DEMO_DOCUMENTS_PATH`/`DOCUMENTS_PATH` env, `safeStorageName()` UUID + safe extension, `safeOriginalName()` strips control chars and path, `fullPath()` guards traversal, `ensureDocumentsPath()`.
-- `src/lib/records/store.ts`: transactional writes, organisation-project join handling, revision history, optimistic version checks, resolution warnings, recoverable bin with no auto-purge, safe restore checks, non-cascading permanent deletion retaining revision metadata. Document methods: `createDocumentFromUpload`, `saveDocument` (friendlyName/category only), `linkDocument` (validates exactly one target, duplicate returns existing id), `unlinkDocument`, soft-delete preserves links, permanent delete cascade removes links and file reference is removed by action layer.
-- `src/lib/records/validation.ts`: input schemas for organisations (with projectIds), tasks, interactions, projects, `documentInput` (friendlyName, category), `documentLinkInput` (exactly one of organisationId/interactionId/taskId/projectId/financeRecordId), `maxDocumentSizeBytes`, `documentCategories`, and the finance inputs (`financeRecordInput`, `financeMovementInput`, `financeVoidInput`, `financeKinds`, `financeCategories`, `movementKindFor`).
+- `src/lib/records/store.ts`: transactional writes, organisation-project join handling, revision history, optimistic version checks, resolution warnings, recoverable bin with no auto-purge, safe restore checks, non-cascading permanent deletion retaining revision metadata. v0.2.5 added `linkTaskToOrganisation` (reads the current task itself, changes only `organisation_id`, keeps the optimistic version check, refuses a task that already belongs to another contact, and refuses one whose source note belongs elsewhere) and `saveRecordWithNewOrganisation` (creates the contact and the task or note inside one `db.transaction`; a failure rolls both back). `saveOrganisation` and `saveInteraction` were lifted to the top of the factory as local functions so they can be called inside that transaction, matching the existing `saveTask` pattern. Document methods: `createDocumentFromUpload`, `saveDocument` (friendlyName/category only), `linkDocument` (validates exactly one target, duplicate returns existing id), `unlinkDocument`, soft-delete preserves links, permanent delete cascade removes links and file reference is removed by action layer.
+- `src/lib/records/validation.ts`: input schemas for organisations (with projectIds), tasks, interactions, projects, `documentInput` (friendlyName, category), `documentLinkInput` (exactly one of organisationId/interactionId/taskId/projectId/financeRecordId), `taskLinkInput` (`taskId`, `organisationId`, `version`), `maxDocumentSizeBytes`, `documentCategories`, and the finance inputs (`financeRecordInput`, `financeMovementInput`, `financeVoidInput`, `financeKinds`, `financeCategories`, `movementKindFor`).
 - `src/lib/finances/money.ts`: integer-pence parsing and formatting (`parsePoundsToPence` rejects signs, more than two decimals, and anything non-numeric), `formatPence`, `formatPencePlain`.
 - `src/lib/finances/summary.ts`: `financeSummary(records, movements, users)` – the single source of every total (assets estimated vs proceeds, liabilities owed/paid/outstanding, cash in/out including liability payments, per-user reimbursement owed, per-beneficiary distributions, excluded voided/binned counts). Voided and binned records, and movements against them, are excluded.
 - `src/lib/finances/store.ts`: `saveFinanceRecord`, `saveFinanceMovement`, `setFinanceVoid`, `deleteFinance`, `restoreFinance`, spread into `recordStore` so the snapshot and all finance writes come from one entry point. Over-repayment and over-payment are refused with the remaining amount; reimbursements require a personally paid expense; a record with money against it cannot change type; permanent deletion always throws.
@@ -57,19 +88,19 @@ The checklist lists, deployment package, and encrypted backup/restore are now im
 - `src/lib/db/schema.ts` and `drizzle/`: schema and versioned migrations including `organisation_projects`, `documents`, `document_links`, and `deleted_at` columns. Add migrations; do not replace existing history.
 - `src/lib/auth/`: Cloudflare verification and explicit development identity. Never introduce a production fallback.
 - `src/app/globals.css` and `src/themes/index.ts`: approved calm theme and token foundation; project pills, doc pills, and bin actions reuse existing tokens.
-- `tests/`: 50 unit/integration tests. `tests/records.test.ts` covers Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, and three document tests. `tests/finances.test.ts` covers money parsing/formatting, asset estimate vs proceeds, liability part payments, the GBP 500/GBP 200/GBP 300 reimbursement case with no second expense, over-repayment and non-personal refusals, void/reinstate/correct history, bin and restore with permanent deletion refused, per-beneficiary distributions without a 50/50 assumption, stale-edit conflicts, receipt linking, CSV formula protection and totals separation. Checklist tests cover all three lists, duplicate-safe application, and editable suggestions. `tests/backup.test.ts` covers encrypted database/document inclusion, clean restore, metadata, and wrong-password failure.
+- `tests/`: 61 unit/integration tests. `tests/records.test.ts` covers Bank1 flow, project creation/renaming, organisation-project links, bin soft-delete/restore, permanent deletion, non-cascade behaviour, London DST, and three document tests. `tests/finances.test.ts` covers money parsing/formatting, asset estimate vs proceeds, liability part payments, the GBP 500/GBP 200/GBP 300 reimbursement case with no second expense, over-repayment and non-personal refusals, void/reinstate/correct history, bin and restore with permanent deletion refused, per-beneficiary distributions without a 50/50 assumption, stale-edit conflicts, receipt linking, CSV formula protection and totals separation. Checklist tests cover all three lists, duplicate-safe application, and editable suggestions. `tests/backup.test.ts` covers encrypted database/document inclusion, clean restore, metadata, and wrong-password failure. `tests/links.test.ts` covers document linking from both directions and, since v0.2.5, the task-to-contact link: attaching an unlinked task, a stale version being refused instead of overwriting, a task that already belongs to another contact not being moved, a contact in the bin and a missing task being refused, a note-derived task being refused for a different contact, and contact-plus-record creation in one transaction including the rollback case where no contact is left behind.
 
 ### Restarting and checking the app
 
 Do not assume the previous conversation's live server, dependencies, browser installation, or fictional database survived into the next workspace. Check the environment first.
 
 ```bash
-npm ci
+npm ci --ignore-scripts   # plain npm ci fails compiling better-sqlite3 in the sandbox
 DATABASE_PATH=./data/demo.sqlite npm run db:migrate
 DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev -- --port 3000
 ```
 
-Use the agent's long-running process tool for the development server. It binds to `0.0.0.0`; the configuration permits Arena preview hosts. Use fictional information only. Demo mode always uses `data/demo.sqlite` and `data/demo-documents`, separate from production database/files. The development-only Alex/Jamie switch lets the user try attribution and shared activity. There is no required example-data seed; a new demo database starts empty except for starter projects.
+Use the agent's long-running process tool for the development server. It binds to `0.0.0.0`; the configuration permits Arena preview hosts. Use fictional information only — the production installation holds real records now, so the demo database must stay in `data/demo.sqlite` and `data/demo-documents`, separate from the production files. The development-only Alex/Jamie switch lets the user try attribution and shared activity. There is no required example-data seed; a new demo database starts empty except for starter projects.
 
 ```bash
 npm test
@@ -81,14 +112,14 @@ npm audit --omit=dev
 npm run test:e2e
 ```
 
-At the latest application checkpoint, all 50 unit/integration tests, TypeScript, formatting and the production build passed. Production dependency audit: zero findings; four moderate dev-only Drizzle/esbuild findings remain. Browser downloads were blocked in Arena preview (sandbox lacks `allow-popups`), solved by blob+iframe+direct link fallbacks. A locally extracted Chromium was used previously for e2e; do not assume its temporary executable exists in a new session. Browser tests create fictional records in demo app.
+At the v0.2.5 checkpoint, all 61 unit/integration tests, the TypeScript check, Prettier and the production build pass. Production dependency audit: zero findings; four moderate dev-only Drizzle/esbuild findings remain. `npx playwright install chromium` could not download a browser in the sandbox in September 2026, so the browser suite was not run and a per-change check used a temporary server-render harness instead; if a browser is available, prefer the real e2e run. A locally extracted Chromium was used in earlier sessions; do not assume its executable exists now. Browser tests create fictional records in the demo app.
 
 ### GitHub handover
 
 - Repository: `dougalbob/estate-tracking`.
-- This deployment work is being developed on the fixed Arena session branch `arena/01a0aac6-estate-tracking`; do not create or switch to another branch for this session.
+- Work stays on the branch the current Arena session created for itself, normally `arena/<session-id>-estate-tracking`. Session ids differ per task, so never copy a branch name out of this document, an older handover, or an earlier session's pull request: doing so puts a session's work on a branch it does not own. Do not create or switch branches outside the session's own branch, and push only to it.
 - Keep GitHub-visible actions deliberate: review the local gates first, confirm before merging or opening/updating a pull request, merge to `main`, then create a version tag to publish the container.
-- The user prefers milestone commits and pushes, plain-English explanations of tests and previews, and a reviewed merge before the first production-image release.
+- The user prefers milestone commits and pushes, and plain-English explanations of tests and previews. They approve each merge and each version tag before it is pushed, even though earlier releases have gone smoothly.
 
 ## 1. Foundation, identity, and themed shell
 
@@ -178,18 +209,20 @@ These are implementation directions, not a final database schema. Validate them 
 
 ## Remaining technical choices and working assumptions
 
-No further product questionnaire is required before starting. Resolve technical details during design and document them explicitly:
+No further product questionnaire is required before starting. Resolve technical details during design and document them explicitly. The notes below have been kept as written in September 2026, with the outcome added where a choice has since been made and shipped:
 
-- **Backup workflow:** manual download and user-managed cloud copy initially; scheduled laptop transfer is future scope. Archive limits, local retention, encryption library, and password handling need implementation design.
+- **Backup workflow:** manual download and user-managed cloud copy initially; scheduled laptop transfer is future scope. **Resolved:** manual encrypted download as a `.estate-backup` bundle, a versioned header, scrypt-derived AES-256-GCM, zero server retention after download, and a password that is never stored or logged. Scheduled transfer remains future scope.
 - **Dates:** date-only task dates interpreted in Europe/London; store interaction/audit instants in UTC and display locally.
 - **Uploads:** supported formats, size limits, and available server storage need documented configuration. Current: PDF, images, text, 20 MB limit, configurable via `documentCategories` and `maxDocumentSizeBytes`.
 - **Deletion:** which identifying metadata remains in history after ordinary permanent deletion; never describe recoverable bin as erasing backup copies. Current: revision history retained for all entities including documents; file removed only on permanent document delete.
-- **Financial detail:** confirm precise field labels and reconciliation behaviour with sample transactions before building summaries.
+- **Financial detail:** confirm precise field labels and reconciliation behaviour with sample transactions before building summaries. **Resolved:** the three summaries (inventory, cash, reimbursements) are built and unit-tested, including the GBP 500/200/300 case, part payments and voids, and the user has worked with them in production.
 - **Themes:** extensible token system and one default theme now; no theme editor, additional palette, or preference selector promised for first release.
 
 ## Release gate
 
 All six stages are required for the polished initial release. Run unit/integration tests, critical two-user end-to-end workflows, accessibility checks, authentication bypass checks, production container smoke tests, and a clean restore exercise. Record actual results and outstanding limitations; do not describe planned features as shipped.
+
+**Position on 17 September 2026:** unit/integration tests, the type check, formatting, the production build, the published container smoke test, both users signing in through Cloudflare Access, and the clean restore through the published image have all passed. The accessibility review and a formal security review are the parts of this gate that are still open, and the same two are carried in the current-state table at the top of this document. Whole browser end-to-end runs need a machine with a browser, which the sandbox does not provide.
 
 ## Earlier foundation checkpoint — 16 September 2026
 
@@ -197,7 +230,7 @@ Implemented: Next.js 16.3.5/React shell, semantic default-theme tokens and regis
 
 Verified: eight automated authentication/database tests; TypeScript check; production build; HTTP checks for fictional preview rendering and a protected production page despite a spoofed email header. Migration applied successfully and repeat-application tested in memory. Production dependency audit: zero findings. Development tooling: four moderate findings in the Drizzle/esbuild chain remain unresolved.
 
-Not yet verified: full browser/accessibility review, live Cloudflare identity exchange, Unraid deployment, and additional-theme coverage. At that checkpoint, there were no record-write endpoints or functional task/note forms. That limitation is superseded by later checkpoints.
+Not yet verified at that checkpoint: full browser/accessibility review, live Cloudflare identity exchange, Unraid deployment, and additional-theme coverage. At that checkpoint, there were no record-write endpoints or functional task/note forms. Later checkpoints supersede the record-write limitation, and the live Cloudflare identity exchange and the Unraid deployment were verified in production on 16–17 September 2026. The accessibility review and additional-theme coverage are the parts still open.
 
 ## Core-workflow checkpoint — 16 September 2026
 
@@ -342,9 +375,9 @@ Implemented:
 - `.github/workflows/publish.yml` publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch, with version/latest/SHA tags and `GITHUB_TOKEN` package permissions. `.env.example` contains placeholders only.
 - README deployment instructions cover appdata and `estate.env`, template import, first start, health checks, Cloudflare Tunnel and Google-only Access policy, anonymous GHCR pulls, Force Update, and the fictional-data gate.
 
-Not yet verified in this sandbox:
-- Docker build and native-module smoke test, because no Docker daemon is available here. The first build is the GitHub Actions run.
-- Live Unraid startup, Cloudflare Tunnel, Google Access exchange, and restricted-origin checks.
+Not verified in the sandbox at that point (both have since been verified in production):
+- Docker build and native-module smoke test, because no Docker daemon is available here. GitHub Actions is the only builder: the first image was published at v0.2.0 on 16 September 2026.
+- Live Unraid startup, Cloudflare Tunnel, Google Access exchange, and restricted-origin checks — completed for both users in production.
 
 ## Stage 6 checkpoint — encrypted backup and restore (16 September 2026)
 
@@ -355,10 +388,43 @@ Implemented:
 - Authenticated `/api/backup/download` and `/api/backup/restore` routes support the manual workflow. The workspace has a **Backup & restore** panel with browser blob download, explicit destructive-restore confirmation, and password fields that are not persisted.
 - Server retention is deliberately zero after a completed download. The user retains dated encrypted copies and the recovery password separately, outside the app.
 
-Verified:
+Verified at that checkpoint (61 tests now):
 - 50 unit/integration tests passing, including encrypted database/document inclusion, nested documents, clean restore, metadata checks, and wrong-password failure.
 - HTTP download smoke test returned the encrypted backup with `private, no-store`, `nosniff`, and attachment headers; the returned magic and encrypted bytes were verified independently of browser save permissions.
 - HTTP restore smoke test returned success for a fictional demo database and HTTP 400 for a wrong password while preserving the existing data.
 - TypeScript, Prettier, and the existing production build gates pass after the backup feature. Arena's iframe may still block the final browser save dialog; production HTTP/download behaviour remains the release verification step.
 
-Remaining release gate: push/review/merge, first GHCR build, live Unraid/Cloudflare setup on host port `3005`, and a clean restore through the published image before real estate data.
+Remaining release gate at that checkpoint: push/review/merge, first GHCR build, live Unraid/Cloudflare setup on host port `3005`, and a clean restore through the published image before real estate data. **All four were completed between 16 and 17 September 2026**, and the installation has held real records since.
+
+## Release history — 16 to 17 September 2026
+
+Accurate as recorded in Git. Nothing here is planned; each tag is published on GHCR.
+
+| Tag | Published (UTC) | What it was |
+|---|---|---|
+| v0.2.0 | 16 September 15:54 | Production deployment package and encrypted backup/restore (pull request #4) |
+| v0.2.1 | 16 September 18:34 | Backup restore fix: stage on the target filesystem to avoid `EXDEV` (pull request #5) |
+| v0.2.2 | 17 September 08:58 | Document and task link UX, mobile selection fix, installable PWA (pull request #6) |
+| v0.2.3 | 17 September 12:04 | Docker: copy `public/` into the runtime image so PWA assets are served (pull request #7) |
+| v0.2.4 | 17 September 17:51 | Document upload fix: show upload errors, raise the body limit, add the streaming `/api/documents/upload` route, and nest `serverActions` under `experimental` so the image builds (pull requests #8 and #9) |
+| v0.2.5 | 17 September | This change: link an existing task to a contact from the contact screen, create a new contact from inside the task or note dialog, and refresh this plan and the README |
+
+## v0.2.5 checkpoint — linking work to a contact in either direction (17 September 2026)
+
+Implemented:
+- **Link an existing task to a contact.** The contact screen's **Linked tasks** toolbar now has **Link existing task** beside **Add task**. The picker lists only tasks with no contact yet, offers a title/detail search, and shows each task's status, project and next date. A task is one column (`tasks.organisation_id`), so linking is an update to that task: **no migration was needed**, and the server reads the current row itself rather than accepting a whole record from the browser.
+- Nothing else about the task changes. The title, detail, dates, assignee, project, documents and history are untouched, the version still increments, and the change appears in the task history.
+- Refusals are deliberate and worded plainly: a task that already belongs to another contact is **not** silently moved (attach only, as agreed with the user), a task whose source note belongs to a different contact is refused because a note and its follow-ups must share an organisation, a contact in the bin is refused, and a stale version is refused with the picker refreshed so the link can be retried.
+- **Create a contact from the task or note dialog.** The Organisation list gained **+ New contact…**, revealing a name (required), email and phone (both optional). The list became a controlled input so the new contact can be shown as the chosen one.
+- **One save, not two.** `saveRecordWithNewOrganisation` creates the contact and the task or note inside a single `db.transaction`. If the record cannot be saved, the contact is not created and the dialog keeps everything typed, so a failure can never leave an orphan contact. A unit test asserts the rollback explicitly.
+- The project, document and organisation forms do not render the Organisation list at all, so they are unaffected. This was verified by rendering each form and checking the option is absent, rather than assumed.
+- Wording explains the behaviour in both places: what linking does and does not change, and that a failed save creates nothing.
+
+Verified:
+- **61 unit/integration tests** (53 before), TypeScript, Prettier and the production build all pass. Eight new tests cover the two features, including the rollback case.
+- A temporary server-render harness rendered the contact screen, the picker, and the task, note, project, document and organisation forms against the demo database, and checked the sixteen expected strings and absences. It was deleted after use; no test-only code remains in the repository.
+- `npx playwright install chromium` cannot download a browser in this sandbox, so the real browser e2e suite was not run for this change. The user sees the result in the Arena preview and in the released app.
+
+Not covered here:
+- The published image was not built in the sandbox (no Docker daemon); GitHub Actions builds it from the tag.
+- The accessibility and security review is still the outstanding item from the release gate.
