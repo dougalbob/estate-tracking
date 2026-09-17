@@ -40,6 +40,7 @@ import {
   uploadDocument,
   linkDocument,
   unlinkDocument,
+  linkTaskToOrganisation,
   setFinanceVoid,
 } from "@/app/actions";
 import { RecordSummary } from "./record-summary";
@@ -282,6 +283,7 @@ export function Workspace({
     [error, setError] = useState(""),
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
     [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null),
+    [taskLinkPicker, setTaskLinkPicker] = useState<string | null>(null),
     [viewingDoc, setViewingDoc] = useState<
       Snapshot["documents"][number] | null
     >(null),
@@ -1566,12 +1568,21 @@ export function Workspace({
               )}
               <div className="list-toolbar">
                 <h2>Linked tasks</h2>
-                <Button
-                  variant="outline"
-                  onClick={() => edit("task", undefined, organisation.id)}
-                >
-                  Add task
-                </Button>
+                <div className="row-actions">
+                  <Button
+                    variant="outline"
+                    onClick={() => setTaskLinkPicker(organisation.id)}
+                  >
+                    <Link2 size={14} />
+                    Link existing task
+                  </Button>
+                  <Button
+                    onClick={() => edit("task", undefined, organisation.id)}
+                  >
+                    <Plus size={16} />
+                    Add task
+                  </Button>
+                </div>
               </div>
               <section className="panel">
                 {data.tasks
@@ -2375,8 +2386,12 @@ export function Workspace({
           data={data}
           users={users}
           onClose={() => setEditor(null)}
-          onSaved={(id) => {
-            setMessage("Saved. Your shared workspace is up to date.");
+          onSaved={(id, newContactName) => {
+            setMessage(
+              newContactName
+                ? `Saved. ${newContactName} is now in Contacts, and this record is linked to it.`
+                : "Saved. Your shared workspace is up to date.",
+            );
             if (editor.kind === "organisation") {
               setView("contacts");
               setSelected(id);
@@ -2430,6 +2445,28 @@ export function Workspace({
           onClose={() => setViewingDoc(null)}
         />
       )}
+      {taskLinkPicker &&
+        (() => {
+          const organisation = data.organisations.find(
+            (o) => o.id === taskLinkPicker,
+          );
+          return organisation ? (
+            <TaskLinkPicker
+              data={data}
+              organisation={organisation}
+              onClose={() => setTaskLinkPicker(null)}
+              onLinked={(title) => {
+                setMessage(
+                  `“${title}” is now linked to ${organisation.name}. Nothing else about the task changed.`,
+                );
+                setTaskLinkPicker(null);
+                router.refresh();
+              }}
+              onError={setError}
+              onRefresh={() => router.refresh()}
+            />
+          ) : null;
+        })()}
       {financeEditor && (
         <FinanceRecordForm
           editor={financeEditor}
@@ -3374,6 +3411,188 @@ function DocumentLinkPicker({
           </Button>
           <Button type="submit" disabled={busy}>
             {busy ? "Linking…" : "Link"}
+          </Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+/**
+ * Item 1: attach a task that already exists to this contact.
+ *
+ * Only tasks with no contact yet are offered. A task that came from a note has
+ * to stay with that note's contact, so it appears here only when the note
+ * already belongs to this contact (or has no contact of its own).
+ */
+function TaskLinkPicker({
+  data,
+  organisation,
+  onClose,
+  onLinked,
+  onError,
+  onRefresh,
+}: {
+  data: Snapshot;
+  organisation: Snapshot["organisations"][number];
+  onClose: () => void;
+  onLinked: (taskTitle: string) => void;
+  onError: (msg: string) => void;
+  onRefresh: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false),
+    [query, setQuery] = useState(""),
+    [taskId, setTaskId] = useState("");
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const noteOrganisationId = (noteId: string | null) =>
+    data.interactions.find((n) => n.id === noteId)?.organisationId ?? null;
+  const projectName = (projectId: string | null) =>
+    projectId
+      ? (data.projects.find((p) => p.id === projectId)?.name ?? "")
+      : "";
+  const candidates = data.tasks.filter(
+    (t) =>
+      !t.organisationId &&
+      (!t.interactionId ||
+        noteOrganisationId(t.interactionId) === organisation.id),
+  );
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? candidates.filter((t) =>
+        `${t.title} ${t.detail ?? ""}`.toLowerCase().includes(needle),
+      )
+    : candidates;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const task = candidates.find((t) => t.id === taskId);
+    if (!task) {
+      onError("Choose a task to link first");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await linkTaskToOrganisation({
+        taskId: task.id,
+        organisationId: organisation.id,
+        version: task.version,
+      });
+      if (res.ok) onLinked(task.title);
+      else if (res.code === "conflict") {
+        onError(
+          "That task changed while this list was open, so it was not linked. The list has been refreshed – check it and try again.",
+        );
+        onRefresh();
+      } else onError(res.error);
+    } catch (err) {
+      console.error("[task link] failed", err);
+      onError(err instanceof Error ? err.message : "Unable to link task");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialog}
+      className="record-dialog"
+      aria-label="Link an existing task"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <form onSubmit={submit}>
+        <div className="dialog-heading">
+          <div>
+            <p className="eyebrow">ATTACH WORK ALREADY LISTED</p>
+            <h2>Link an existing task to {organisation.name}</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close"
+          >
+            <X size={21} />
+          </button>
+        </div>
+        <fieldset disabled={busy} className="form-fields">
+          <label className="search-label">
+            Find a task
+            <input
+              type="search"
+              placeholder="Search tasks…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          {candidates.length > 0 && (
+            <div className="panel task-picker-list">
+              {shown.map((t) => (
+                <label className="task-row" key={t.id}>
+                  <input
+                    type="radio"
+                    name="task"
+                    value={t.id}
+                    checked={taskId === t.id}
+                    onChange={() => setTaskId(t.id)}
+                    required
+                  />
+                  <span className="task-copy">
+                    <strong>{t.title}</strong>
+                    <p>
+                      {label(t.status)}
+                      {t.projectId && projectName(t.projectId) && (
+                        <>
+                          <span>·</span>
+                          {projectName(t.projectId)}
+                        </>
+                      )}
+                      {attentionDate(t) && (
+                        <>
+                          <span>·</span>
+                          {formatDate(attentionDate(t)!)}
+                        </>
+                      )}
+                    </p>
+                  </span>
+                </label>
+              ))}
+              {shown.length === 0 && (
+                <p className="empty-state">No task matches that search.</p>
+              )}
+            </div>
+          )}
+          {candidates.length === 0 && (
+            <p className="form-help">
+              Every task already has a contact, or came from a note filed
+              elsewhere. Add a task here instead, or move the note to this
+              contact first.
+            </p>
+          )}
+          <p className="form-help">
+            Only tasks with no contact yet are listed. Attaching one changes
+            nothing else about it: its title, dates, notes, project and history
+            stay exactly as they are, and the change is recorded in the task
+            history.
+          </p>
+        </fieldset>
+        <div className="form-actions">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy || !taskId}>
+            {busy ? "Linking…" : "Link task"}
           </Button>
         </div>
       </form>

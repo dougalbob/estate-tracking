@@ -69,6 +69,16 @@ export const taskInput = z.object({
   followUpDate: date,
   deadline: date,
 });
+/**
+ * Linking a task that already exists to a contact changes exactly one column.
+ * The client sends the version it displayed so a stale screen is refused rather
+ * than overwriting the task with an older copy of it.
+ */
+export const taskLinkInput = z.object({
+  taskId: z.string().min(1),
+  organisationId: z.string().min(1),
+  version: z.number().int().positive(),
+});
 export const interactionInput = z
   .object({
     ...common,
@@ -250,6 +260,7 @@ export type InteractionInput = z.input<typeof interactionInput>;
 export type ProjectInput = z.input<typeof projectInput>;
 export type DocumentInput = z.input<typeof documentInput>;
 export type DocumentLinkInput = z.input<typeof documentLinkInput>;
+export type TaskLinkInput = z.input<typeof taskLinkInput>;
 export const label = (value: string) =>
   value
     .split("_")

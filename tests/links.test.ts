@@ -110,3 +110,239 @@ test("linking a document to a task from either side shares one document_links ro
     sqlite.close();
   }
 });
+
+const contact = {
+  name: "Bank1",
+  mainContact: null,
+  phoneNumbers: [] as string[],
+  email: null,
+  reference: null,
+  notes: null,
+  status: "not_contacted" as const,
+  projectIds: [] as string[],
+};
+test("an unlinked task can be attached to a contact and the change is versioned", () => {
+  const { sqlite, store } = setup();
+  try {
+    const organisationId = store.saveOrganisation(contact, users[0]);
+    const taskId = store.saveTask(task, users[0]);
+    const before = store.snapshot().tasks.find((t) => t.id === taskId)!;
+    const linked = store.linkTaskToOrganisation(
+      { taskId, organisationId, version: before.version },
+      users[1],
+    );
+    assert.equal(linked, taskId);
+    const after = store.snapshot().tasks.find((t) => t.id === taskId)!;
+    assert.equal(after.organisationId, organisationId);
+    assert.equal(after.version, before.version + 1);
+    // Every other field is untouched by the link
+    assert.equal(after.title, before.title);
+    assert.equal(after.detail, before.detail);
+    assert.equal(after.assignee, before.assignee);
+    assert.equal(after.status, before.status);
+    assert.equal(after.dueDate, before.dueDate);
+    assert.equal(after.projectId, before.projectId);
+    // The link is recorded in the history the user reads in the app
+    const revisions = store
+      .snapshot()
+      .revisions.filter((r) => r.entity === "task" && r.entityId === taskId);
+    assert.equal(revisions.length, 2);
+    const update = revisions.find((r) => r.action === "updated")!;
+    assert.equal(update.actor, users[1]);
+    assert.equal(update.after.organisationId, organisationId);
+  } finally {
+    sqlite.close();
+  }
+});
+test("attaching to a contact refuses a stale version instead of overwriting it", () => {
+  const { sqlite, store } = setup();
+  try {
+    const organisationId = store.saveOrganisation(contact, users[0]);
+    const taskId = store.saveTask(task, users[0]);
+    const stale = store.snapshot().tasks.find((t) => t.id === taskId)!.version;
+    // Someone else edits the task after this screen was loaded
+    store.saveTask(
+      { ...task, id: taskId, version: stale, title: "Renamed" },
+      users[1],
+    );
+    assert.throws(
+      () =>
+        store.linkTaskToOrganisation(
+          { taskId, organisationId, version: stale },
+          users[0],
+        ),
+      /changed|reload|conflict/i,
+    );
+    const after = store.snapshot().tasks.find((t) => t.id === taskId)!;
+    assert.equal(after.organisationId, null);
+    assert.equal(after.title, "Renamed");
+  } finally {
+    sqlite.close();
+  }
+});
+test("a task that already belongs to another contact is not silently moved", () => {
+  const { sqlite, store } = setup();
+  try {
+    const first = store.saveOrganisation(contact, users[0]);
+    const second = store.saveOrganisation(
+      { ...contact, name: "Bank2" },
+      users[0],
+    );
+    const taskId = store.saveTask({ ...task, organisationId: first }, users[0]);
+    const version = store
+      .snapshot()
+      .tasks.find((t) => t.id === taskId)!.version;
+    assert.throws(
+      () =>
+        store.linkTaskToOrganisation(
+          { taskId, organisationId: second, version },
+          users[0],
+        ),
+      /another contact/i,
+    );
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === taskId)!.organisationId,
+      first,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+test("attaching refuses a contact in the bin and a task that is already gone", () => {
+  const { sqlite, store } = setup();
+  try {
+    const organisationId = store.saveOrganisation(contact, users[0]);
+    const taskId = store.saveTask(task, users[0]);
+    const version = store
+      .snapshot()
+      .tasks.find((t) => t.id === taskId)!.version;
+    store.deleteRecord("organisation", organisationId, 1, users[0]);
+    assert.throws(
+      () =>
+        store.linkTaskToOrganisation(
+          { taskId, organisationId, version },
+          users[0],
+        ),
+      /no longer available/i,
+    );
+    assert.throws(
+      () =>
+        store.linkTaskToOrganisation(
+          { taskId: "missing", organisationId, version },
+          users[0],
+        ),
+      /no longer available/i,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+test("a task created from a note can only be attached to the same contact as its note", () => {
+  const { sqlite, store } = setup();
+  try {
+    const otherContact = store.saveOrganisation(
+      { ...contact, name: "Bank2" },
+      users[0],
+    );
+    // A quick note with no contact yet, plus a task that came from it: both are
+    // unlinked, but the rule is that a follow-up task belongs where its note does
+    const noteId = store.saveInteraction(
+      {
+        organisationId: null,
+        title: "Call",
+        detail: "Spoke to the bank",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        followUps: [],
+      },
+      users[0],
+    );
+    const taskId = store.saveTask(
+      { ...task, interactionId: noteId, organisationId: null },
+      users[0],
+    );
+    const version = store
+      .snapshot()
+      .tasks.find((t) => t.id === taskId)!.version;
+    assert.throws(
+      () =>
+        store.linkTaskToOrganisation(
+          { taskId, organisationId: otherContact, version },
+          users[0],
+        ),
+      /same organisation/i,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+test("a contact created with a task is saved once: both exist and are linked", () => {
+  const { sqlite, store } = setup();
+  try {
+    const result = store.saveRecordWithNewOrganisation(
+      "task",
+      task,
+      {
+        ...contact,
+        name: "New Solicitor",
+        phoneNumbers: ["0121 000 0000"],
+        email: "a@example.invalid",
+      },
+      users[0],
+    );
+    const snap = store.snapshot();
+    assert.equal(snap.organisations.length, 1);
+    assert.equal(snap.organisations[0].name, "New Solicitor");
+    assert.deepEqual(snap.organisations[0].phoneNumbers, ["0121 000 0000"]);
+    assert.equal(snap.organisations[0].email, "a@example.invalid");
+    assert.equal(snap.organisations[0].status, "not_contacted");
+    const saved = snap.tasks.find((t) => t.id === result.id)!;
+    assert.equal(saved.organisationId, snap.organisations[0].id);
+  } finally {
+    sqlite.close();
+  }
+});
+test("if the task cannot be saved, the new contact is not created either", () => {
+  const { sqlite, store } = setup();
+  try {
+    assert.throws(() =>
+      store.saveRecordWithNewOrganisation(
+        "task",
+        { ...task, assignee: "stranger@example.invalid" },
+        { ...contact, name: "Should not exist" },
+        users[0],
+      ),
+    );
+    const snap = store.snapshot();
+    assert.equal(snap.organisations.length, 0);
+    assert.equal(snap.tasks.length, 0);
+    assert.equal(snap.revisions.length, 0);
+  } finally {
+    sqlite.close();
+  }
+});
+test("a note and its follow-up task are both attached to the contact created with them", () => {
+  const { sqlite, store } = setup();
+  try {
+    const result = store.saveRecordWithNewOrganisation(
+      "interaction",
+      {
+        organisationId: null,
+        title: "First call",
+        detail: "Discussed probate",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        followUps: [{ ...task, organisationId: null, interactionId: null }],
+      },
+      { ...contact, name: "New Bank" },
+      users[0],
+    );
+    const snap = store.snapshot();
+    const note = snap.interactions.find((n) => n.id === result.id)!;
+    assert.equal(note.organisationId, result.organisationId);
+    const followUp = snap.tasks.find((t) => t.interactionId === result.id)!;
+    assert.equal(followUp.organisationId, result.organisationId);
+  } finally {
+    sqlite.close();
+  }
+});

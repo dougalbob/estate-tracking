@@ -79,6 +79,85 @@ export async function saveRecord(kind: Kind, input: unknown) {
   }
 }
 
+/**
+ * Attach a task that already exists to a contact (Item 1). Only the link is
+ * sent from the browser; the server reads the task itself so a screen left open
+ * cannot write an old copy of it back over a newer one.
+ */
+export async function linkTaskToOrganisation(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const id = store.linkTaskToOrganisation(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error:
+        "Unable to link that task. Check your access and try again. Your draft has been kept.",
+      code: "unavailable",
+    };
+  }
+}
+
+/**
+ * Create a contact and the task or note that needs it in one save (Item 2).
+ * Both are written in a single database transaction, so a failure cannot leave
+ * a contact behind on its own with no record explaining where it came from.
+ */
+export async function saveRecordWithNewOrganisation(
+  kind: "task" | "interaction",
+  input: unknown,
+  organisation: unknown,
+) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const result = store.saveRecordWithNewOrganisation(
+      kind,
+      input,
+      organisation,
+      user.email,
+    );
+    revalidatePath("/");
+    return { ok: true as const, ...result };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error:
+        "Nothing was saved: the new contact and the task are both still unsaved. Your draft is still here – check your access and try again.",
+      code: "unavailable",
+    };
+  }
+}
+
 export async function saveFinanceRecord(input: unknown) {
   try {
     const user = await currentUser();

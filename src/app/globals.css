@@ -308,6 +308,22 @@ small {
   padding: 18px 24px;
   border-top: 1px solid var(--border);
 }
+.task-picker-list {
+  max-height: 320px;
+  overflow: auto;
+}
+.task-picker-list .task-row {
+  cursor: pointer;
+}
+.task-picker-list .task-row:first-child {
+  border-top: 0;
+}
+.task-picker-list .task-row input[type="radio"] {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
 .task-icon {
   background: var(--background);
   border: 1px solid var(--border);
