@@ -121,9 +121,7 @@ if (!barclays || !hollowBrook) {
 // The third document is linked through a note rather than a contact, so a
 // row with no tappable name can be seen.
 const noteTitle = "Phone call about the itemised bill (fictional)";
-const note = store
-  .snapshot()
-  .interactions.find((i) => i.title === noteTitle);
+const note = store.snapshot().interactions.find((i) => i.title === noteTitle);
 const noteId =
   note?.id ??
   store.saveInteraction(

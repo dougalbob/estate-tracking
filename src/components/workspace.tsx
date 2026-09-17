@@ -981,29 +981,27 @@ export function Workspace({
           </button>
           <p>
             {doc.category ? label(doc.category) : "No category"}
-            {linkedItems.length > 0 ? (
-              linkedItems.map((item, index) => (
-                <Fragment key={index}>
-                  {" · "}
-                  {item.kind === "contact" ? (
-                    <button
-                      type="button"
-                      className="task-org"
-                      aria-label={`Contact details for ${item.name}`}
-                      title={`Contact details for ${item.name}`}
-                      onClick={() => setContactQuickView(item.organisationId)}
-                    >
-                      <Users size={11} aria-hidden />
-                      {item.name}
-                    </button>
-                  ) : (
-                    item.value
-                  )}
-                </Fragment>
-              ))
-            ) : (
-              " · No links yet – reusable across records"
-            )}
+            {linkedItems.length > 0
+              ? linkedItems.map((item, index) => (
+                  <Fragment key={index}>
+                    {" · "}
+                    {item.kind === "contact" ? (
+                      <button
+                        type="button"
+                        className="task-org"
+                        aria-label={`Contact details for ${item.name}`}
+                        title={`Contact details for ${item.name}`}
+                        onClick={() => setContactQuickView(item.organisationId)}
+                      >
+                        <Users size={11} aria-hidden />
+                        {item.name}
+                      </button>
+                    ) : (
+                      item.value
+                    )}
+                  </Fragment>
+                ))
+              : " · No links yet – reusable across records"}
           </p>
           <p>
             <small>

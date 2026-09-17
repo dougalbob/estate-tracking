@@ -31,13 +31,24 @@ const hollowBrook = {
   name: "Hollow Brook Funeral Directors (fictional)",
 };
 const oakfield = { id: "org-3", name: "Oakfield Council Tax (fictional)" };
-const funeralTask = { id: "task-1", title: "Ask for the itemised funeral bill" };
+const funeralTask = {
+  id: "task-1",
+  title: "Ask for the itemised funeral bill",
+};
 const bankNote = { id: "note-1", title: "Called about the estate accounts" };
 const probate = { id: "proj-1", name: "Probate & Estate Administration" };
 
 test("a document with no links has no items, and other documents' links are ignored", () => {
   assert.deepEqual(
-    documentLinkItems("doc-1", [link({ documentId: "doc-2", organisationId: "org-1" })], [barclays], [], [], [], []),
+    documentLinkItems(
+      "doc-1",
+      [link({ documentId: "doc-2", organisationId: "org-1" })],
+      [barclays],
+      [],
+      [],
+      [],
+      [],
+    ),
     [],
   );
   assert.deepEqual(documentLinkItems("doc-1", [], [], [], [], [], []), []);
@@ -61,10 +72,7 @@ test("a directly linked live contact is a tappable contact item", () => {
 test("two directly linked contacts are two tappable items, in link order", () => {
   const items = documentLinkItems(
     "doc-1",
-    [
-      link({ organisationId: "org-2" }),
-      link({ organisationId: "org-1" }),
-    ],
+    [link({ organisationId: "org-2" }), link({ organisationId: "org-1" })],
     [barclays, hollowBrook],
     [],
     [],
@@ -91,7 +99,15 @@ test("a contact in the recoverable bin is plain text with its name", () => {
 });
 
 test("a contact id known nowhere reads as the app's fallback name", () => {
-  const items = documentLinkItems("doc-1", [link({ organisationId: "gone" })], [], [], [], [], []);
+  const items = documentLinkItems(
+    "doc-1",
+    [link({ organisationId: "gone" })],
+    [],
+    [],
+    [],
+    [],
+    [],
+  );
   assert.deepEqual(items, [{ kind: "text", value: "Linked organisation" }]);
 });
 
@@ -109,7 +125,15 @@ test("a linked note appears by title", () => {
 });
 
 test("a binned note reads as the plain fallback, not a contact", () => {
-  const items = documentLinkItems("doc-1", [link({ interactionId: "gone" })], [], [], [], [], []);
+  const items = documentLinkItems(
+    "doc-1",
+    [link({ interactionId: "gone" })],
+    [],
+    [],
+    [],
+    [],
+    [],
+  );
   assert.deepEqual(items, [{ kind: "text", value: "Note" }]);
 });
 
@@ -127,7 +151,15 @@ test("a linked task appears by title", () => {
 });
 
 test("a binned task reads as the plain fallback", () => {
-  const items = documentLinkItems("doc-1", [link({ taskId: "gone" })], [], [], [], [], []);
+  const items = documentLinkItems(
+    "doc-1",
+    [link({ taskId: "gone" })],
+    [],
+    [],
+    [],
+    [],
+    [],
+  );
   assert.deepEqual(items, [{ kind: "text", value: "Task" }]);
 });
 
@@ -145,7 +177,15 @@ test("a linked project appears by name, live or binned", () => {
 });
 
 test("an unknown project reads as the plain fallback", () => {
-  const items = documentLinkItems("doc-1", [link({ projectId: "gone" })], [], [], [], [], []);
+  const items = documentLinkItems(
+    "doc-1",
+    [link({ projectId: "gone" })],
+    [],
+    [],
+    [],
+    [],
+    [],
+  );
   assert.deepEqual(items, [{ kind: "text", value: "Linked project" }]);
 });
 
