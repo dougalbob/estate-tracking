@@ -980,13 +980,6 @@ export function Workspace({
             <Pencil size={14} />
             Edit
           </button>
-          <button
-            className="subtle-button"
-            onClick={() => setLinkPicker({ documentId: doc.id })}
-          >
-            <Link2 size={14} />
-            Link
-          </button>
           {historyButton("document", doc.id)}
           <button
             className="subtle-button"

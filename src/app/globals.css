@@ -44,6 +44,38 @@ button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
+/* Mobile polish: stop accidental text selection, long-press callouts and the
+   300ms tap delay on obvious tap targets. Fields and prose keep selection. */
+button,
+.subtle-button,
+.icon-button,
+.nav-item,
+.row-actions,
+.task-icon,
+.task-row,
+.record-title,
+.contact-row,
+.project-pill,
+.doc-pills,
+.doc-inline-row,
+.badge,
+dialog .dialog-heading {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+input,
+textarea,
+select,
+.task-copy p,
+.note-detail,
+.activity-entry p,
+.revision-values dd,
+.details-grid dd {
+  -webkit-user-select: text;
+  user-select: text;
+}
 a:focus-visible,
 button:focus-visible {
   outline: 3px solid var(--focus);

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Plus, Link2Off, Lightbulb, Trash2 } from "lucide-react";
+import { X, Plus, Link2Off, Lightbulb, Trash2, FileText } from "lucide-react";
 import { RecordSummary } from "./record-summary";
 import { Button } from "./ui/button";
 import { saveRecord, linkDocument, unlinkDocument } from "@/app/actions";
@@ -66,11 +66,23 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
   useEffect(() => {
     setLocalDocLinks(existingDocLinks);
   }, [existingDocLinks.length]);
-  const [docLinkOrg, setDocLinkOrg] = useState<string>("");
-  const [docLinkProject, setDocLinkProject] = useState<string>("");
-  const [docLinkTask, setDocLinkTask] = useState<string>("");
-  const [docLinkFinance, setDocLinkFinance] = useState<string>("");
+  // Document edit – compact target-type picker that links immediately (like unlink)
+  const [docLinkType, setDocLinkType] = useState<
+    "" | "contact" | "note" | "project" | "task" | "finance"
+  >("");
+  const [docLinkTarget, setDocLinkTarget] = useState<string>("");
   const [docLinkSaving, setDocLinkSaving] = useState(false);
+  // Task edit – linked documents block
+  const existingTaskLinks =
+    editor.kind === "task" && editor.id
+      ? data.documentLinks.filter((l) => l.taskId === editor.id)
+      : [];
+  const [localTaskLinks, setLocalTaskLinks] = useState(existingTaskLinks);
+  useEffect(() => {
+    setLocalTaskLinks(existingTaskLinks);
+  }, [existingTaskLinks.length]);
+  const [taskLinkDoc, setTaskLinkDoc] = useState<string>("");
+  const [taskLinkSaving, setTaskLinkSaving] = useState(false);
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
       onClose();
@@ -251,39 +263,6 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     try {
       const result = await saveRecord(editor.kind, input);
       if (result.ok) {
-        // For documents, also create optional links selected in the polished edit UI
-        if (editor.kind === "document") {
-          setDocLinkSaving(true);
-          const linksToCreate: Array<{
-            organisationId?: string | null;
-            projectId?: string | null;
-            taskId?: string | null;
-            financeRecordId?: string | null;
-          }> = [];
-          if (docLinkOrg) linksToCreate.push({ organisationId: docLinkOrg });
-          if (docLinkProject) linksToCreate.push({ projectId: docLinkProject });
-          if (docLinkTask) linksToCreate.push({ taskId: docLinkTask });
-          if (docLinkFinance)
-            linksToCreate.push({ financeRecordId: docLinkFinance });
-          for (const link of linksToCreate) {
-            try {
-              const res = await linkDocument({
-                documentId: result.id,
-                organisationId: (link as any).organisationId ?? null,
-                projectId: (link as any).projectId ?? null,
-                taskId: (link as any).taskId ?? null,
-                interactionId: null,
-              });
-              if (!res.ok) {
-                // Duplicate link is fine – ignore, but show other errors
-                if (!res.error.toLowerCase().includes("already")) {
-                  setError(res.error);
-                }
-              }
-            } catch {}
-          }
-          setDocLinkSaving(false);
-        }
         setDirty(false);
         router.refresh();
         onSaved(result.id);
@@ -298,6 +277,71 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
       );
     } finally {
       setBusy(false);
+    }
+  }
+  // Link a document to a chosen target straight away (matching the instant unlink
+  // buttons above). Duplicates are tolerated by the actions layer and ignored here.
+  async function addDocLink() {
+    if (!editor.id || !docLinkType || !docLinkTarget) return;
+    setDocLinkSaving(true);
+    setError("");
+    const input: Record<string, unknown> = { documentId: editor.id };
+    if (docLinkType === "contact") input.organisationId = docLinkTarget;
+    if (docLinkType === "note") input.interactionId = docLinkTarget;
+    if (docLinkType === "project") input.projectId = docLinkTarget;
+    if (docLinkType === "task") input.taskId = docLinkTarget;
+    if (docLinkType === "finance") input.financeRecordId = docLinkTarget;
+    const res = await linkDocument(input);
+    setDocLinkSaving(false);
+    if (!res.ok) {
+      if (!res.error.toLowerCase().includes("already")) setError(res.error);
+    } else {
+      setLocalDocLinks((prev) => [
+        ...prev,
+        {
+          id: res.id,
+          documentId: editor.id!,
+          organisationId: docLinkType === "contact" ? docLinkTarget : null,
+          interactionId: docLinkType === "note" ? docLinkTarget : null,
+          projectId: docLinkType === "project" ? docLinkTarget : null,
+          taskId: docLinkType === "task" ? docLinkTarget : null,
+          financeRecordId: docLinkType === "finance" ? docLinkTarget : null,
+        } as unknown as Snapshot["documentLinks"][number],
+      ]);
+      setDocLinkType("");
+      setDocLinkTarget("");
+      setDirty(true);
+      router.refresh();
+    }
+  }
+  // Link a document to the current task straight away (mirror of the doc side).
+  async function addTaskDocLink() {
+    if (!editor.id || !taskLinkDoc) return;
+    setTaskLinkSaving(true);
+    setError("");
+    const res = await linkDocument({
+      documentId: taskLinkDoc,
+      taskId: editor.id,
+    });
+    setTaskLinkSaving(false);
+    if (!res.ok) {
+      if (!res.error.toLowerCase().includes("already")) setError(res.error);
+    } else {
+      setLocalTaskLinks((prev) => [
+        ...prev,
+        {
+          id: res.id,
+          documentId: taskLinkDoc,
+          taskId: editor.id,
+          organisationId: null,
+          interactionId: null,
+          projectId: null,
+          financeRecordId: null,
+        } as unknown as Snapshot["documentLinks"][number],
+      ]);
+      setTaskLinkDoc("");
+      setDirty(true);
+      router.refresh();
     }
   }
   return (
@@ -320,7 +364,11 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
         <div className="dialog-heading">
           <div>
             <p className="eyebrow">
-              {editor.id ? "UPDATE SHARED RECORD" : "ONE STEP AT A TIME"}
+              {editor.id
+                ? editor.kind === "document" || editor.kind === "task"
+                  ? "EDIT & LINKS"
+                  : "UPDATE SHARED RECORD"
+                : "ONE STEP AT A TIME"}
             </p>
             <h2 id="form-title">
               {editor.id ? "Edit" : "Add"}{" "}
@@ -601,74 +649,146 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
 
               <fieldset className="follow-up">
                 <legend>Add links – optional, leaner way to reuse</legend>
-                <label>
-                  Contact (organisation)
-                  <select
-                    value={docLinkOrg}
-                    onChange={(e) => {
-                      setDocLinkOrg(e.target.value);
-                      setDirty(true);
-                    }}
+                <p className="form-help">
+                  Pick a target type, choose the record, then Add. The link is
+                  saved straight away – no need to press Save. Removing a link
+                  is just as instant.
+                </p>
+                <div className="form-grid">
+                  <label>
+                    Target type
+                    <select
+                      value={docLinkType}
+                      onChange={(e) => {
+                        setDocLinkType(
+                          e.target.value as
+                            | ""
+                            | "contact"
+                            | "note"
+                            | "project"
+                            | "task"
+                            | "finance",
+                        );
+                        setDocLinkTarget("");
+                        setDirty(true);
+                      }}
+                    >
+                      <option value="">Choose a target…</option>
+                      <option value="contact">Contact</option>
+                      <option value="note">Note</option>
+                      <option value="project">Project</option>
+                      <option value="task">Task</option>
+                      <option value="finance">Financial record</option>
+                    </select>
+                  </label>
+                  {docLinkType === "contact" && (
+                    <label>
+                      Contact
+                      <select
+                        value={docLinkTarget}
+                        onChange={(e) => {
+                          setDocLinkTarget(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick contact…</option>
+                        {data.organisations.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {docLinkType === "note" && (
+                    <label>
+                      Note
+                      <select
+                        value={docLinkTarget}
+                        onChange={(e) => {
+                          setDocLinkTarget(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick note…</option>
+                        {data.interactions.slice(0, 100).map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {docLinkType === "project" && (
+                    <label>
+                      Project
+                      <select
+                        value={docLinkTarget}
+                        onChange={(e) => {
+                          setDocLinkTarget(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick project…</option>
+                        {data.projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {docLinkType === "task" && (
+                    <label>
+                      Task
+                      <select
+                        value={docLinkTarget}
+                        onChange={(e) => {
+                          setDocLinkTarget(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick task…</option>
+                        {data.tasks.slice(0, 100).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {docLinkType === "finance" && (
+                    <label>
+                      Financial record
+                      <select
+                        value={docLinkTarget}
+                        onChange={(e) => {
+                          setDocLinkTarget(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick financial record…</option>
+                        {data.financeRecords.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {label(r.kind)} – {r.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                <div className="row-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={
+                      busy || docLinkSaving || !docLinkType || !docLinkTarget
+                    }
+                    onClick={() => void addDocLink()}
                   >
-                    <option value="">No contact link</option>
-                    {data.organisations.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Project
-                  <select
-                    value={docLinkProject}
-                    onChange={(e) => {
-                      setDocLinkProject(e.target.value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">No project link</option>
-                    {data.projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Task
-                  <select
-                    value={docLinkTask}
-                    onChange={(e) => {
-                      setDocLinkTask(e.target.value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">No task link</option>
-                    {data.tasks.slice(0, 100).map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Financial record (receipt or invoice)
-                  <select
-                    value={docLinkFinance}
-                    onChange={(e) => {
-                      setDocLinkFinance(e.target.value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">No financial link</option>
-                    {data.financeRecords.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {label(r.kind)} – {r.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    <Plus size={16} /> Add link
+                  </Button>
+                </div>
               </fieldset>
 
               <dl className="details-grid">
@@ -806,6 +926,107 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                   </Button>
                 </>
               )}
+              {editor.kind === "task" && editor.id && (
+                <fieldset className="follow-up">
+                  <legend>Linked documents</legend>
+                  {localTaskLinks.length > 0 ? (
+                    <div className="doc-pills">
+                      {localTaskLinks.map((l) => {
+                        const doc = data.documents.find(
+                          (d) => d.id === l.documentId,
+                        );
+                        return (
+                          <span
+                            key={l.id}
+                            className="badge"
+                            style={{
+                              justifyContent: "flex-start",
+                              alignItems: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <FileText size={10} />{" "}
+                            {doc ? doc.friendlyName : "Document"}
+                            <button
+                              type="button"
+                              className="subtle-button danger"
+                              style={{ padding: "2px 4px", marginLeft: "2px" }}
+                              title="Remove this link – file itself stays"
+                              disabled={busy || taskLinkSaving}
+                              onClick={async () => {
+                                if (
+                                  !window.confirm(
+                                    "Remove this link? The file itself will stay and can be reused elsewhere.",
+                                  )
+                                )
+                                  return;
+                                setTaskLinkSaving(true);
+                                setError("");
+                                const res = await unlinkDocument(l.id);
+                                setTaskLinkSaving(false);
+                                if (!res.ok) {
+                                  setError(res.error);
+                                } else {
+                                  setLocalTaskLinks((prev) =>
+                                    prev.filter((x) => x.id !== l.id),
+                                  );
+                                  setDirty(true);
+                                  router.refresh();
+                                }
+                              }}
+                            >
+                              <Link2Off size={12} /> Remove
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="form-help">No documents linked yet.</p>
+                  )}
+                  <div className="form-grid">
+                    <label>
+                      Document
+                      <select
+                        value={taskLinkDoc}
+                        onChange={(e) => {
+                          setTaskLinkDoc(e.target.value);
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="">Pick document…</option>
+                        {data.documents.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.friendlyName} – {d.originalName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="row-actions">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy || taskLinkSaving || !taskLinkDoc}
+                      onClick={() => void addTaskDocLink()}
+                    >
+                      <Plus size={16} /> Add document link
+                    </Button>
+                  </div>
+                  <p
+                    className="form-help"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      marginTop: "8px",
+                    }}
+                  >
+                    <Lightbulb size={14} /> Links save straight away – no need
+                    to press Save to attach a document.
+                  </p>
+                </fieldset>
+              )}
             </>
           )}
         </fieldset>
@@ -849,8 +1070,15 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={busy || docLinkSaving}>
-            {busy ? "Saving…" : docLinkSaving ? "Linking…" : "Save"}
+          <Button
+            type="submit"
+            disabled={busy || docLinkSaving || taskLinkSaving}
+          >
+            {busy
+              ? "Saving…"
+              : docLinkSaving || taskLinkSaving
+                ? "Linking…"
+                : "Save"}
           </Button>
         </div>
       </form>
