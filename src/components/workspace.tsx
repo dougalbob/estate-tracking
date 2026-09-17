@@ -17,6 +17,8 @@ import {
   Pencil,
   History,
   Phone,
+  Copy,
+  Check,
   Trash2,
   ArchiveRestore,
   Archive,
@@ -75,6 +77,7 @@ import {
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
+import { canCopy, copyText, telHref } from "@/lib/contacts/contact-links";
 
 /** Records that can sit in the recoverable bin. */
 type BinKind =
@@ -301,6 +304,7 @@ export function Workspace({
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
     [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null),
     [taskLinkPicker, setTaskLinkPicker] = useState<string | null>(null),
+    [contactQuickView, setContactQuickView] = useState<string | null>(null),
     [viewingDoc, setViewingDoc] = useState<
       Snapshot["documents"][number] | null
     >(null),
@@ -373,6 +377,14 @@ export function Workspace({
       "Linked project"
     );
   };
+  /**
+   * Only a live contact has details worth opening. `orgName` also resolves a
+   * name from the recoverable bin so a binned contact's tasks still read
+   * properly, but there is no live record behind that name, so the row keeps it
+   * as plain text and the popup is not offered.
+   */
+  const liveOrganisation = (id: string | null) =>
+    id ? (data.organisations.find((o) => o.id === id) ?? null) : null;
   const organisationProjectIds = (orgId: string) =>
     data.organisationProjects
       .filter((op) => op.organisationId === orgId)
@@ -743,6 +755,7 @@ export function Workspace({
     const date = attentionDate(t),
       source = data.interactions.find((n) => n.id === t.interactionId);
     const docs = getLinkedDocuments({ taskId: t.id });
+    const contact = liveOrganisation(t.organisationId);
     return (
       <div className="task-row" key={t.id}>
         <span className="task-icon">
@@ -753,7 +766,20 @@ export function Workspace({
             {t.title}
           </button>
           <p>
-            {orgName(t.organisationId)}
+            {contact ? (
+              <button
+                type="button"
+                className="task-org"
+                aria-label={`Contact details for ${contact.name}`}
+                title={`Contact details for ${contact.name}`}
+                onClick={() => setContactQuickView(contact.id)}
+              >
+                <Users size={11} aria-hidden />
+                {contact.name}
+              </button>
+            ) : (
+              orgName(t.organisationId)
+            )}
             <span>·</span>
             {names(t.assignee)}
             {t.projectId && projectName(t.projectId) && (
@@ -2485,6 +2511,23 @@ export function Workspace({
             />
           ) : null;
         })()}
+      {contactQuickView &&
+        (() => {
+          const contact = data.organisations.find(
+            (o) => o.id === contactQuickView,
+          );
+          return contact ? (
+            <ContactQuickViewDialog
+              contact={contact}
+              onClose={() => setContactQuickView(null)}
+              onOpenContact={() => {
+                navigate("contacts");
+                setSelected(contact.id);
+                setContactQuickView(null);
+              }}
+            />
+          ) : null;
+        })()}
       {financeEditor && (
         <FinanceRecordForm
           editor={financeEditor}
@@ -3375,6 +3418,176 @@ function DocumentLinkPicker({
           </Button>
         </div>
       </form>
+    </dialog>
+  );
+}
+
+/**
+ * The three things you actually go looking for while working on a task — a
+ * number to dial, an email or a reference to paste, and whose account it is —
+ * in a small popup over the list, so the task stays underneath. Everything here
+ * is already in the browser in `data.organisations`, so opening it costs no
+ * request, no server action and no migration.
+ *
+ * Labels and order match the contact screen (Main contact, Phone numbers,
+ * Email, Account / reference), and an empty field reads "Not added" there too —
+ * the same information, not a second dialect of it. Notes are deliberately not
+ * here: reading them is a reason to open the full contact, one tap away.
+ */
+function ContactQuickViewDialog({
+  contact,
+  onClose,
+  onOpenContact,
+}: {
+  contact: Snapshot["organisations"][number];
+  onClose: () => void;
+  onOpenContact: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [clipboardBlocked, setClipboardBlocked] = useState(false);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  // The confirmation is transient by nature: better it clears itself than go on
+  // claiming something about a value copied several minutes ago.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  async function copy(key: string, value: string) {
+    setClipboardBlocked(false);
+    // "Copied" only once the browser has actually taken the text.
+    if (await copyText(value)) setCopied(key);
+    else setClipboardBlocked(true);
+  }
+  function copyButton(key: string, value: string, what: string) {
+    return (
+      <button
+        type="button"
+        className="subtle-button contact-copy"
+        onClick={() => copy(key, value)}
+        aria-label={`Copy ${what}`}
+      >
+        {copied === key ? (
+          <Check size={13} aria-hidden />
+        ) : (
+          <Copy size={13} aria-hidden />
+        )}
+        {copied === key ? "Copied" : "Copy"}
+      </button>
+    );
+  }
+  /** One field, listed as the contact screen lists it. */
+  function fieldRow(key: string, caption: string, value: string | null) {
+    return (
+      <div className="contact-quick-item">
+        <dt>{caption}</dt>
+        <dd>
+          {canCopy(value) ? (
+            <>
+              <span className="contact-quick-value">{value}</span>
+              {copyButton(key, value as string, caption.toLowerCase())}
+            </>
+          ) : (
+            <span className="contact-quick-empty">Not added</span>
+          )}
+        </dd>
+      </div>
+    );
+  }
+  const numbers = contact.phoneNumbers.map((n) => n.trim()).filter(Boolean);
+  const anyDialable = numbers.some((n) => telHref(n));
+
+  return (
+    <dialog
+      ref={dialog}
+      className="record-dialog contact-quick-dialog"
+      aria-label={`Contact details for ${contact.name}`}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="dialog-heading">
+        <div>
+          <p className="eyebrow">CONTACT DETAILS</p>
+          <h2>{contact.name}</h2>
+          <span className="badge">{label(contact.status)}</span>
+        </div>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onClose}
+          aria-label="Close contact details"
+        >
+          <X size={21} />
+        </button>
+      </div>
+      <div className="form-fields">
+        <dl className="contact-quick-list">
+          {fieldRow("main", "Main contact", contact.mainContact)}
+          <div className="contact-quick-item">
+            <dt>Phone numbers</dt>
+            <dd className="contact-quick-phones">
+              {numbers.length ? (
+                numbers.map((number, index) => {
+                  const href = telHref(number);
+                  const many = numbers.length > 1;
+                  return (
+                    <span
+                      className="contact-quick-phone"
+                      key={`${index}-${number}`}
+                    >
+                      {href ? (
+                        <a
+                          className="contact-call"
+                          href={href}
+                          aria-label={`Call ${number}`}
+                        >
+                          <Phone size={13} aria-hidden />
+                          {number}
+                        </a>
+                      ) : (
+                        <span className="contact-quick-value">{number}</span>
+                      )}
+                      {copyButton(
+                        `phone-${index}`,
+                        number,
+                        many ? `phone number ${index + 1}` : "phone number",
+                      )}
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="contact-quick-empty">Not added</span>
+              )}
+            </dd>
+          </div>
+          {fieldRow("email", "Email", contact.email)}
+          {fieldRow("reference", "Account / reference", contact.reference)}
+        </dl>
+        <p className="form-help copy-state" role="status">
+          {clipboardBlocked
+            ? "Your browser did not let the app copy. Select the text and copy it yourself."
+            : copied
+              ? "Copied – paste it wherever you need it."
+              : anyDialable
+                ? "Tapping the number starts a call on this device."
+                : "Nothing here is dialable as typed – copy it instead."}
+        </p>
+      </div>
+      <div className="form-actions">
+        <Button type="button" variant="outline" onClick={onClose}>
+          <X size={14} /> Back to the task
+        </Button>
+        <Button type="button" onClick={onOpenContact}>
+          Open full contact
+          <ArrowUpRight size={14} />
+        </Button>
+      </div>
     </dialog>
   );
 }
