@@ -759,7 +759,6 @@ export function Workspace({
             {t.projectId && projectName(t.projectId) && (
               <> · {projectName(t.projectId)}</>
             )}
-            {docs.length > 0 && <DocumentCount count={docs.length} />}
           </p>
           <p>
             {label(t.status)}
@@ -786,9 +785,17 @@ export function Workspace({
           {docs.length > 0 && (
             <div className="doc-pills">
               {docs.map((d) => (
-                <span key={d.id} className="badge">
-                  <FileText size={10} /> {d.friendlyName}
-                </span>
+                <button
+                  type="button"
+                  key={d.id}
+                  className="doc-pill"
+                  aria-label={`Open ${d.friendlyName}`}
+                  title={`Open ${d.friendlyName}`}
+                  onClick={() => setViewingDoc(d)}
+                >
+                  <FileText size={11} />
+                  {d.friendlyName}
+                </button>
               ))}
             </div>
           )}
@@ -2395,6 +2402,7 @@ export function Workspace({
           editor={editor}
           data={data}
           users={users}
+          onViewDocument={setViewingDoc}
           onClose={() => setEditor(null)}
           onSaved={(id, newContactName) => {
             setMessage(

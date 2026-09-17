@@ -1081,6 +1081,56 @@ summary {
   gap: 6px;
   margin-top: 8px;
 }
+/*
+ * A linked document's friendly name, tappable. It opens the in-app viewer, so
+ * it is a real button: keyboard reachable, with a hover and focus state rather
+ * than a colour change alone.
+ */
+.doc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--notice);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+.doc-pill:hover {
+  background: var(--accent);
+  border-color: var(--primary);
+}
+.doc-pill:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The same idea inside a form's linked-document badge, beside its Remove button */
+.doc-pill-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.doc-pill-name:hover:not(:disabled) {
+  background: var(--accent);
+}
+.doc-pill-name:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.doc-pill-name:disabled {
+  color: var(--muted);
+}
 .doc-list {
   display: flex;
   flex-direction: column;

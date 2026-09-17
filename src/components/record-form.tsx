@@ -29,13 +29,22 @@ type Props = {
   users: string[];
   onClose: () => void;
   onSaved: (id: string, newContactName?: string) => void;
+  /** Opens the in-app viewer for a linked document, without leaving the form. */
+  onViewDocument: (doc: Snapshot["documents"][number]) => void;
 };
 /**
  * Sentinel for the extra option in the Organisation list. It never reaches the
  * server: choosing it means "create this contact and save the task together".
  */
 const NEW_CONTACT = "__new_contact__";
-export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
+export function RecordForm({
+  editor,
+  data,
+  users,
+  onClose,
+  onSaved,
+  onViewDocument,
+}: Props) {
   const router = useRouter();
   const rows =
     editor.kind === "organisation"
@@ -1051,8 +1060,21 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                               gap: "6px",
                             }}
                           >
-                            <FileText size={10} />{" "}
-                            {doc ? doc.friendlyName : "Document"}
+                            <button
+                              type="button"
+                              className="doc-pill-name"
+                              title={
+                                doc ? `Open ${doc.friendlyName}` : "Document"
+                              }
+                              aria-label={
+                                doc ? `Open ${doc.friendlyName}` : "Document"
+                              }
+                              disabled={busy || taskLinkSaving || !doc}
+                              onClick={() => doc && onViewDocument(doc)}
+                            >
+                              <FileText size={10} />{" "}
+                              {doc ? doc.friendlyName : "Document"}
+                            </button>
                             <button
                               type="button"
                               className="subtle-button danger"
