@@ -3,6 +3,14 @@ const config: NextConfig = {
   devIndicators: false,
   allowedDevOrigins: ["*.e2b.app", "localhost", "127.0.0.1"],
   serverExternalPackages: ["better-sqlite3"],
+  serverActions: {
+    bodySizeLimit: "25mb",
+  },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "25mb",
+    },
+  },
   async headers() {
     return [
       {
