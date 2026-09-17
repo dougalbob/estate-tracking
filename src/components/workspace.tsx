@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import {
   ArrowUpRight,
   BookOpen,
@@ -78,6 +78,7 @@ import {
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
 import { canCopy, copyText, telHref } from "@/lib/contacts/contact-links";
+import { documentLinkItems } from "@/lib/contacts/document-links";
 
 /** Records that can sit in the recoverable bin. */
 type BinKind =
@@ -952,21 +953,20 @@ export function Workspace({
   }
 
   function documentRow(doc: Snapshot["documents"][number]) {
-    const links = getDocumentLinks(doc.id);
-    const linkedNames = links
-      .map((l) => {
-        if (l.organisationId) return orgName(l.organisationId);
-        if (l.interactionId)
-          return (
-            data.interactions.find((i) => i.id === l.interactionId)?.title ??
-            "Note"
-          );
-        if (l.taskId)
-          return data.tasks.find((t) => t.id === l.taskId)?.title ?? "Task";
-        if (l.projectId) return projectName(l.projectId);
-        return null;
-      })
-      .filter(Boolean);
+    // Each directly linked live contact becomes its own tappable item; a note
+    // or task by title, a project by name and a binned contact by name stay
+    // plain text, so the line reads exactly as before when nothing is a
+    // tappable contact. The decision is documentLinkItems, a pure function
+    // with its own unit tests, like the popup's dial/copy helpers.
+    const linkedItems = documentLinkItems(
+      doc.id,
+      data.documentLinks,
+      data.organisations,
+      data.deletedOrganisations,
+      data.tasks,
+      data.interactions,
+      [...data.projects, ...data.deletedProjects],
+    );
     return (
       <div className="task-row" key={doc.id}>
         <span className="task-icon">
@@ -981,8 +981,26 @@ export function Workspace({
           </button>
           <p>
             {doc.category ? label(doc.category) : "No category"}
-            {linkedNames.length > 0
-              ? ` · ${linkedNames.join(" · ")}`
+            {linkedItems.length > 0
+              ? linkedItems.map((item, index) => (
+                  <Fragment key={index}>
+                    {" · "}
+                    {item.kind === "contact" ? (
+                      <button
+                        type="button"
+                        className="task-org"
+                        aria-label={`Contact details for ${item.name}`}
+                        title={`Contact details for ${item.name}`}
+                        onClick={() => setContactQuickView(item.organisationId)}
+                      >
+                        <Users size={11} aria-hidden />
+                        {item.name}
+                      </button>
+                    ) : (
+                      item.value
+                    )}
+                  </Fragment>
+                ))
               : " · No links yet – reusable across records"}
           </p>
           <p>
@@ -1488,19 +1506,7 @@ export function Workspace({
                     </button>
                   </div>
                 </div>
-                <dl className="details-grid">
-                  {[
-                    ["Main contact", organisation.mainContact],
-                    ["Phone numbers", organisation.phoneNumbers.join(" · ")],
-                    ["Email", organisation.email],
-                    ["Account / reference", organisation.reference],
-                  ].map(([name, value]) => (
-                    <div key={name}>
-                      <dt>{name}</dt>
-                      <dd>{value || "Not added"}</dd>
-                    </div>
-                  ))}
-                </dl>
+                <ContactFieldList contact={organisation} />
                 {organisation.notes && (
                   <p className="note-detail">{organisation.notes}</p>
                 )}
@@ -2525,6 +2531,9 @@ export function Workspace({
                 setSelected(contact.id);
                 setContactQuickView(null);
               }}
+              closeLabel={
+                view === "documents" ? "Back to documents" : "Back to the task"
+              }
             />
           ) : null;
         })()}
@@ -3423,32 +3432,25 @@ function DocumentLinkPicker({
 }
 
 /**
- * The three things you actually go looking for while working on a task — a
- * number to dial, an email or a reference to paste, and whose account it is —
- * in a small popup over the list, so the task stays underneath. Everything here
- * is already in the browser in `data.organisations`, so opening it costs no
- * request, no server action and no migration.
+ * The four contact fields — Main contact, Phone numbers, Email and Account /
+ * reference — with tap-to-dial and copy. The quick popup on a task or document
+ * row and the contact screen itself both render this one component, so the
+ * same information reads the same in both places: same labels, same order,
+ * "Not added" for an empty field, and "Copied" only when the browser
+ * confirmed the write.
  *
- * Labels and order match the contact screen (Main contact, Phone numbers,
- * Email, Account / reference), and an empty field reads "Not added" there too —
- * the same information, not a second dialect of it. Notes are deliberately not
- * here: reading them is a reason to open the full contact, one tap away.
+ * Everything here is already in the browser in `data.organisations`, so it
+ * costs no request, no server action and no migration. Notes are deliberately
+ * not in the popup: reading them is a reason to open the full contact, one
+ * tap away.
  */
-function ContactQuickViewDialog({
+function ContactFieldList({
   contact,
-  onClose,
-  onOpenContact,
 }: {
   contact: Snapshot["organisations"][number];
-  onClose: () => void;
-  onOpenContact: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [clipboardBlocked, setClipboardBlocked] = useState(false);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
   // The confirmation is transient by nature: better it clears itself than go on
   // claiming something about a value copied several minutes ago.
   useEffect(() => {
@@ -3502,6 +3504,85 @@ function ContactQuickViewDialog({
   const anyDialable = numbers.some((n) => telHref(n));
 
   return (
+    <div className="form-fields">
+      <dl className="contact-quick-list">
+        {fieldRow("main", "Main contact", contact.mainContact)}
+        <div className="contact-quick-item">
+          <dt>Phone numbers</dt>
+          <dd className="contact-quick-phones">
+            {numbers.length ? (
+              numbers.map((number, index) => {
+                const href = telHref(number);
+                const many = numbers.length > 1;
+                return (
+                  <span
+                    className="contact-quick-phone"
+                    key={`${index}-${number}`}
+                  >
+                    {href ? (
+                      <a
+                        className="contact-call"
+                        href={href}
+                        aria-label={`Call ${number}`}
+                      >
+                        <Phone size={13} aria-hidden />
+                        {number}
+                      </a>
+                    ) : (
+                      <span className="contact-quick-value">{number}</span>
+                    )}
+                    {copyButton(
+                      `phone-${index}`,
+                      number,
+                      many ? `phone number ${index + 1}` : "phone number",
+                    )}
+                  </span>
+                );
+              })
+            ) : (
+              <span className="contact-quick-empty">Not added</span>
+            )}
+          </dd>
+        </div>
+        {fieldRow("email", "Email", contact.email)}
+        {fieldRow("reference", "Account / reference", contact.reference)}
+      </dl>
+      <p className="form-help copy-state" role="status">
+        {clipboardBlocked
+          ? "Your browser did not let the app copy. Select the text and copy it yourself."
+          : copied
+            ? "Copied – paste it wherever you need it."
+            : anyDialable
+              ? "Tapping the number starts a call on this device."
+              : "Nothing here is dialable as typed – copy it instead."}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The small popup the contact name opens on a task or document row: the
+ * contact's name and status, then the shared field list, then a way back and
+ * a way on to the full contact. It opens over the list rather than navigating
+ * away, so the row you were reading stays underneath.
+ */
+function ContactQuickViewDialog({
+  contact,
+  onClose,
+  onOpenContact,
+  closeLabel = "Back to the task",
+}: {
+  contact: Snapshot["organisations"][number];
+  onClose: () => void;
+  onOpenContact: () => void;
+  closeLabel?: string;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+
+  return (
     <dialog
       ref={dialog}
       className="record-dialog contact-quick-dialog"
@@ -3526,62 +3607,10 @@ function ContactQuickViewDialog({
           <X size={21} />
         </button>
       </div>
-      <div className="form-fields">
-        <dl className="contact-quick-list">
-          {fieldRow("main", "Main contact", contact.mainContact)}
-          <div className="contact-quick-item">
-            <dt>Phone numbers</dt>
-            <dd className="contact-quick-phones">
-              {numbers.length ? (
-                numbers.map((number, index) => {
-                  const href = telHref(number);
-                  const many = numbers.length > 1;
-                  return (
-                    <span
-                      className="contact-quick-phone"
-                      key={`${index}-${number}`}
-                    >
-                      {href ? (
-                        <a
-                          className="contact-call"
-                          href={href}
-                          aria-label={`Call ${number}`}
-                        >
-                          <Phone size={13} aria-hidden />
-                          {number}
-                        </a>
-                      ) : (
-                        <span className="contact-quick-value">{number}</span>
-                      )}
-                      {copyButton(
-                        `phone-${index}`,
-                        number,
-                        many ? `phone number ${index + 1}` : "phone number",
-                      )}
-                    </span>
-                  );
-                })
-              ) : (
-                <span className="contact-quick-empty">Not added</span>
-              )}
-            </dd>
-          </div>
-          {fieldRow("email", "Email", contact.email)}
-          {fieldRow("reference", "Account / reference", contact.reference)}
-        </dl>
-        <p className="form-help copy-state" role="status">
-          {clipboardBlocked
-            ? "Your browser did not let the app copy. Select the text and copy it yourself."
-            : copied
-              ? "Copied – paste it wherever you need it."
-              : anyDialable
-                ? "Tapping the number starts a call on this device."
-                : "Nothing here is dialable as typed – copy it instead."}
-        </p>
-      </div>
+      <ContactFieldList contact={contact} />
       <div className="form-actions">
         <Button type="button" variant="outline" onClick={onClose}>
-          <X size={14} /> Back to the task
+          <X size={14} /> {closeLabel}
         </Button>
         <Button type="button" onClick={onOpenContact}>
           Open full contact
