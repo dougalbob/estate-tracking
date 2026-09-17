@@ -6,12 +6,12 @@
 
 | | |
 |---|---|
-| Live release | **v0.2.6** — the contact popup on a task row — built by GitHub Actions and published to GHCR as `v0.2.6`, `latest`, and a git-SHA tag. Until Unraid pulls the new image the server is still running **v0.2.5** |
-| Earlier releases | v0.2.0 – v0.2.5, all published 16–17 September 2026 |
+| Live release | **v0.2.7** — contact names tappable on document rows, and dial/copy on the contact screen — built by GitHub Actions and published to GHCR as `v0.2.7`, `latest`, and a git-SHA tag. Until Unraid pulls the new image the server is still running **v0.2.6** |
+| Earlier releases | v0.2.0 – v0.2.6, all published 16–17 September 2026 |
 | Data in use | **Real estate records and real documents, entered by both users.** The installation runs on Unraid behind Cloudflare Access |
-| Verified in production | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place |
-| Verified by hand, not in a browser | The v0.2.5 and v0.2.6 changes were checked by rendering the real components to markup and by HTTP against the development server; the sandbox has no browser, so no click-through test has ever run in one |
-| Automated gates | 70 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit |
+| Verified in production | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026) |
+| Verified by hand, not in a browser | The v0.2.5, v0.2.6 and v0.2.7 changes were checked by rendering the real components to markup and by HTTP against the development server; the sandbox has no browser, so no click-through test has ever run in one |
+| Automated gates | 83 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit |
 | Still outstanding | A full accessibility and security review, and four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support |
 | How to read the rest of this file | Dated checkpoints and the original proposal are kept as a written record. Where the text below says something is planned or unverified, this table is the current position |
 
@@ -21,7 +21,7 @@
 
 ## Status and purpose
 
-**Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented and in production use.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. A contact screen can attach a task that already exists, and the task or note dialog can create a contact that does not exist yet, so neither has to be done in a second pass. The contact name on a task row opens a small popup with its phone number, email and reference, with tap-to-dial and copy, so the details can be used without leaving the task. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
+**Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented and in production use.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. A contact screen can attach a task that already exists, and the task or note dialog can create a contact that does not exist yet, so neither has to be done in a second pass. The contact name on a task row opens a small popup with its phone number, email and reference, with tap-to-dial and copy, so the details can be used without leaving the task; the same popup opens from a directly linked contact name on a document row, and the contact screen itself offers the same dial and copy controls on its fields. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
 The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery is staged, but these are all core requirements. There was no existing data to import. Production verification is complete and the installation now holds real records, so any preview, experiment, or example in this file must use the isolated demo database instead.
 
@@ -58,7 +58,7 @@ Adding themes later must not require restyling individual screens.
 
 One record per organisation, with name, main contact name, phone number(s), email, account/reference details, and free-text notes. No separate people directory or multiple-account model is required.
 
-The first four of those — main contact, phone numbers, email, account/reference — also appear in the small popup that a task row's contact name opens, with the same labels and in the same order, so a number can be dialled or copied without leaving the task list ([Tasks, dates, and projects](#tasks-dates-and-projects)).
+The first four of those — main contact, phone numbers, email, account/reference — appear in the small popup that a task or document row's contact name opens, with the same labels and in the same order, so a number can be dialled or copied without leaving the list ([Tasks, dates, and projects](#tasks-dates-and-projects)). They are the contact screen's own field list too, with tap-to-dial numbers and copy buttons, because the popup and the contact screen render one shared component and cannot drift apart.
 
 Statuses: **Not Contacted → In Progress → Awaiting Response → Resolved**.
 
@@ -95,7 +95,7 @@ Quick notes accept an optional title and free-text detail, with automatic time a
 
 - Tasks may stand alone, optionally link to an organisation and source interaction, and have one optional project.
 - Assign to either user or leave unassigned.
-- **A contact's details are one tap from the task.** On a task row the contact name is a button: it opens a small popup over the list with the main contact name, every phone number, the email and the account/reference. Tapping a phone number starts a call on the device, and every value has a copy button beside it, so the number or reference can be pasted into another app. Nothing is saved by opening it and nothing is sent to the server — the details are already on the screen. It works the same on the Tasks tab and on the home screen, because both use the same row.
+- **A contact's details are one tap from the task.** On a task row the contact name is a button: it opens a small popup over the list with the main contact name, every phone number, the email and the account/reference. Tapping a phone number starts a call on the device, and every value has a copy button beside it, so the number or reference can be pasted into another app. Nothing is saved by opening it and nothing is sent to the server — the details are already on the screen. It works the same on the Tasks tab and on the home screen, because both use the same row, and the same popup opens from a directly linked contact name on a document row, where the close button reads **Back to documents** ([Documents](#documents)).
   - The popup deliberately leaves notes out; **Open full contact** is beside it for when you want the rest.
   - A contact with a field not filled in still opens, and that field reads **“Not added”**, exactly as on the contact screen.
   - A phone number that is not really a number (say “ask at the desk”) gets a copy button and no dialling link, rather than a guess.
@@ -128,6 +128,7 @@ Neither list quotes a threshold, rate, fee or figure: each line points at GOV.UK
 - Upload independently or while recording an interaction.
 - Give documents friendly names and categories.
 - Store a document once and link it to multiple organisations, interactions, projects, or relevant financial records.
+- A document's directly linked contact names are buttons on its row: each opens the same contact popup a task row opens, so a number can be dialled or copied without leaving the list. Note, task and project names on that line stay plain text, and so does a contact in the recoverable bin — the row shows direct links, as before.
 - Search by name, category, and associated records; no OCR or content search is required.
 - Removing a link must not delete the underlying document or its other links.
 - All document access requires the same authorisation as the rest of the app.
@@ -257,16 +258,16 @@ These steps deliberately explain why each file is used. Do not put real credenti
 
 ### Release and update flow
 
-Before anything is merged, this file and `docs/IMPLEMENTATION_PLAN.md` are corrected to match the change (see **Keeping this file and the plan true** above). Then merge the change to `main`, then create and push a version tag such as `v0.2.6`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. The package is set to **Public** in GitHub → Packages → `estate-organiser` → Package settings, because Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
+Before anything is merged, this file and `docs/IMPLEMENTATION_PLAN.md` are corrected to match the change (see **Keeping this file and the plan true** above). Then merge the change to `main`, then create and push a version tag such as `v0.2.7`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. The package is set to **Public** in GitHub → Packages → `estate-organiser` → Package settings, because Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
 
-The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available, so GitHub Actions is the only builder: the first image was published at v0.2.0 and every release since, up to v0.2.6, has been built there.
+The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available, so GitHub Actions is the only builder: the first image was published at v0.2.0 and every release since, up to v0.2.7, has been built there.
 
 **If a release build fails, nothing is broken and nothing is released.** No image is pushed for the failed tag and `latest` does not move, so the running installation is untouched. Fix the cause on a working branch, open a pull request and merge it to `main`, then re-point the same tag at the new merge commit and force-push it — which is safe *only* because no image was published for that tag:
 
 ```bash
 git fetch origin main
-git tag -f -a v0.2.6 -m "v0.2.6 – <what changed>" origin/main
-git push -f origin v0.2.6
+git tag -f -a v0.2.7 -m "v0.2.7 – <what changed>" origin/main
+git push -f origin v0.2.7
 ```
 
 Then confirm the workflow succeeded and that the tags really exist on the published package:
@@ -326,11 +327,12 @@ npm ci
 DATABASE_PATH=./data/demo.sqlite npm run db:migrate
 # Fictional data only; never use this mode for real estate information
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-contacts.ts  # optional
+DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-documents.ts # optional, needs the contacts seed
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-finances.ts   # optional
 DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev
 ```
 
-Both demo seeds are optional and idempotent. `seed-demo-contacts.ts` writes three fictional contacts with enough detail to exercise the popup on a task row — one with every field filled in and two phone numbers typed in different formats, one with an email and reference missing, and one with nothing added at all — each with a task to hang it on. Like the finances seed, it refuses to run against a database path that does not contain `demo`.
+The demo seeds are optional and idempotent. `seed-demo-contacts.ts` writes three fictional contacts with enough detail to exercise the popup on a task row — one with every field filled in and two phone numbers typed in different formats, one with an email and reference missing, and one with nothing added at all — each with a task to hang it on. `seed-demo-documents.ts` (v0.2.7) writes three fictional documents with small generated images — one linked to a single contact, one to two contacts, one only through a note — so the Documents tab and its contact popups can be exercised; it needs the contacts seed first. Like the other seeds, each refuses to run against a database path that does not contain `demo`.
 
 In the Arena sandbox, use `npm ci --ignore-scripts`. The plain `npm ci` tries to compile `better-sqlite3` with node-gyp, which fails there, while `--ignore-scripts` uses the prebuilt binary that the package already ships and the unit suite runs normally. There is no Docker daemon in the sandbox, so the container image can only be built by GitHub Actions.
 
@@ -365,7 +367,7 @@ npm run test:e2e
 
 The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
 
-Run `npm run format:check` for source formatting checks. The unit suite (70 tests) covers shared records, documents, checklist templates, finances, and encrypted backup/restore, including the GBP 500/200/300 reimbursement case, part payments, voids, CSV formula protection, document inclusion, clean restore, and wrong-password failure. It also covers the two controls added in v0.2.5: attaching an existing task to a contact (including a stale version being refused and a task that already belongs elsewhere not being moved) and creating a contact together with the task or note that needs it, in one transaction, with nothing left behind if the record cannot be saved. Nine of them, added in v0.2.6, cover the contact popup's helpers: phone numbers typed with spaces, hyphens, brackets or a leading `+`, a value that is not a number at all, and a clipboard that is missing, refuses, or accepts the write — so “Copied” is only ever reported when it is true.
+Run `npm run format:check` for source formatting checks. The unit suite (83 tests) covers shared records, documents, checklist templates, finances, and encrypted backup/restore, including the GBP 500/200/300 reimbursement case, part payments, voids, CSV formula protection, document inclusion, clean restore, and wrong-password failure. It also covers the two controls added in v0.2.5: attaching an existing task to a contact (including a stale version being refused and a task that already belongs elsewhere not being moved) and creating a contact together with the task or note that needs it, in one transaction, with nothing left behind if the record cannot be saved. Nine of them, added in v0.2.6, cover the contact popup's helpers: phone numbers typed with spaces, hyphens, brackets or a leading `+`, a value that is not a number at all, and a clipboard that is missing, refuses, or accepts the write — so “Copied” is only ever reported when it is true. Thirteen of them, added in v0.2.7, cover the document row's link items: a directly linked live contact is tappable, a binned contact is plain text with its name, note, task and project names resolve to text in link order, unknown ids fall back to the app's plain names, and a link to a financial record only stays invisible, as before.
 
 Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. The published-image Unraid/Cloudflare deployment and the clean production restore are verified; the browser accessibility and security review is still outstanding.
 
