@@ -409,9 +409,10 @@ Accurate as recorded in Git. Nothing here is planned; each tag is published on G
 | v0.2.4 | 17 September 17:51 | Document upload fix: show upload errors, raise the body limit, add the streaming `/api/documents/upload` route, and nest `serverActions` under `experimental` so the image builds (pull requests #8 and #9) |
 | v0.2.5 | 17 September | This change: link an existing task to a contact from the contact screen, create a new contact from inside the task or note dialog, and refresh this plan and the README |
 
-## v0.2.5 checkpoint — linking work to a contact in either direction (17 September 2026)
+## v0.2.5 checkpoint — contact links, and receipts on financial records (17 September 2026)
 
 Implemented:
+- **Receipts on financial records** and **an existing task attached to a contact** — both directions of the same idea: do the obvious next step in the screen you are already in.
 - **Link an existing task to a contact.** The contact screen's **Linked tasks** toolbar now has **Link existing task** beside **Add task**. The picker lists only tasks with no contact yet, offers a title/detail search, and shows each task's status, project and next date. A task is one column (`tasks.organisation_id`), so linking is an update to that task: **no migration was needed**, and the server reads the current row itself rather than accepting a whole record from the browser.
 - Nothing else about the task changes. The title, detail, dates, assignee, project, documents and history are untouched, the version still increments, and the change appears in the task history.
 - Refusals are deliberate and worded plainly: a task that already belongs to another contact is **not** silently moved (attach only, as agreed with the user), a task whose source note belongs to a different contact is refused because a note and its follow-ups must share an organisation, a contact in the bin is refused, and a stale version is refused with the picker refreshed so the link can be retried.
@@ -419,10 +420,14 @@ Implemented:
 - **One save, not two.** `saveRecordWithNewOrganisation` creates the contact and the task or note inside a single `db.transaction`. If the record cannot be saved, the contact is not created and the dialog keeps everything typed, so a failure can never leave an orphan contact. A unit test asserts the rollback explicitly.
 - The project, document and organisation forms do not render the Organisation list at all, so they are unaffected. This was verified by rendering each form and checking the option is absent, rather than assumed.
 - Wording explains the behaviour in both places: what linking does and does not change, and that a failed save creates nothing.
+- **Receipts from the financial record dialog (added later the same day, at the user's request).** Adding a record now offers a file (with a category, receipt by default) and/or a document already stored, queued and attached as the record saves; editing a record lists its receipts with View, Download and Remove link, plus "Upload a receipt" and "Link an existing document", matching the movement dialog. The record is saved **before** attachments are attempted — deliberately the opposite order to the orphan-contact rule above, and for the same reason: a lost money record cannot be recovered by the user, whereas a missed receipt can be added again from Edit. Failures are reported in the message area, never swallowed, and the record's figures are never rolled back by an attachment failing.
+- The document count on a row became a chip (paperclip, tinted pill, primary colour) rather than the words "· 1 document" at the end of a metadata line, on finance rows and task rows alike, because the user reported missing it. It is not colour alone: the chip carries an icon and the count in words.
+- The upload call was extracted to `src/components/document-upload.ts` (route handler first, server-action fallback, size guard, error wording) so the document dialog and the finance dialog cannot drift apart.
 
 Verified:
 - **61 unit/integration tests** (53 before), TypeScript, Prettier and the production build all pass. Eight new tests cover the two features, including the rollback case.
 - A temporary server-render harness rendered the contact screen, the picker, and the task, note, project, document and organisation forms against the demo database, and checked the sixteen expected strings and absences. It was deleted after use; no test-only code remains in the repository.
+- For the receipts work, a second harness rendered the finances list and the Add and Edit dialogs (17 checks: file input, existing-document picker, linked receipt list with View/Download/Remove, both empty states, the save-then-attach wording, and the chip appearing only where documents exist). The exact upload request the new dialog sends was also run against the dev server with `curl -F`: it returned `ok`, stored the file and created the finance link in one request.
 - `npx playwright install chromium` cannot download a browser in this sandbox, so the real browser e2e suite was not run for this change. The user sees the result in the Arena preview and in the released app.
 
 Not covered here:
