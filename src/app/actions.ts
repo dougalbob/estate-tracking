@@ -225,6 +225,7 @@ export async function saveTemplateItem(input: unknown) {
 }
 
 export async function uploadDocument(formData: FormData) {
+  const startedAt = Date.now();
   try {
     const user = await currentUser();
     const users = user.demo
@@ -249,6 +250,9 @@ export async function uploadDocument(formData: FormData) {
       };
     }
     if (file.size > maxDocumentSizeBytes) {
+      console.warn(
+        `[upload] rejected too large: ${file.name} ${file.size} bytes > ${maxDocumentSizeBytes} by ${user.email}`,
+      );
       return {
         ok: false as const,
         error: `File too large – max ${maxDocumentSizeBytes / (1024 * 1024)} MB`,
@@ -261,7 +265,6 @@ export async function uploadDocument(formData: FormData) {
       !(allowedMimeTypes as readonly string[]).includes(mime) &&
       !mime.startsWith("image/")
     ) {
-      // Still allow if extension is pdf or image
       const lower = file.name.toLowerCase();
       if (!(
         lower.endsWith(".pdf") ||
@@ -292,19 +295,50 @@ export async function uploadDocument(formData: FormData) {
       };
     }
 
-    ensureDocumentsPath();
+    const docsPath = ensureDocumentsPath();
+    console.log(
+      `[upload] attempt by ${user.email}: ${file.name} (${file.size} bytes, ${mime}) -> ${docsPath} friendly="${parsedMeta.data.friendlyName}"`,
+    );
+
     const originalName = safeOriginalName(file.name);
     const storageName = safeStorageName(originalName);
-    const buffer = Buffer.from(await file.arrayBuffer());
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch (e) {
+      console.error(`[upload] arrayBuffer failed for ${file.name}`, e);
+      return {
+        ok: false as const,
+        error: "Unable to read file – try again with a smaller file",
+        code: "unavailable",
+      };
+    }
 
     // Write file first, then DB – if DB fails, clean up file
     const path = fullPath(storageName);
     try {
       await writeFile(path, buffer);
-    } catch {
+      console.log(
+        `[upload] wrote ${path} ${buffer.length} bytes in ${Date.now() - startedAt}ms`,
+      );
+    } catch (writeErr: unknown) {
+      const msg =
+        writeErr instanceof Error ? writeErr.message : String(writeErr);
+      const code = (writeErr as NodeJS.ErrnoException)?.code;
+      console.error(
+        `[upload] write failed ${path} code=${code} msg=${msg} – check df -h ${docsPath}`,
+        writeErr,
+      );
+      if (code === "ENOSPC") {
+        return {
+          ok: false as const,
+          error: `Disk full – unable to store file. Free space on ${docsPath} (df -h) and try again.`,
+          code: "unavailable",
+        };
+      }
       return {
         ok: false as const,
-        error: "Unable to store file – check server storage",
+        error: `Unable to store file – check server storage (${code || msg}). Try: df -h ${docsPath} and docker logs estate-organiser`,
         code: "unavailable",
       };
     }
@@ -342,11 +376,11 @@ export async function uploadDocument(formData: FormData) {
             user.email,
           );
         } catch (linkError) {
-          // If link fails, keep document but return link error as warning? For now, return error and keep doc
-          // The document itself is still usable from documents list
           if (linkError instanceof RecordError) {
-            // Do not delete file – document exists, just link invalid
             revalidatePath("/");
+            console.warn(
+              `[upload] document ${docId} saved but link failed: ${linkError.message}`,
+            );
             return {
               ok: true as const,
               id: docId,
@@ -356,6 +390,9 @@ export async function uploadDocument(formData: FormData) {
           throw linkError;
         }
       }
+      console.log(
+        `[upload] success ${docId} ${originalName} -> ${storageName} in ${Date.now() - startedAt}ms`,
+      );
       revalidatePath("/");
       return { ok: true as const, id: docId };
     } catch (dbError) {
@@ -364,20 +401,31 @@ export async function uploadDocument(formData: FormData) {
         if (existsSync(path)) await unlink(path);
       } catch {}
       if (dbError instanceof RecordError) {
+        console.warn(
+          `[upload] db error for ${originalName}: ${dbError.message}`,
+        );
         return {
           ok: false as const,
           error: dbError.message,
           code: dbError.code,
         };
       }
+      console.error(
+        `[upload] unexpected db error for ${originalName}`,
+        dbError,
+      );
       throw dbError;
     }
   } catch (error) {
-    if (error instanceof RecordError)
+    if (error instanceof RecordError) {
+      console.warn(`[upload] RecordError: ${error.message}`);
       return { ok: false as const, error: error.message, code: error.code };
+    }
+    console.error("[upload] unexpected failure", error);
     return {
       ok: false as const,
-      error: "Unable to upload – check your access and try again",
+      error:
+        "Unable to upload – check your access and try again. If this persists, check docker logs estate-organiser and df -h /mnt/user/appdata/estate-organiser",
       code: "unavailable",
     };
   }
