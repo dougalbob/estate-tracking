@@ -9,6 +9,7 @@ import {
   Leaf,
   ListTodo,
   LockKeyhole,
+  Paperclip,
   Plus,
   Users,
   Wallet,
@@ -40,6 +41,7 @@ import {
   uploadDocument,
   linkDocument,
   unlinkDocument,
+  linkTaskToOrganisation,
   setFinanceVoid,
 } from "@/app/actions";
 import { RecordSummary } from "./record-summary";
@@ -53,6 +55,12 @@ import {
   type FinanceRecordEditor,
 } from "./finance-forms";
 import { ProjectChecklist } from "./checklist";
+import {
+  formatSize,
+  fileTooLarge,
+  postDocumentUpload,
+  uploadErrorMessage,
+} from "./document-upload";
 import { BackupPanel } from "./backup-panel";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
@@ -64,7 +72,6 @@ import {
   documentCategories,
   financeKinds,
   movementKindFor,
-  maxDocumentSizeBytes,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
@@ -121,11 +128,22 @@ const formatDate = (value: string | Date) =>
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(new Date(value));
-const formatSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+/**
+ * How many documents are attached. Deliberately a chip rather than a few words
+ * in a long line of metadata: a receipt attached to a payment is easy to miss,
+ * and missing it leads to the same paperwork being filed twice.
+ */
+function DocumentCount({ count }: { count: number }) {
+  return (
+    <span
+      className="doc-count"
+      title={`${count} document${count > 1 ? "s" : ""} attached`}
+    >
+      <Paperclip size={11} aria-hidden />
+      {count} document{count > 1 ? "s" : ""}
+    </span>
+  );
+}
 
 function viewDocument(id: string) {
   if (typeof window === "undefined") return;
@@ -282,6 +300,7 @@ export function Workspace({
     [error, setError] = useState(""),
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
     [linkPicker, setLinkPicker] = useState<LinkPickerInitial | null>(null),
+    [taskLinkPicker, setTaskLinkPicker] = useState<string | null>(null),
     [viewingDoc, setViewingDoc] = useState<
       Snapshot["documents"][number] | null
     >(null),
@@ -659,9 +678,7 @@ export function Workspace({
             {record.projectId && projectName(record.projectId)
               ? ` · ${projectName(record.projectId)}`
               : ""}
-            {docs.length > 0
-              ? ` · ${docs.length} document${docs.length > 1 ? "s" : ""}`
-              : ""}
+            {docs.length > 0 && <DocumentCount count={docs.length} />}
           </p>
           <p>{money.filter(Boolean).join(" · ")}</p>
           {record.voidedAt && record.voidReason && (
@@ -742,12 +759,6 @@ export function Workspace({
             {t.projectId && projectName(t.projectId) && (
               <> · {projectName(t.projectId)}</>
             )}
-            {docs.length > 0 && (
-              <>
-                {" "}
-                · {docs.length} document{docs.length > 1 ? "s" : ""}
-              </>
-            )}
           </p>
           <p>
             {label(t.status)}
@@ -774,9 +785,17 @@ export function Workspace({
           {docs.length > 0 && (
             <div className="doc-pills">
               {docs.map((d) => (
-                <span key={d.id} className="badge">
-                  <FileText size={10} /> {d.friendlyName}
-                </span>
+                <button
+                  type="button"
+                  key={d.id}
+                  className="doc-pill"
+                  aria-label={`Open ${d.friendlyName}`}
+                  title={`Open ${d.friendlyName}`}
+                  onClick={() => setViewingDoc(d)}
+                >
+                  <FileText size={11} />
+                  {d.friendlyName}
+                </button>
               ))}
             </div>
           )}
@@ -1566,12 +1585,21 @@ export function Workspace({
               )}
               <div className="list-toolbar">
                 <h2>Linked tasks</h2>
-                <Button
-                  variant="outline"
-                  onClick={() => edit("task", undefined, organisation.id)}
-                >
-                  Add task
-                </Button>
+                <div className="row-actions">
+                  <Button
+                    variant="outline"
+                    onClick={() => setTaskLinkPicker(organisation.id)}
+                  >
+                    <Link2 size={14} />
+                    Link existing task
+                  </Button>
+                  <Button
+                    onClick={() => edit("task", undefined, organisation.id)}
+                  >
+                    <Plus size={16} />
+                    Add task
+                  </Button>
+                </div>
               </div>
               <section className="panel">
                 {data.tasks
@@ -2374,9 +2402,14 @@ export function Workspace({
           editor={editor}
           data={data}
           users={users}
+          onViewDocument={setViewingDoc}
           onClose={() => setEditor(null)}
-          onSaved={(id) => {
-            setMessage("Saved. Your shared workspace is up to date.");
+          onSaved={(id, newContactName) => {
+            setMessage(
+              newContactName
+                ? `Saved. ${newContactName} is now in Contacts, and this record is linked to it.`
+                : "Saved. Your shared workspace is up to date.",
+            );
             if (editor.kind === "organisation") {
               setView("contacts");
               setSelected(id);
@@ -2430,18 +2463,50 @@ export function Workspace({
           onClose={() => setViewingDoc(null)}
         />
       )}
+      {taskLinkPicker &&
+        (() => {
+          const organisation = data.organisations.find(
+            (o) => o.id === taskLinkPicker,
+          );
+          return organisation ? (
+            <TaskLinkPicker
+              data={data}
+              organisation={organisation}
+              onClose={() => setTaskLinkPicker(null)}
+              onLinked={(title) => {
+                setMessage(
+                  `“${title}” is now linked to ${organisation.name}. Nothing else about the task changed.`,
+                );
+                setTaskLinkPicker(null);
+                router.refresh();
+              }}
+              onError={setError}
+              onRefresh={() => router.refresh()}
+            />
+          ) : null;
+        })()}
       {financeEditor && (
         <FinanceRecordForm
           editor={financeEditor}
           data={data}
           users={users}
           onClose={() => setFinanceEditor(null)}
-          onSaved={() => {
-            setMessage("Saved. The totals below reflect the new figure.");
+          onSaved={(id, note) => {
+            setMessage(
+              note
+                ? `Saved. The totals below reflect the new figure.${note}`
+                : "Saved. The totals below reflect the new figure.",
+            );
             setView("finances");
             setFinanceEditor(null);
             router.refresh();
           }}
+          onAttachDocument={(recordId) =>
+            setDocUpload({ financeRecordId: recordId })
+          }
+          onLinkExisting={(recordId) =>
+            setLinkPicker({ financeRecordId: recordId })
+          }
         />
       )}
       {movementRecord && (
@@ -2817,10 +2882,9 @@ function DocumentUploadDialog({
       onError("Choose a file first");
       return;
     }
-    if (file.size > maxDocumentSizeBytes) {
-      onError(
-        `File too large – ${formatSize(file.size)} exceeds ${formatSize(maxDocumentSizeBytes)} limit. Try a smaller file or compress the scan.`,
-      );
+    const sizeProblem = fileTooLarge(file);
+    if (sizeProblem) {
+      onError(sizeProblem);
       return;
     }
     if (linkKind !== "none" && !linkId) {
@@ -2842,87 +2906,21 @@ function DocumentUploadDialog({
       if (linkKind === "task" && linkId) fd.set("taskId", linkId);
       if (linkKind === "project" && linkId) fd.set("projectId", linkId);
       if (linkKind === "finance" && linkId) fd.set("financeRecordId", linkId);
-      console.log(
-        `[upload] starting ${file.name} ${formatSize(file.size)} as ${fd.get("friendlyName")}`,
-      );
 
-      // Prefer Route Handler (/api/documents/upload) – it streams and avoids Server Actions 1 MB default.
-      // Fall back to Server Action if route is missing (older image) – but show error instead of hanging.
-      let res: { ok: boolean; id?: string; error?: string; warning?: string };
-      try {
-        const response = await fetch("/api/documents/upload", {
-          method: "POST",
-          body: fd,
-          credentials: "same-origin",
-        });
-        const body = (await response.json().catch(() => ({}))) as {
-          ok?: boolean;
-          id?: string;
-          error?: string;
-          warning?: string;
-        };
-        if (!response.ok) {
-          res = {
-            ok: false,
-            error:
-              body.error ||
-              `Upload failed (HTTP ${response.status}). Check docker logs estate-organiser and free space (df -h /mnt/user/appdata/estate-organiser).`,
-          };
-        } else {
-          res = {
-            ok: true,
-            id: body.id,
-            warning: body.warning,
-          } as any;
-          if (!res.id && (body as any).id) res.id = (body as any).id;
-          // If API returned ok:true but no id, treat as error
-          if (!res.id && !body.warning) {
-            // Some versions return {ok:true,id}
-            res = body as any;
-          }
-        }
-      } catch (fetchErr) {
-        console.warn(
-          "[upload] fetch to /api/documents/upload failed, falling back to server action",
-          fetchErr,
-        );
-        // Fallback to server action (needs bodySizeLimit 25mb in next.config.ts)
-        res = await uploadDocument(fd);
-      }
-
+      const res = await postDocumentUpload(fd);
       if (!res.ok) {
-        console.warn(`[upload] server returned error: ${(res as any).error}`);
-        onError((res as any).error || "Upload failed");
+        console.warn(`[upload] server returned error: ${res.error}`);
+        onError(res.error || "Upload failed");
+      } else if (res.warning) {
+        onError(res.warning);
+      } else if (res.id) {
+        onUploaded(res.id);
       } else {
-        if ((res as any).warning) onError((res as any).warning);
-        if ((res as any).id) onUploaded((res as any).id);
-        else onError("Upload succeeded but no id returned – check logs");
+        onError("Upload succeeded but no id returned – check logs");
       }
     } catch (err) {
       console.error("[upload] failed", err);
-      const message =
-        err instanceof Error ? err.message : String(err ?? "Unknown error");
-      if (
-        message.includes("413") ||
-        message.toLowerCase().includes("body exceeded") ||
-        message.toLowerCase().includes("too large")
-      ) {
-        onError(
-          `Upload too large for server (413). Server limit is ${formatSize(maxDocumentSizeBytes)}. Check next.config.ts bodySizeLimit (now 25mb) and try a smaller file. Original: ${message}`,
-        );
-      } else if (
-        message.includes("502") ||
-        message.includes("504") ||
-        message.toLowerCase().includes("failed to fetch")
-      ) {
-        onError(
-          `Upload failed – network/tunnel error (502/504 or fetch failure). Check container logs (docker logs estate-organiser), Cloudflare Tunnel status, and try again. Original: ${message}`,
-        );
-      } else {
-        onError(
-          `Unable to upload – ${message}. Check container logs (docker logs estate-organiser) and free space (df -h /mnt/user/appdata/estate-organiser).`,
-        );
-      }
+      onError(uploadErrorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -3374,6 +3372,188 @@ function DocumentLinkPicker({
           </Button>
           <Button type="submit" disabled={busy}>
             {busy ? "Linking…" : "Link"}
+          </Button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+/**
+ * Item 1: attach a task that already exists to this contact.
+ *
+ * Only tasks with no contact yet are offered. A task that came from a note has
+ * to stay with that note's contact, so it appears here only when the note
+ * already belongs to this contact (or has no contact of its own).
+ */
+function TaskLinkPicker({
+  data,
+  organisation,
+  onClose,
+  onLinked,
+  onError,
+  onRefresh,
+}: {
+  data: Snapshot;
+  organisation: Snapshot["organisations"][number];
+  onClose: () => void;
+  onLinked: (taskTitle: string) => void;
+  onError: (msg: string) => void;
+  onRefresh: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [busy, setBusy] = useState(false),
+    [query, setQuery] = useState(""),
+    [taskId, setTaskId] = useState("");
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const noteOrganisationId = (noteId: string | null) =>
+    data.interactions.find((n) => n.id === noteId)?.organisationId ?? null;
+  const projectName = (projectId: string | null) =>
+    projectId
+      ? (data.projects.find((p) => p.id === projectId)?.name ?? "")
+      : "";
+  const candidates = data.tasks.filter(
+    (t) =>
+      !t.organisationId &&
+      (!t.interactionId ||
+        noteOrganisationId(t.interactionId) === organisation.id),
+  );
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? candidates.filter((t) =>
+        `${t.title} ${t.detail ?? ""}`.toLowerCase().includes(needle),
+      )
+    : candidates;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const task = candidates.find((t) => t.id === taskId);
+    if (!task) {
+      onError("Choose a task to link first");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await linkTaskToOrganisation({
+        taskId: task.id,
+        organisationId: organisation.id,
+        version: task.version,
+      });
+      if (res.ok) onLinked(task.title);
+      else if (res.code === "conflict") {
+        onError(
+          "That task changed while this list was open, so it was not linked. The list has been refreshed – check it and try again.",
+        );
+        onRefresh();
+      } else onError(res.error);
+    } catch (err) {
+      console.error("[task link] failed", err);
+      onError(err instanceof Error ? err.message : "Unable to link task");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialog}
+      className="record-dialog"
+      aria-label="Link an existing task"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <form onSubmit={submit}>
+        <div className="dialog-heading">
+          <div>
+            <p className="eyebrow">ATTACH WORK ALREADY LISTED</p>
+            <h2>Link an existing task to {organisation.name}</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close"
+          >
+            <X size={21} />
+          </button>
+        </div>
+        <fieldset disabled={busy} className="form-fields">
+          <label className="search-label">
+            Find a task
+            <input
+              type="search"
+              placeholder="Search tasks…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          {candidates.length > 0 && (
+            <div className="panel task-picker-list">
+              {shown.map((t) => (
+                <label className="task-row" key={t.id}>
+                  <input
+                    type="radio"
+                    name="task"
+                    value={t.id}
+                    checked={taskId === t.id}
+                    onChange={() => setTaskId(t.id)}
+                    required
+                  />
+                  <span className="task-copy">
+                    <strong>{t.title}</strong>
+                    <p>
+                      {label(t.status)}
+                      {t.projectId && projectName(t.projectId) && (
+                        <>
+                          <span>·</span>
+                          {projectName(t.projectId)}
+                        </>
+                      )}
+                      {attentionDate(t) && (
+                        <>
+                          <span>·</span>
+                          {formatDate(attentionDate(t)!)}
+                        </>
+                      )}
+                    </p>
+                  </span>
+                </label>
+              ))}
+              {shown.length === 0 && (
+                <p className="empty-state">No task matches that search.</p>
+              )}
+            </div>
+          )}
+          {candidates.length === 0 && (
+            <p className="form-help">
+              Every task already has a contact, or came from a note filed
+              elsewhere. Add a task here instead, or move the note to this
+              contact first.
+            </p>
+          )}
+          <p className="form-help">
+            Only tasks with no contact yet are listed. Attaching one changes
+            nothing else about it: its title, dates, notes, project and history
+            stay exactly as they are, and the change is recorded in the task
+            history.
+          </p>
+        </fieldset>
+        <div className="form-actions">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy || !taskId}>
+            {busy ? "Linking…" : "Link task"}
           </Button>
         </div>
       </form>

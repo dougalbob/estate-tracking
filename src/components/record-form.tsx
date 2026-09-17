@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { X, Plus, Link2Off, Lightbulb, Trash2, FileText } from "lucide-react";
 import { RecordSummary } from "./record-summary";
 import { Button } from "./ui/button";
-import { saveRecord, linkDocument, unlinkDocument } from "@/app/actions";
+import {
+  saveRecord,
+  saveRecordWithNewOrganisation,
+  linkDocument,
+  unlinkDocument,
+} from "@/app/actions";
 import type { Snapshot } from "@/lib/records/store";
 import {
   label,
@@ -23,9 +28,23 @@ type Props = {
   data: Snapshot;
   users: string[];
   onClose: () => void;
-  onSaved: (id: string) => void;
+  onSaved: (id: string, newContactName?: string) => void;
+  /** Opens the in-app viewer for a linked document, without leaving the form. */
+  onViewDocument: (doc: Snapshot["documents"][number]) => void;
 };
-export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
+/**
+ * Sentinel for the extra option in the Organisation list. It never reaches the
+ * server: choosing it means "create this contact and save the task together".
+ */
+const NEW_CONTACT = "__new_contact__";
+export function RecordForm({
+  editor,
+  data,
+  users,
+  onClose,
+  onSaved,
+  onViewDocument,
+}: Props) {
   const router = useRouter();
   const rows =
     editor.kind === "organisation"
@@ -42,6 +61,16 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
   const value = (name: string, fallback = "") =>
     String(initial[name] ?? fallback);
   const [version, setVersion] = useState(record?.version);
+  // The Organisation list is controlled so a contact created here can appear as
+  // the chosen one straight away. Only the task and note forms render it.
+  const [organisationId, setOrganisationId] = useState(
+    String(initial.organisationId ?? editor.organisationId ?? ""),
+  );
+  const [newContact, setNewContact] = useState({
+    name: "",
+    email: "",
+    phone: "",
+  });
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -204,10 +233,19 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     const get = (key: string) => String(form.get(key) ?? "");
     const nullable = (key: string) => get(key) || null;
     const base = { id: editor.id, version };
+    // "+ New contact…" is not an id: the contact is created by the server in the
+    // same save, so the record itself is sent with no organisation yet.
+    const newContactKind =
+      editor.kind === "task" || editor.kind === "interaction"
+        ? editor.kind
+        : null;
+    const createContact =
+      organisationId === NEW_CONTACT && newContactKind !== null;
+    const chosenOrganisationId = createContact ? null : organisationId || null;
     const task = (prefix = "") => ({
       title: get(prefix + "title"),
       detail: get(prefix + "detail"),
-      organisationId: nullable("organisationId"),
+      organisationId: chosenOrganisationId,
       interactionId: editor.interactionId ?? null,
       projectId: nullable(prefix + "projectId"),
       assignee: nullable(prefix + "assignee"),
@@ -253,19 +291,37 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
     else
       input = {
         ...base,
-        organisationId: nullable("organisationId"),
+        organisationId: chosenOrganisationId,
         title: get("title"),
         detail: get("detail"),
         kind: get("kind"),
         occurredAt: new Date(get("occurredAt")).toISOString(),
         followUps: followUps.map((i) => task(`follow${i}.`)),
       };
+    const organisationForNewContact = {
+      name: newContact.name,
+      mainContact: null,
+      phoneNumbers: newContact.phone.trim() ? [newContact.phone.trim()] : [],
+      email: newContact.email.trim() || null,
+      reference: null,
+      notes: null,
+      status: "not_contacted",
+      confirmResolve: false,
+      projectIds: [],
+    };
     try {
-      const result = await saveRecord(editor.kind, input);
+      const result =
+        createContact && newContactKind
+          ? await saveRecordWithNewOrganisation(
+              newContactKind,
+              input,
+              organisationForNewContact,
+            )
+          : await saveRecord(editor.kind, input);
       if (result.ok) {
         setDirty(false);
         router.refresh();
-        onSaved(result.id);
+        onSaved(result.id, createContact ? newContact.name.trim() : undefined);
       } else {
         setError(result.error);
         setCode(result.code);
@@ -819,10 +875,11 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                 Organisation
                 <select
                   name="organisationId"
-                  defaultValue={value(
-                    "organisationId",
-                    editor.organisationId ?? "",
-                  )}
+                  value={organisationId}
+                  onChange={(e) => {
+                    setOrganisationId(e.target.value);
+                    setDirty(true);
+                  }}
                 >
                   <option value="">
                     {editor.kind === "interaction"
@@ -834,8 +891,66 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                       {o.name}
                     </option>
                   ))}
+                  <option value={NEW_CONTACT}>+ New contact…</option>
                 </select>
               </label>
+              {organisationId === NEW_CONTACT && (
+                <fieldset className="follow-up">
+                  <legend>New contact</legend>
+                  <label>
+                    Organisation name
+                    <input
+                      name="newContactName"
+                      required
+                      maxLength={200}
+                      value={newContact.name}
+                      onChange={(e) =>
+                        setNewContact({ ...newContact, name: e.target.value })
+                      }
+                      placeholder="For example, Bank1"
+                    />
+                  </label>
+                  <div className="form-grid">
+                    <label>
+                      Email <small>Optional</small>
+                      <input
+                        type="email"
+                        name="newContactEmail"
+                        maxLength={320}
+                        value={newContact.email}
+                        onChange={(e) =>
+                          setNewContact({
+                            ...newContact,
+                            email: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Phone <small>Optional</small>
+                      <input
+                        name="newContactPhone"
+                        maxLength={80}
+                        value={newContact.phone}
+                        onChange={(e) =>
+                          setNewContact({
+                            ...newContact,
+                            phone: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="form-help">
+                    The contact is created and linked in the same save, so
+                    nothing is half-finished. If the{" "}
+                    {editor.kind === "interaction" ? "note" : "task"} cannot be
+                    saved, the contact is not created either, and this form
+                    keeps everything you typed. Notes, reference and projects
+                    can be filled in later from the Contacts tab.
+                  </p>
+                </fieldset>
+              )}
               {editor.kind === "task" ? (
                 taskFields("", initial)
               ) : (
@@ -945,8 +1060,21 @@ export function RecordForm({ editor, data, users, onClose, onSaved }: Props) {
                               gap: "6px",
                             }}
                           >
-                            <FileText size={10} />{" "}
-                            {doc ? doc.friendlyName : "Document"}
+                            <button
+                              type="button"
+                              className="doc-pill-name"
+                              title={
+                                doc ? `Open ${doc.friendlyName}` : "Document"
+                              }
+                              aria-label={
+                                doc ? `Open ${doc.friendlyName}` : "Document"
+                              }
+                              disabled={busy || taskLinkSaving || !doc}
+                              onClick={() => doc && onViewDocument(doc)}
+                            >
+                              <FileText size={10} />{" "}
+                              {doc ? doc.friendlyName : "Document"}
+                            </button>
                             <button
                               type="button"
                               className="subtle-button danger"

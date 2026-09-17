@@ -11,6 +11,7 @@ import {
   organisationInput,
   interactionInput,
   taskInput,
+  taskLinkInput,
   projectInput,
   documentInput,
   documentLinkInput,
@@ -133,6 +134,172 @@ export function recordStore(
       return id;
     });
   }
+  function saveOrganisation(raw: unknown, actor: string) {
+    actorCheck(actor);
+    const input = organisationInput.parse(raw);
+    return db.transaction(() => {
+      const before = input.id
+        ? db
+            .select()
+            .from(organisations)
+            .where(eq(organisations.id, input.id))
+            .get()
+        : undefined;
+      if (
+        input.id &&
+        (!before || before.deletedAt || before.version !== input.version)
+      )
+        conflict();
+      if (
+        input.status === "resolved" &&
+        before?.status !== "resolved" &&
+        input.id &&
+        !input.confirmResolve
+      ) {
+        const open = db
+          .select()
+          .from(tasks)
+          .where(
+            and(eq(tasks.organisationId, input.id), isNull(tasks.deletedAt)),
+          )
+          .all()
+          .some((t) => !["done", "cancelled"].includes(t.status));
+        if (open)
+          throw new RecordError(
+            "This organisation has open tasks. Confirm resolution below to leave those tasks open.",
+            "confirm_resolve",
+          );
+      }
+      for (const pid of input.projectIds) {
+        if (
+          !db
+            .select()
+            .from(projects)
+            .where(and(eq(projects.id, pid), isNull(projects.deletedAt)))
+            .get()
+        )
+          throw new RecordError("Project no longer available");
+      }
+      const {
+        id: suppliedId,
+        version,
+        confirmResolve,
+        projectIds,
+        ...values
+      } = input;
+      const id = suppliedId || randomUUID(),
+        now = new Date();
+      const after = {
+        ...values,
+        id,
+        version: (before?.version ?? 0) + 1,
+        createdBy: before?.createdBy ?? actor,
+        createdAt: before?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      if (before) {
+        if (
+          !db
+            .update(organisations)
+            .set(after)
+            .where(
+              and(
+                eq(organisations.id, id),
+                eq(organisations.version, version!),
+              ),
+            )
+            .run().changes
+        )
+          conflict();
+      } else db.insert(organisations).values(after).run();
+      db.delete(organisationProjects)
+        .where(eq(organisationProjects.organisationId, id))
+        .run();
+      for (const pid of projectIds) {
+        db.insert(organisationProjects)
+          .values({ organisationId: id, projectId: pid })
+          .onConflictDoNothing()
+          .run();
+      }
+      audit("organisation", id, actor, before ?? null, {
+        ...after,
+        projectIds,
+      });
+      return id;
+    });
+  }
+
+  function saveInteraction(raw: unknown, actor: string) {
+    actorCheck(actor);
+    const input = interactionInput.parse(raw);
+    return db.transaction(() => {
+      relations(input);
+      const before = input.id
+        ? db
+            .select()
+            .from(interactions)
+            .where(eq(interactions.id, input.id))
+            .get()
+        : undefined;
+      if (
+        input.id &&
+        (!before || before.deletedAt || before.version !== input.version)
+      )
+        conflict();
+      if (
+        before &&
+        before.organisationId !== input.organisationId &&
+        db
+          .select()
+          .from(tasks)
+          .where(
+            and(eq(tasks.interactionId, before.id), isNull(tasks.deletedAt)),
+          )
+          .get()
+      )
+        throw new RecordError(
+          "This note has linked tasks. Keep its organisation unchanged.",
+        );
+      const { id: suppliedId, version, followUps, ...values } = input;
+      const id = suppliedId || randomUUID(),
+        now = new Date().toISOString();
+      const after = {
+        ...values,
+        title: values.title || "Quick note",
+        id,
+        version: (before?.version ?? 0) + 1,
+        createdBy: before?.createdBy ?? actor,
+        createdAt: before?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      if (before) {
+        if (
+          !db
+            .update(interactions)
+            .set(after)
+            .where(
+              and(eq(interactions.id, id), eq(interactions.version, version!)),
+            )
+            .run().changes
+        )
+          conflict();
+      } else db.insert(interactions).values(after).run();
+      audit("interaction", id, actor, before ?? null, after);
+      for (const task of followUps)
+        saveTask(
+          {
+            ...task,
+            organisationId: input.organisationId,
+            interactionId: id,
+          },
+          actor,
+        );
+      return id;
+    });
+  }
+
   return {
     ...finances,
     ...checklist,
@@ -329,173 +496,8 @@ export function recordStore(
         return id;
       });
     },
-    saveOrganisation(raw: unknown, actor: string) {
-      actorCheck(actor);
-      const input = organisationInput.parse(raw);
-      return db.transaction(() => {
-        const before = input.id
-          ? db
-              .select()
-              .from(organisations)
-              .where(eq(organisations.id, input.id))
-              .get()
-          : undefined;
-        if (
-          input.id &&
-          (!before || before.deletedAt || before.version !== input.version)
-        )
-          conflict();
-        if (
-          input.status === "resolved" &&
-          before?.status !== "resolved" &&
-          input.id &&
-          !input.confirmResolve
-        ) {
-          const open = db
-            .select()
-            .from(tasks)
-            .where(
-              and(eq(tasks.organisationId, input.id), isNull(tasks.deletedAt)),
-            )
-            .all()
-            .some((t) => !["done", "cancelled"].includes(t.status));
-          if (open)
-            throw new RecordError(
-              "This organisation has open tasks. Confirm resolution below to leave those tasks open.",
-              "confirm_resolve",
-            );
-        }
-        for (const pid of input.projectIds) {
-          if (
-            !db
-              .select()
-              .from(projects)
-              .where(and(eq(projects.id, pid), isNull(projects.deletedAt)))
-              .get()
-          )
-            throw new RecordError("Project no longer available");
-        }
-        const {
-          id: suppliedId,
-          version,
-          confirmResolve,
-          projectIds,
-          ...values
-        } = input;
-        const id = suppliedId || randomUUID(),
-          now = new Date();
-        const after = {
-          ...values,
-          id,
-          version: (before?.version ?? 0) + 1,
-          createdBy: before?.createdBy ?? actor,
-          createdAt: before?.createdAt ?? now,
-          updatedAt: now,
-          deletedAt: null,
-        };
-        if (before) {
-          if (
-            !db
-              .update(organisations)
-              .set(after)
-              .where(
-                and(
-                  eq(organisations.id, id),
-                  eq(organisations.version, version!),
-                ),
-              )
-              .run().changes
-          )
-            conflict();
-        } else db.insert(organisations).values(after).run();
-        db.delete(organisationProjects)
-          .where(eq(organisationProjects.organisationId, id))
-          .run();
-        for (const pid of projectIds) {
-          db.insert(organisationProjects)
-            .values({ organisationId: id, projectId: pid })
-            .onConflictDoNothing()
-            .run();
-        }
-        audit("organisation", id, actor, before ?? null, {
-          ...after,
-          projectIds,
-        });
-        return id;
-      });
-    },
-    saveInteraction(raw: unknown, actor: string) {
-      actorCheck(actor);
-      const input = interactionInput.parse(raw);
-      return db.transaction(() => {
-        relations(input);
-        const before = input.id
-          ? db
-              .select()
-              .from(interactions)
-              .where(eq(interactions.id, input.id))
-              .get()
-          : undefined;
-        if (
-          input.id &&
-          (!before || before.deletedAt || before.version !== input.version)
-        )
-          conflict();
-        if (
-          before &&
-          before.organisationId !== input.organisationId &&
-          db
-            .select()
-            .from(tasks)
-            .where(
-              and(eq(tasks.interactionId, before.id), isNull(tasks.deletedAt)),
-            )
-            .get()
-        )
-          throw new RecordError(
-            "This note has linked tasks. Keep its organisation unchanged.",
-          );
-        const { id: suppliedId, version, followUps, ...values } = input;
-        const id = suppliedId || randomUUID(),
-          now = new Date().toISOString();
-        const after = {
-          ...values,
-          title: values.title || "Quick note",
-          id,
-          version: (before?.version ?? 0) + 1,
-          createdBy: before?.createdBy ?? actor,
-          createdAt: before?.createdAt ?? now,
-          updatedAt: now,
-          deletedAt: null,
-        };
-        if (before) {
-          if (
-            !db
-              .update(interactions)
-              .set(after)
-              .where(
-                and(
-                  eq(interactions.id, id),
-                  eq(interactions.version, version!),
-                ),
-              )
-              .run().changes
-          )
-            conflict();
-        } else db.insert(interactions).values(after).run();
-        audit("interaction", id, actor, before ?? null, after);
-        for (const task of followUps)
-          saveTask(
-            {
-              ...task,
-              organisationId: input.organisationId,
-              interactionId: id,
-            },
-            actor,
-          );
-        return id;
-      });
-    },
+    saveOrganisation,
+    saveInteraction,
     saveDocument(raw: unknown, actor: string) {
       actorCheck(actor);
       const input = documentInput.parse(raw);
@@ -541,6 +543,91 @@ export function recordStore(
           );
         }
         return id;
+      });
+    },
+    /**
+     * Item 1: attach a task that already exists to a contact.
+     *
+     * A task links to exactly one organisation through `tasks.organisation_id`,
+     * so this is an update to the task, not a join row. The current row is read
+     * here rather than trusted from the browser: only `organisation_id` can
+     * change, and every other field is written back exactly as it already is.
+     * The version the user was looking at is still enforced, so a stale screen
+     * is refused instead of silently overwriting someone else's edit.
+     */
+    linkTaskToOrganisation(raw: unknown, actor: string) {
+      actorCheck(actor);
+      const input = taskLinkInput.parse(raw);
+      return db.transaction(() => {
+        const task = db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.id, input.taskId))
+          .get();
+        if (!task || task.deletedAt)
+          throw new RecordError("That task is no longer available");
+        if (task.organisationId && task.organisationId !== input.organisationId)
+          throw new RecordError(
+            "That task already belongs to another contact. Open it from the task list to move it.",
+          );
+        const {
+          id,
+          version: _version,
+          createdBy: _createdBy,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          deletedAt: _deletedAt,
+          ...fields
+        } = task;
+        return saveTask(
+          {
+            ...fields,
+            id,
+            version: input.version,
+            organisationId: input.organisationId,
+          },
+          actor,
+        );
+      });
+    },
+    /**
+     * Item 2: create a contact and save the record that introduced it in one
+     * transaction. If the task or note cannot be saved, the contact is not
+     * created either – there is no half-finished save to clean up by hand.
+     */
+    saveRecordWithNewOrganisation(
+      kind: "task" | "interaction",
+      raw: unknown,
+      rawOrganisation: unknown,
+      actor: string,
+    ) {
+      actorCheck(actor);
+      return db.transaction(() => {
+        const input =
+          kind === "task" ? taskInput.parse(raw) : interactionInput.parse(raw);
+        const organisationId = saveOrganisation(rawOrganisation, actor);
+        const { id: _id, version: _version, ...values } = input;
+        const recordId =
+          kind === "task"
+            ? saveTask(
+                {
+                  ...values,
+                  id: input.id,
+                  version: input.version,
+                  organisationId,
+                },
+                actor,
+              )
+            : saveInteraction(
+                {
+                  ...values,
+                  id: input.id,
+                  version: input.version,
+                  organisationId,
+                },
+                actor,
+              );
+        return { id: recordId, organisationId };
       });
     },
     createDocumentFromUpload(

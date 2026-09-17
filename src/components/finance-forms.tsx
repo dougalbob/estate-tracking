@@ -15,9 +15,18 @@ import {
   saveFinanceRecord,
   saveFinanceMovement,
   deleteRecord,
+  linkDocument,
+  unlinkDocument,
 } from "@/app/actions";
+import {
+  formatSize,
+  fileTooLarge,
+  postDocumentUpload,
+  uploadErrorMessage,
+} from "./document-upload";
 import type { Snapshot } from "@/lib/records/store";
 import {
+  documentCategories,
   financeCategories,
   financeKinds,
   label,
@@ -60,12 +69,20 @@ export function FinanceRecordForm({
   users,
   onClose,
   onSaved,
+  onAttachDocument,
+  onLinkExisting,
 }: {
   editor: FinanceRecordEditor;
   data: Snapshot;
   users: string[];
   onClose: () => void;
-  onSaved: (id: string) => void;
+  /**
+   * `note` carries what happened to any receipts, so the workspace can say so
+   * plainly – a record that saved without its receipt must never look complete.
+   */
+  onSaved: (id: string, note?: string) => void;
+  onAttachDocument: (recordId: string) => void;
+  onLinkExisting: (recordId: string) => void;
 }) {
   const router = useRouter();
   const record = editor.id
@@ -80,6 +97,31 @@ export function FinanceRecordForm({
   const [dirty, setDirty] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const name = (email: string) => email.split("@")[0];
+  // Receipts on an existing record act immediately; on a new one they are held
+  // here and attached straight after the record is created.
+  const linkedDocs = editor.id
+    ? data.documentLinks
+        .filter((l) => l.financeRecordId === editor.id)
+        .flatMap((l) => {
+          const doc = data.documents.find((d) => d.id === l.documentId);
+          return doc
+            ? [
+                {
+                  linkId: l.id,
+                  id: doc.id,
+                  friendlyName: doc.friendlyName,
+                  originalName: doc.originalName,
+                  category: doc.category,
+                },
+              ]
+            : [];
+        })
+    : [];
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingCategory, setPendingCategory] = useState("receipt");
+  const [pendingDocIds, setPendingDocIds] = useState<string[]>([]);
+  const [pickDocId, setPickDocId] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState(false);
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -87,6 +129,51 @@ export function FinanceRecordForm({
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
       onClose();
+  }
+
+  /**
+   * Attach everything queued in the form, after the record itself exists.
+   * The record is saved first and is never rolled back by a failed attachment:
+   * a receipt can be added again from Edit, but a lost money record cannot be
+   * recovered by the user. Any failure is reported, never swallowed.
+   */
+  async function attachQueuedReceipts(recordId: string) {
+    const failures: string[] = [];
+    for (const documentId of pendingDocIds) {
+      try {
+        const link = await linkDocument({
+          documentId,
+          financeRecordId: recordId,
+        });
+        if (!link.ok)
+          failures.push(
+            `${data.documents.find((d) => d.id === documentId)?.friendlyName ?? "A document"}: ${link.error}`,
+          );
+      } catch (err) {
+        failures.push(err instanceof Error ? err.message : "linking failed");
+      }
+    }
+    if (pendingFile) {
+      const fd = new FormData();
+      fd.set("file", pendingFile);
+      fd.set(
+        "friendlyName",
+        pendingFile.name.replace(/\.[^/.]+$/, "") || "Receipt",
+      );
+      fd.set("category", pendingCategory);
+      fd.set("financeRecordId", recordId);
+      try {
+        const res = await postDocumentUpload(fd);
+        if (!res.ok) failures.push(res.error || "the upload failed");
+      } catch (err) {
+        failures.push(uploadErrorMessage(err));
+      }
+    }
+    const attached = pendingDocIds.length + (pendingFile ? 1 : 0);
+    if (!attached) return "";
+    if (!failures.length)
+      return ` ${attached} document${attached > 1 ? "s" : ""} attached.`;
+    return ` The record is saved, but ${failures.length} of ${attached} could not be attached – open the record and use Edit to try again. ${failures[0]}`;
   }
 
   async function submit(form: FormData) {
@@ -113,8 +200,9 @@ export function FinanceRecordForm({
       });
       if (result.ok) {
         setDirty(false);
+        const note = await attachQueuedReceipts(result.id);
         router.refresh();
-        onSaved(result.id);
+        onSaved(result.id, note);
       } else {
         setError(result.error);
         if (result.code === "conflict") router.refresh();
@@ -328,6 +416,197 @@ export function FinanceRecordForm({
               placeholder="Anything worth remembering later."
             />
           </label>
+          <fieldset className="follow-up">
+            <legend>Receipts and paperwork</legend>
+            {record ? (
+              <>
+                {linkedDocs.map((doc) => (
+                  <div className="task-row" key={doc.linkId}>
+                    <span className="task-icon">
+                      <FileText size={15} />
+                    </span>
+                    <div className="task-copy">
+                      <strong>{doc.friendlyName}</strong>
+                      <p>
+                        {doc.category ? label(doc.category) : "No category"}
+                      </p>
+                    </div>
+                    <div className="row-actions">
+                      <a
+                        className="subtle-button"
+                        href={`/api/documents/${doc.id}/download`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Eye size={13} /> View
+                      </a>
+                      <a
+                        className="subtle-button"
+                        href={`/api/documents/${doc.id}/download?download=1`}
+                        download={doc.originalName}
+                      >
+                        <Download size={13} /> Download
+                      </a>
+                      <button
+                        type="button"
+                        className="subtle-button"
+                        disabled={receiptBusy}
+                        onClick={async () => {
+                          setReceiptBusy(true);
+                          const res = await unlinkDocument(doc.linkId);
+                          setReceiptBusy(false);
+                          if (!res.ok) setError(res.error);
+                          else router.refresh();
+                        }}
+                      >
+                        Remove link
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!linkedDocs.length && (
+                  <p className="form-help">
+                    No receipts linked yet. Removing a link never deletes the
+                    file or its other links.
+                  </p>
+                )}
+                <div className="row-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={receiptBusy}
+                    onClick={() => onAttachDocument(record.id)}
+                  >
+                    <FileText size={15} />
+                    Upload a receipt
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={receiptBusy}
+                    onClick={() => onLinkExisting(record.id)}
+                  >
+                    <Link2 size={15} />
+                    Link an existing document
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label>
+                  Receipt or invoice{" "}
+                  <small>Optional – PDF, image or text</small>
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0] ?? null;
+                      if (!picked) {
+                        setPendingFile(null);
+                        return;
+                      }
+                      const problem = fileTooLarge(picked);
+                      if (problem) {
+                        setError(problem);
+                        e.target.value = "";
+                        setPendingFile(null);
+                        return;
+                      }
+                      setError("");
+                      setPendingFile(picked);
+                    }}
+                  />
+                </label>
+                {pendingFile && (
+                  <div className="form-grid">
+                    <label>
+                      Category
+                      <select
+                        value={pendingCategory}
+                        onChange={(e) => setPendingCategory(e.target.value)}
+                      >
+                        {documentCategories.map((c) => (
+                          <option key={c} value={c}>
+                            {label(c)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="form-help">
+                      {pendingFile.name} · {formatSize(pendingFile.size)} – will
+                      be uploaded when you save.
+                    </p>
+                  </div>
+                )}
+                <label>
+                  Already stored? Link an existing file
+                  <div className="row-actions">
+                    <select
+                      value={pickDocId}
+                      onChange={(e) => setPickDocId(e.target.value)}
+                    >
+                      <option value="">Choose a document…</option>
+                      {data.documents
+                        .filter((d) => !pendingDocIds.includes(d.id))
+                        .map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.friendlyName} – {d.originalName}
+                          </option>
+                        ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!pickDocId}
+                      onClick={() => {
+                        setPendingDocIds((ids) => [...ids, pickDocId]);
+                        setPickDocId("");
+                      }}
+                    >
+                      <Plus size={15} />
+                      Add
+                    </Button>
+                  </div>
+                </label>
+                {pendingDocIds.length > 0 && (
+                  <div className="panel">
+                    {pendingDocIds.map((id) => {
+                      const doc = data.documents.find((d) => d.id === id);
+                      return (
+                        <div className="task-row" key={id}>
+                          <span className="task-icon">
+                            <FileText size={15} />
+                          </span>
+                          <div className="task-copy">
+                            <strong>{doc?.friendlyName ?? "Document"}</strong>
+                            <p>{doc?.originalName}</p>
+                          </div>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="subtle-button"
+                              onClick={() =>
+                                setPendingDocIds((ids) =>
+                                  ids.filter((x) => x !== id),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="form-help">
+                  The record is saved first, then the receipt is attached. If an
+                  attachment fails you are told, and you can add it again from
+                  Edit – your saved figures are never affected.
+                </p>
+              </>
+            )}
+          </fieldset>
           {record && record.version > 1 && (
             <p className="form-help">
               Saving keeps the previous version in the history, along with who

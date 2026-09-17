@@ -2,11 +2,27 @@
 
 > A calm, private web app to help two people navigate the logistics of settling a personal estate after the death of a parent.
 
+## Current state — 17 September 2026
+
+| | |
+|---|---|
+| Live release | **v0.2.5**, built by GitHub Actions and published to GHCR as `v0.2.5`, `latest`, and a git-SHA tag |
+| Earlier releases | v0.2.0 – v0.2.4, all published 16–17 September 2026 |
+| Data in use | **Real estate records and real documents, entered by both users.** The installation runs on Unraid behind Cloudflare Access |
+| Verified in production | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place |
+| Automated gates | 61 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit |
+| Still outstanding | A full accessibility and security review, and four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support |
+| How to read the rest of this file | Dated checkpoints and the original proposal are kept as a written record. Where the text below says something is planned or unverified, this table is the current position |
+
+**Because the installation now holds real records**, every development and demo instruction in this file must be pointed at the isolated demo database, never at `/mnt/user/appdata/estate-organiser`.
+
+**Keeping this file and the plan true.** These two documents are updated **in the same change, immediately before anything is merged** — not afterwards and not in a follow-up. If a change alters behaviour, the README and `docs/IMPLEMENTATION_PLAN.md` are corrected in that pull request, so a merge never leaves the written record describing something the app no longer does. A change with no visible behaviour difference (a refactor, a test-only edit) needs no wording change, but the pull request says so explicitly. This rule exists because the app was described inaccurately in earlier sessions — test counts, what had shipped, and what was still outstanding — and that is worse than no documentation at all.
+
 ## Status and purpose
 
-**Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
+**Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented and in production use.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. A contact screen can attach a task that already exists, and the task or note dialog can create a contact that does not exist yet, so neither has to be done in a second pass. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
 
-The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery is staged, but these are all core requirements. This is a fresh start with no existing data to import; fictional data remains the only permitted data until the production release verification is complete.
+The goal is a polished release covering contacts, interactions, tasks, funeral arrangements, documents, and estate finances. Delivery is staged, but these are all core requirements. There was no existing data to import. Production verification is complete and the installation now holds real records, so any preview, experiment, or example in this file must use the isolated demo database instead.
 
 The app serves **one estate in England and exactly two equal users/beneficiaries**. Everything is shared. There is no public registration, additional role system, private-to-one-user data, or multi-estate support.
 
@@ -57,6 +73,17 @@ Calls, emails, letters, and web forms can be logged against an organisation. Eac
 
 For example: create Bank1 and its reference details, log a call, attach a document, and create linked tasks to send a certificate and chase a reply. Follow-ups appear in the normal task list and on the home screen when relevant.
 
+### Linking work to a contact from either direction
+
+A contact screen shows its linked tasks and documents together. **Link existing task** attaches a task that already exists, instead of adding another one:
+
+- Only tasks with **no contact yet** are offered, so nothing is silently moved off another contact.
+- Attaching one changes nothing else about the task — its title, detail, dates, assignee, project, documents and history all stay exactly as they were, and the change is recorded in the task history.
+- A task that came from a note stays with the note's contact, because the note and its follow-up tasks must belong to the same organisation.
+- If someone else edited the task while the picker was open, the link is refused rather than applied over their change, and the picker refreshes so it can be chosen again.
+
+The reverse direction works too: the **Organisation** list in the task or note dialog includes **+ New contact…**, which reveals a name (required) plus an optional email and phone number. The contact is created and the record linked in a single save, so a failure cannot leave an orphan contact; the dialog keeps what was typed and says so plainly. Notes, reference details and projects can be filled in later from the Contacts tab. The same control appears in the note dialog, which is what makes "record the task first, sort the contact out later" a single step.
+
 ### Quick capture
 
 Quick notes accept an optional title and free-text detail, with automatic time and user attribution. Organisation and attachments are optional. Unlinked notes appear in an **Unfiled notes** list and can be linked or given follow-up tasks later.
@@ -65,6 +92,7 @@ Quick notes accept an optional title and free-text detail, with automatic time a
 
 - Tasks may stand alone, optionally link to an organisation and source interaction, and have one optional project.
 - Assign to either user or leave unassigned.
+- **A linked document's name is tappable.** Where a task has documents attached, its row lists each one by friendly name; tapping a name opens it in the in-app viewer (images inline, PDFs in a frame, with a Download button inside), so a certificate or statement can be read without leaving the list. The same names behave the same way inside the task's edit dialog.
 - States: **To do, In progress, Waiting, Done, Cancelled**.
 - Distinguish a **due date** (action needed), **follow-up date** (check/chase), and **confirmed deadline** (a firm date entered by a user).
 - Waiting tasks resurface on their follow-up date.
@@ -130,6 +158,8 @@ Implemented behaviour:
 - Reimbursements are movements against a personally paid expense. A GBP 500 expense with GBP 200 reimbursed leaves GBP 300 owed, and only one expense exists in the totals. Part payments are recorded as they happen; the app refuses a reimbursement that would exceed the amount owed, and refuses to reimburse an expense the estate paid directly. Liability payments have the same limit — correct the recorded amount first if it has changed.
 - Corrections keep every previous version, its author and the time. **Voiding** (with a required reason) keeps a record visible, out of the totals, and can be reinstated. Financial records can be moved to the recoverable bin and restored, but they are **never permanently deleted** through the app: the server refuses, and the bin shows "Correct or void instead".
 - Distributions are recorded as they happened, with no assumed 50/50 split.
+- **Receipts are attached from the record itself.** When adding a financial record you can choose a file and/or pick a document already stored, and they are attached as the record saves. Editing a record shows its receipts with View, Download and Remove link, and offers "Upload a receipt" and "Link an existing document". The record is saved first and receipts afterwards: if an attachment fails you are told plainly, the figures you entered are never lost, and you can add the receipt again from Edit. Removing a link removes only that link — the file and its other links stay.
+- A row that has documents shows them as a marked count (a paperclip and "1 document"), so a receipt filed against a payment is not missed. The same marker appears on task rows.
 - CSV downloads (assets and liabilities, cash movements, reimbursements owed) are generated on the server after the same authentication check. Text that a spreadsheet could treat as a formula is prefixed with an apostrophe and quoted; money is exported as plain decimals with money in and money out in separate columns, so nothing relies on negative numbers.
 - No tax, debt-priority, or entitlement calculation appears anywhere in the summaries.
 
@@ -165,7 +195,7 @@ Primary database and document storage remain on Unraid. Remote traffic passes th
 
 The deployment package is now implemented for a single application Docker container on Unraid, with persistent SQLite and document storage in `/mnt/user/appdata/estate-organiser`. Cloudflare Tunnel and Cloudflare Access remain separate infrastructure. The container listens internally on port `3000`, while Unraid publishes host port `3005` to avoid a conflict on the server. It uses bridge networking and runs as root in v1 so that the first install is predictable; files created under the appdata mapping will therefore be owned by root.
 
-**Safety gate:** the encrypted backup and restore stage is implemented and tested locally, but the production release verification is still outstanding. The app creates a consistent SQLite snapshot, includes the documents folder, encrypts the bundle with a user-managed recovery password, validates the authenticated backup before replacement, and keeps no server-side retention copy after download. A raw copy of a live SQLite file is not an adequate backup strategy because this app uses WAL mode.
+**Verified in production, 17 September 2026:** an encrypted backup was created and then restored on the live installation through the published image, and the records were confirmed afterwards. The app creates a consistent SQLite snapshot, includes the documents folder, encrypts the bundle with a user-managed recovery password, validates the authenticated backup before replacement, and keeps no server-side retention copy after download. A raw copy of a live SQLite file is not an adequate backup strategy because this app uses WAL mode.
 
 ### Backup and restore workflow
 
@@ -174,7 +204,7 @@ Open **Backup & restore** in the workspace. Why the password is entered in the f
 - **Create encrypted backup:** enter a recovery password of at least 12 characters. The server uses SQLite's online backup API while holding a write lock, copies the database snapshot and every regular file below `/data/documents`, then encrypts a versioned bundle with scrypt-derived AES-256-GCM. The browser receives an `.estate-backup` download; Arena may still block the final save action, but the HTTP response and encrypted bytes can be tested independently.
 - **Restore backup:** choose an `.estate-backup` file and enter the same recovery password. The server authenticates and decrypts the whole archive into staging, checks its metadata and SQLite integrity, then replaces the database and documents. A failed validation leaves the existing installation in place. Restoring is destructive, so the UI asks for confirmation first.
 - **Retention:** the application deliberately retains no completed backup on Unraid. Keep dated copies on the user's own device/cloud storage, keep the password separately, and retain more than one known-good copy. Scheduled transfer is not part of this first workflow.
-- **Restore testing:** local automated tests cover a fictional database, nested documents, wrong passwords, archive validation, and a clean restore. The release gate still requires one restore through the published image on a clean Unraid data volume before real records are entered.
+- **Restore testing:** local automated tests cover a fictional database, nested documents, wrong passwords, archive validation, and a clean restore. On 17 September 2026 the same exercise was completed against the published image on the live installation and the records were confirmed. Real records are now in use, so re-test a restore after any change to the backup format, and always keep more than one known-good dated copy.
 
 ### Deployment files
 
@@ -183,6 +213,7 @@ Open **Backup & restore** in the workspace. Why the password is entered in the f
 - `compose.yaml` is a portable reference using the same GHCR image, host port `3005` mapped to container port `3000`, and the `/mnt/user/appdata/estate-organiser:/data` mapping.
 - `estate-organiser.xml` is the Unraid user-template import. It defines the `/data` mapping, host port `3005` to container port `3000`, bridge network, and WebUI link.
 - `src/app/api/backup/` and `src/lib/backup/` provide authenticated encrypted download/restore with a versioned archive format; the workspace exposes it under **Backup & restore**.
+- `src/app/api/documents/upload/route.ts` streams multipart uploads so a file is not bound by the 1 MB Server Action default, and `next.config.ts` raises the body limit to 25 MB under `experimental.serverActions`. The browser prefers that route and falls back to the `uploadDocument` action.
 - `.github/workflows/publish.yml` builds and publishes `ghcr.io/dougalbob/estate-organiser` on `v*` tags or manual dispatch. A version tag produces the version tag, `latest`, and a git-SHA tag.
 
 ### Unraid installation
@@ -213,17 +244,33 @@ These steps deliberately explain why each file is used. Do not put real credenti
 
 5. **Protect the hostname with Cloudflare Access.** Create a Self-hosted Access application for the hostname. Configure Google as the only enabled identity provider for this application (set up Google in Zero Trust → Settings → Authentication → Login methods if it is not already available). Add an Allow policy whose Include rule contains only the two real email addresses. Do not use a broad “everyone” rule. The application independently verifies the Access JWT issuer, audience, expiry, and email allowlist, so a spoofed email header is not sufficient.
 
-6. **Complete the end-to-end check with fictional data.** Visit the public hostname, sign in with each allowed Google account, confirm that both can see the protected workspace, create a clearly fictional organisation and task, reload, and confirm persistence. Check `/api/health` from the LAN, upload a fictional document, create an encrypted backup, and confirm that an unauthenticated/private-window request to its document download URL fails. Delete the fictional rows afterwards. Do not begin real data entry until the published image has passed a clean restore exercise.
+6. **Complete the end-to-end check with fictional data.** Visit the public hostname, sign in with each allowed Google account, confirm that both can see the protected workspace, create a clearly fictional organisation and task, reload, and confirm persistence. Check `/api/health` from the LAN, upload a fictional document, create an encrypted backup, and confirm that an unauthenticated/private-window request to its document download URL fails. Delete the fictional rows afterwards. The restore exercise that this step used to wait for was completed on 17 September 2026, and the installation now holds real records — so a new installation should replace fictional data with real records only after the same restore check has been repeated there.
 
 ### Release and update flow
 
-After review, merge the deployment change to `main`, then create and push a version tag such as `v0.2.0`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. After the first publish, set the package visibility to **Public** in GitHub → Packages → `estate-organiser` → Package settings; Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
+Before anything is merged, this file and `docs/IMPLEMENTATION_PLAN.md` are corrected to match the change (see **Keeping this file and the plan true** above). Then merge the change to `main`, then create and push a version tag such as `v0.2.5`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. The package is set to **Public** in GitHub → Packages → `estate-organiser` → Package settings, because Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
 
-The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available; the first build is the GitHub Actions run.
+The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available, so GitHub Actions is the only builder: the first image was published at v0.2.0 and every release since, up to v0.2.5, has been built there.
+
+**If a release build fails, nothing is broken and nothing is released.** No image is pushed for the failed tag and `latest` does not move, so the running installation is untouched. Fix the cause on a working branch, open a pull request and merge it to `main`, then re-point the same tag at the new merge commit and force-push it — which is safe *only* because no image was published for that tag:
+
+```bash
+git fetch origin main
+git tag -f -a v0.2.5 -m "v0.2.5 – <what changed>" origin/main
+git push -f origin v0.2.5
+```
+
+Then confirm the workflow succeeded and that the tags really exist on the published package:
+
+```bash
+gh run watch $(gh run list --workflow=publish.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status
+gh api "/users/dougalbob/packages/container/estate-organiser/versions?per_page=3" \
+  --jq '.[] | "\(.metadata.container.tags|join(","))  created:\(.created_at)"'
+```
 
 ## Installable PWA (Android)
 
-The app ships a web app manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`), a no-op service worker (`public/sw.js`, registered from `src/app/layout.tsx`), and two PNG icons plus an Apple touch icon in `public/`. It is installable on Android Chrome as a standalone app. There is **no offline support** — the service worker only takes control so Chrome shows the install prompt; it performs no caching and adds no `fetch` handling, so every request still goes through Cloudflare Access.
+The app ships a web app manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`), a no-op service worker (`public/sw.js`, registered from `src/app/layout.tsx`), and two PNG icons plus an Apple touch icon in `public/`. It is installable on Android Chrome as a standalone app, and it has been installed that way on the user's phone. The Dockerfile copies `public/` into the runtime stage, which the install needs. There is **no offline support** — the service worker only takes control so Chrome shows the install prompt; it performs no caching and adds no `fetch` handling, so every request still goes through Cloudflare Access.
 
 ### Installing
 
@@ -241,23 +288,25 @@ Cloudflare Access sits in front of every path, including the static PWA assets. 
 
 Every other path, including `/` and `/api/*`, stays behind the existing Access policy. The lockout screen in `src/app/page.tsx` means that even if someone hits `/` without auth, they get the “Protected workspace” page with no data — there is **no separate public landing page**, and this is intentional. Adding the Bypass rules above only exposes the app name and icons, nothing else.
 
-> Important: on Unraid you must **Force Update** to pull the new image after a release. And the Cloudflare Access Bypass policy must be added **before** users can install the PWA on Android — otherwise the install banner will not appear, because the manifest cannot be fetched pre-auth.
+> Important: on Unraid you must **Force Update** to pull the new image after a release. And the Cloudflare Access Bypass policy must be in place **before** a user can install the PWA on Android — otherwise the install banner will not appear, because the manifest cannot be fetched pre-auth. On this installation both of these are done: the policy is configured and the app is installed on the user's phone.
 
-## Proposed technology
+## Technology — the original proposal, and what actually shipped
 
-| Layer | Direction |
-|---|---|
-| Framework | Next.js App Router |
-| Language | TypeScript |
-| ORM | Drizzle |
-| Database | SQLite (`better-sqlite3`) |
-| Styling | Tailwind CSS with semantic CSS-variable theme tokens |
-| UI components | shadcn/ui |
-| Mobile installation | Web app manifest; no sensitive offline caching |
-| Authentication | Server-verified Cloudflare Access JWTs |
-| Deployment | Docker on Unraid |
+This section is kept as a record of the pre-scaffolding plan. The right-hand column is what the running app uses today.
 
-The original proposal specified Next.js 15 and a PWA plugin. Before scaffolding, check current supported, patched framework versions and dependency compatibility. Offline support is no longer a requirement, so a caching plugin is not assumed necessary.
+| Layer | Proposed before scaffolding | Shipped |
+|---|---|---|
+| Framework | Next.js 15 App Router, patched version to be checked at build time | Next.js **16.3.5** App Router |
+| Language | TypeScript | TypeScript, strict, checked on every build |
+| ORM | Drizzle | Drizzle ORM with versioned SQL migrations in `drizzle/` |
+| Database | SQLite (`better-sqlite3`) | SQLite via `better-sqlite3` in WAL mode |
+| Styling | Tailwind CSS with semantic CSS-variable theme tokens | Tailwind CSS v4 with semantic tokens in `src/app/globals.css` |
+| UI components | shadcn/ui | One shadcn/ui `Button` plus local components |
+| Mobile installation | Web app manifest; no sensitive offline caching | Manifest, no-op service worker and icons; installed on Android, still no offline caching |
+| Authentication | Server-verified Cloudflare Access JWTs | As proposed, plus an explicit development-only mock identity that cannot be enabled in production |
+| Deployment | Docker on Unraid | Multi-stage Node 22 image published to GHCR and run on Unraid, host port 3005 |
+
+Two changes from the original plan are worth recording. The proposal specified Next.js 15; the app was built on 16, where `serverActions` must be nested inside `experimental` in `next.config.ts` — a top-level key is not read and fails the production type check with `TS2353`. Offline support was dropped as a requirement, so no caching plugin was added; the service worker exists only so Chrome offers the install prompt.
 
 ## Development
 
@@ -269,6 +318,8 @@ DATABASE_PATH=./data/demo.sqlite npm run db:migrate
 # Fictional data only; never use this mode for real estate information
 DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev
 ```
+
+In the Arena sandbox, use `npm ci --ignore-scripts`. The plain `npm ci` tries to compile `better-sqlite3` with node-gyp, which fails there, while `--ignore-scripts` uses the prebuilt binary that the package already ships and the unit suite runs normally. There is no Docker daemon in the sandbox, so the container image can only be built by GitHub Actions.
 
 Demo mode always uses `./data/demo.sqlite`, regardless of `DATABASE_PATH`, so fictional records do not mix with the production database. The “Try as Alex/Jamie” control is development-only and lets you test attribution and the activity feed; it is unavailable in production.
 
@@ -284,7 +335,9 @@ NEXT_TELEMETRY_DISABLED=1 npm start
 
 Without valid Cloudflare configuration/authentication, the production page shows a protected-workspace message and no records. Every save action independently enforces the server-side identity guard and validates its input. Record changes and revision entries are committed together; an interaction and all of its new follow-ups are one transaction. Task dates are date-only values, while interaction/audit instants are stored in UTC and displayed in Europe/London. The interaction form accepts the device’s local date/time.
 
-Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, estate finances in GBP as integer pence with CSV exports, the three editable starter checklists, and encrypted backup/restore are also implemented. Docker/Unraid deployment packaging is now present, while the first published-image restore exercise, install metadata, and a full accessibility/security review remain before the app is used for real estate data.
+Project grouping, renaming, organisation-to-project links, and the recoverable bin (soft delete, restore, and explicit permanent deletion with retained history) are now available alongside the three starter projects. Document uploads with reusable links, estate finances in GBP as integer pence with CSV exports, the three editable starter checklists, encrypted backup/restore, Docker/Unraid packaging, the installable PWA and the published-image restore exercise are all done, and the app is in use with real records. Of the checks that this paragraph used to list as outstanding, only the full accessibility and security review remains.
+
+Two habits are worth knowing when working on records. Linking a task that already exists to a contact changes only that task's contact, and only tasks that have no contact yet are offered, so nothing is silently moved off another contact. Creating a contact from inside a task or note dialog saves both in a single database transaction: if the record cannot be saved, the contact is not created either, and no orphan contact is left to tidy up by hand.
 
 ### Browser workflow test
 
@@ -297,9 +350,9 @@ npm run test:e2e
 
 The browser test creates clearly named fictional records in the running demo app. It exercises two separate browser sessions, conflict recovery, resolution warnings, task completion, persistence after reload, and quick capture at phone width. `E2E_BASE_URL` can point to another development preview; `CHROMIUM_EXECUTABLE_PATH` can select an already installed compatible Chromium. Never point this test at a real estate installation.
 
-Run `npm run format:check` for source formatting checks. The unit suite (50 tests) covers shared records, documents, checklist templates, finances, and encrypted backup/restore, including the GBP 500/200/300 reimbursement case, part payments, voids, CSV formula protection, document inclusion, clean restore, and wrong-password failure.
+Run `npm run format:check` for source formatting checks. The unit suite (61 tests) covers shared records, documents, checklist templates, finances, and encrypted backup/restore, including the GBP 500/200/300 reimbursement case, part payments, voids, CSV formula protection, document inclusion, clean restore, and wrong-password failure. It also covers the two controls added in v0.2.5: attaching an existing task to a contact (including a stale version being refused and a task that already belongs elsewhere not being moved) and creating a contact together with the task or note that needs it, in one transaction, with nothing left behind if the record cannot be saved.
 
-Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. Published-image Unraid/Cloudflare, browser accessibility, and clean production restore verification remain outstanding.
+Production dependency audit currently reports no vulnerabilities. The development-only Drizzle migration toolchain has four moderate audit findings through its older esbuild dependencies. These remain an explicit follow-up; do not expose its development tooling as a network service. The published-image Unraid/Cloudflare deployment and the clean production restore are verified; the browser accessibility and security review is still outstanding.
 
 ## Licence
 
