@@ -22,6 +22,17 @@ Read this before the dated sections below. They are kept as a record, and some o
 - **Do not assume a browser is available.** `npm run test:e2e` needs a Chromium that the sandbox cannot download, so plan on unit tests, the type check, the production build and a dev-server smoke test unless a browser is known to be installed.
 - **Session branches are per-session.** Work on whatever branch the current Arena session created, normally `arena/<session-id>-estate-tracking`. Never reuse or switch to a branch name copied from an older session or from an older copy of this document.
 
+### Documentation rule — update both documents before every merge
+
+The user asked for this explicitly after a session inherited documents that described test counts, shipped features and outstanding work inaccurately. Document rot is treated as a defect, not as tidying up.
+
+1. **Before merging anything**, check `README.md` and this plan against what the change actually does, and correct them **in the same pull request**. Merging first and documenting later is what caused the problem.
+2. If behaviour the user can see has changed, both documents are updated: the README (what the app does, for the user) and this plan (what was built, when, and what is still outstanding).
+3. A change with no visible behaviour difference — a refactor, a test-only edit, a dependency bump — needs no wording change, but the pull request says so in one line. Silence is not the same as "nothing to update".
+4. **Move things between "outstanding" and "done"**: never leave a completed item listed as remaining, and never describe planned work as shipped. This is exactly what went wrong in the v0.2.0–v0.2.4 notes.
+5. Counts, versions and file names in the documents must be **re-derived at merge time**, not copied forward: how many tests, the current tag, the actual paths.
+6. When a release is tagged, the current-state table at the top of each document is updated as part of the same release work.
+
 ### Release lessons (expensive to rediscover)
 
 1. **In Next 16, `serverActions` must be nested inside `experimental` in `next.config.ts`.** A top-level `serverActions` key is silently ignored and fails the production type check with `TS2353`, which breaks the image build rather than the dev server. The correct form is `experimental: { serverActions: { bodySizeLimit: "25mb" } }`. A comment in `next.config.ts` records this so it is not re-broken.
@@ -119,6 +130,7 @@ At the v0.2.5 checkpoint, all 61 unit/integration tests, the TypeScript check, P
 - Repository: `dougalbob/estate-tracking`.
 - Work stays on the branch the current Arena session created for itself, normally `arena/<session-id>-estate-tracking`. Session ids differ per task, so never copy a branch name out of this document, an older handover, or an earlier session's pull request: doing so puts a session's work on a branch it does not own. Do not create or switch branches outside the session's own branch, and push only to it.
 - Keep GitHub-visible actions deliberate: review the local gates first, confirm before merging or opening/updating a pull request, merge to `main`, then create a version tag to publish the container.
+- **Update this plan and the README in the same pull request as the change, before merging** — see the documentation rule above. The release procedure is: gates green → documents corrected → pull request reviewed → merge → tag → GitHub Actions publishes.
 - The user prefers milestone commits and pushes, and plain-English explanations of tests and previews. They approve each merge and each version tag before it is pushed, even though earlier releases have gone smoothly.
 
 ## 1. Foundation, identity, and themed shell

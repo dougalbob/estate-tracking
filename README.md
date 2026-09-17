@@ -16,6 +16,8 @@
 
 **Because the installation now holds real records**, every development and demo instruction in this file must be pointed at the isolated demo database, never at `/mnt/user/appdata/estate-organiser`.
 
+**Keeping this file and the plan true.** These two documents are updated **in the same change, immediately before anything is merged** — not afterwards and not in a follow-up. If a change alters behaviour, the README and `docs/IMPLEMENTATION_PLAN.md` are corrected in that pull request, so a merge never leaves the written record describing something the app no longer does. A change with no visible behaviour difference (a refactor, a test-only edit) needs no wording change, but the pull request says so explicitly. This rule exists because the app was described inaccurately in earlier sessions — test counts, what had shipped, and what was still outstanding — and that is worse than no documentation at all.
+
 ## Status and purpose
 
 **Core workflow, checklist templates, production container packaging, and encrypted backup/restore are implemented and in production use.** Organisations, interactions/quick notes, and tasks can be created and edited, with SQLite persistence, multiple linked follow-ups, user attribution, readable revision history, and conflicting-edit protection. A contact screen can attach a task that already exists, and the task or note dialog can create a contact that does not exist yet, so neither has to be done in a second pass. Projects can be created and renamed; organisations can belong to multiple projects while tasks have one optional project. Ordinary deletions go to a recoverable bin with restore and explicit permanent-deletion confirmation; deleting an organisation does not cascade-delete its notes or tasks. The overview shows saved tasks and the other user’s activity. The development preview saves fictional records in an isolated demo database. Documents, estate finances, and the three editable starter checklists are also implemented. See [the implementation plan](docs/IMPLEMENTATION_PLAN.md) for delivery stages and acceptance criteria.
@@ -90,6 +92,7 @@ Quick notes accept an optional title and free-text detail, with automatic time a
 
 - Tasks may stand alone, optionally link to an organisation and source interaction, and have one optional project.
 - Assign to either user or leave unassigned.
+- **A linked document's name is tappable.** Where a task has documents attached, its row lists each one by friendly name; tapping a name opens it in the in-app viewer (images inline, PDFs in a frame, with a Download button inside), so a certificate or statement can be read without leaving the list. The same names behave the same way inside the task's edit dialog.
 - States: **To do, In progress, Waiting, Done, Cancelled**.
 - Distinguish a **due date** (action needed), **follow-up date** (check/chase), and **confirmed deadline** (a firm date entered by a user).
 - Waiting tasks resurface on their follow-up date.
@@ -245,7 +248,7 @@ These steps deliberately explain why each file is used. Do not put real credenti
 
 ### Release and update flow
 
-After review, merge the change to `main`, then create and push a version tag such as `v0.2.5`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. The package is set to **Public** in GitHub → Packages → `estate-organiser` → Package settings, because Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
+Before anything is merged, this file and `docs/IMPLEMENTATION_PLAN.md` are corrected to match the change (see **Keeping this file and the plan true** above). Then merge the change to `main`, then create and push a version tag such as `v0.2.5`. That tag triggers GitHub Actions to build the image and publish the version, `latest`, and SHA tags to GHCR. The package is set to **Public** in GitHub → Packages → `estate-organiser` → Package settings, because Unraid is intentionally configured to pull anonymously and no registry credentials belong on the server. In Unraid, use Docker → the container's menu → Force Update to pull the new `latest` image. The persistent `/data` mapping keeps the database, documents, and `estate.env` across the replacement.
 
 The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available, so GitHub Actions is the only builder: the first image was published at v0.2.0 and every release since, up to v0.2.5, has been built there.
 
