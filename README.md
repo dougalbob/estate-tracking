@@ -209,6 +209,28 @@ After review, merge the deployment change to `main`, then create and push a vers
 
 The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available; the first build is the GitHub Actions run.
 
+## Installable PWA (Android)
+
+The app ships a web app manifest (`src/app/manifest.ts`, served at `/manifest.webmanifest`), a no-op service worker (`public/sw.js`, registered from `src/app/layout.tsx`), and two PNG icons plus an Apple touch icon in `public/`. It is installable on Android Chrome as a standalone app. There is **no offline support** — the service worker only takes control so Chrome shows the install prompt; it performs no caching and adds no `fetch` handling, so every request still goes through Cloudflare Access.
+
+### Installing
+
+On Android Chrome, visit the site while signed in, open the browser menu, and choose **Install app** (or **Add to Home screen**). The app then opens on its own, in standalone mode, themed with the app's green/cream palette.
+
+### Cloudflare Access changes required
+
+Cloudflare Access sits in front of every path, including the static PWA assets. Chrome fetches the manifest and icons **before** sign-in when it evaluates installability, so those files must be reachable without an Access login. Add a **Bypass** policy (not Allow — Bypass means no authentication is required for these static assets) to the existing Access application, scoped to exactly these paths:
+
+- `/manifest.webmanifest`
+- `/sw.js`
+- `/icon-192.png`
+- `/icon-512.png`
+- `/apple-touch-icon.png` (if present)
+
+Every other path, including `/` and `/api/*`, stays behind the existing Access policy. The lockout screen in `src/app/page.tsx` means that even if someone hits `/` without auth, they get the “Protected workspace” page with no data — there is **no separate public landing page**, and this is intentional. Adding the Bypass rules above only exposes the app name and icons, nothing else.
+
+> Important: on Unraid you must **Force Update** to pull the new image after a release. And the Cloudflare Access Bypass policy must be added **before** users can install the PWA on Android — otherwise the install banner will not appear, because the manifest cannot be fetched pre-auth.
+
 ## Proposed technology
 
 | Layer | Direction |
