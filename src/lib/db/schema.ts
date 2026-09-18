@@ -39,6 +39,7 @@ export const projects = sqliteTable("projects", {
 export const interactions = sqliteTable("interactions", {
   id: text("id").primaryKey(),
   organisationId: text("organisation_id").references(() => organisations.id),
+  projectId: text("project_id").references(() => projects.id),
   title: text("title").notNull(),
   detail: text("detail").notNull(),
   kind: text("kind").notNull(),

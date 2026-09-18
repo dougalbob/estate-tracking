@@ -17,6 +17,11 @@ import {
   Pencil,
   History,
   Phone,
+  Mail,
+  Globe,
+  StickyNote,
+  ScrollText,
+  ArrowUpDown,
   Copy,
   Check,
   Trash2,
@@ -132,6 +137,19 @@ const formatDate = (value: string | Date) =>
     dateStyle: "medium",
     timeZone: "UTC",
   }).format(new Date(value));
+/**
+ * One icon per interaction kind for the Event log rows. The icon is never
+ * the only cue: every row also carries the kind as a text badge.
+ */
+const eventKindIcons = {
+  call: Phone,
+  email: Mail,
+  letter: FileText,
+  web_form: Globe,
+  note: StickyNote,
+} as const;
+const eventKindIcon = (kind: string) =>
+  eventKindIcons[kind as keyof typeof eventKindIcons] ?? StickyNote;
 /**
  * How many documents are attached. Deliberately a chip rather than a few words
  * in a long line of metadata: a receipt attached to a payment is easy to miss,
@@ -300,6 +318,12 @@ export function Workspace({
     [owner, setOwner] = useState("all"),
     [docQuery, setDocQuery] = useState(""),
     [docCategory, setDocCategory] = useState("all"),
+    [eventQuery, setEventQuery] = useState(""),
+    [eventOrg, setEventOrg] = useState("all"),
+    [eventProject, setEventProject] = useState("all"),
+    [eventKind, setEventKind] = useState("all"),
+    [eventRecorder, setEventRecorder] = useState("all"),
+    [eventOrder, setEventOrder] = useState("newest"),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
@@ -504,7 +528,21 @@ export function Workspace({
     setHistory(null);
     setQuery("");
     setDocQuery("");
+    setEventQuery("");
+    setEventOrg("all");
+    setEventProject("all");
+    setEventKind("all");
+    setEventRecorder("all");
+    setEventOrder("newest");
     setError("");
+  }
+  function resetEventFilters() {
+    setEventQuery("");
+    setEventOrg("all");
+    setEventProject("all");
+    setEventKind("all");
+    setEventRecorder("all");
+    setEventOrder("newest");
   }
   function edit(kind: Editor["kind"], id?: string, organisationId?: string) {
     setEditor({ kind, id, organisationId });
@@ -1057,6 +1095,73 @@ export function Workspace({
     );
   }
 
+  function eventRow(event: Snapshot["interactions"][number]) {
+    const contact = liveOrganisation(event.organisationId);
+    const KindIcon = eventKindIcon(event.kind);
+    return (
+      <div className="task-row" key={event.id}>
+        <span className="task-icon">
+          <KindIcon size={18} />
+        </span>
+        <div className="task-copy">
+          <button
+            className="record-title"
+            onClick={() => edit("interaction", event.id)}
+          >
+            {event.title}
+          </button>
+          <p>
+            <span className="badge">{label(event.kind)}</span>
+            {" · "}
+            {contact ? (
+              <button
+                type="button"
+                className="task-org"
+                aria-label={`Contact details for ${contact.name}`}
+                title={`Contact details for ${contact.name}`}
+                onClick={() => setContactQuickView(contact.id)}
+              >
+                <Users size={11} aria-hidden />
+                {contact.name}
+              </button>
+            ) : (
+              orgName(event.organisationId)
+            )}
+            {" · "}
+            {event.projectId
+              ? (projectName(event.projectId) ?? "Linked project")
+              : "No project"}
+          </p>
+          <p>
+            <small>
+              {formatTime(event.occurredAt)} · Recorded by{" "}
+              {names(event.createdBy)}
+            </small>
+          </p>
+        </div>
+        <div className="row-actions">
+          <button
+            className="subtle-button"
+            aria-label={`Edit event ${event.title}`}
+            onClick={() => edit("interaction", event.id)}
+          >
+            <Pencil size={14} />
+            Edit
+          </button>
+          {historyButton("interaction", event.id)}
+          <button
+            className="subtle-button"
+            aria-label={`Delete event ${event.title}`}
+            onClick={() => handleDelete("interaction", event.id, event.version)}
+          >
+            <Trash2 size={14} />
+            Bin
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const title =
     view === "overview"
       ? "Your overview"
@@ -1070,13 +1175,15 @@ export function Workspace({
               ? "Your projects"
               : view === "documents"
                 ? "Documents"
-                : view === "bin"
-                  ? "Recoverable bin"
-                  : view === "finances"
-                    ? "Estate finances"
-                    : view === "backup"
-                      ? "Backup & restore"
-                      : "Documents";
+                : view === "events"
+                  ? "Event log"
+                  : view === "bin"
+                    ? "Recoverable bin"
+                    : view === "finances"
+                      ? "Estate finances"
+                      : view === "backup"
+                        ? "Backup & restore"
+                        : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
@@ -1146,6 +1253,45 @@ export function Workspace({
     return matchesQuery && matchesCategory;
   });
 
+  const eventFiltersDefault =
+    eventQuery.trim() === "" &&
+    eventOrg === "all" &&
+    eventProject === "all" &&
+    eventKind === "all" &&
+    eventRecorder === "all" &&
+    eventOrder === "newest";
+  const filteredEvents = [...data.interactions]
+    .filter((event) => {
+      const words = eventQuery
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      const haystack = `${event.title} ${event.detail}`.toLowerCase();
+      if (!words.every((word) => haystack.includes(word))) return false;
+      if (eventOrg === "none") {
+        if (event.organisationId) return false;
+      } else if (eventOrg !== "all" && event.organisationId !== eventOrg) {
+        return false;
+      }
+      if (eventProject === "none") {
+        if (event.projectId) return false;
+      } else if (eventProject !== "all" && event.projectId !== eventProject) {
+        return false;
+      }
+      if (eventKind !== "all" && event.kind !== eventKind) return false;
+      if (eventRecorder !== "all" && event.createdBy !== eventRecorder)
+        return false;
+      return true;
+    })
+    .sort((a, b) =>
+      eventOrder === "newest"
+        ? b.occurredAt.localeCompare(a.occurredAt) ||
+          b.createdAt.localeCompare(a.createdAt)
+        : a.occurredAt.localeCompare(b.occurredAt) ||
+          a.createdAt.localeCompare(b.createdAt),
+    );
+
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -1166,6 +1312,7 @@ export function Workspace({
           {[
             { id: "overview", title: "Overview", icon: Home },
             ...sections,
+            { id: "events", title: "Event log", icon: ScrollText },
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
             { id: "finances", title: "Estate finances", icon: Wallet },
@@ -1238,11 +1385,13 @@ export function Workspace({
                     ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
                     : view === "documents"
                       ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
-                      : view === "finances"
-                        ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
-                        : view === "backup"
-                          ? "Create an encrypted recovery copy, or validate one before restoring it."
-                          : "Everything you need, shared between the two of you."}
+                      : view === "events"
+                        ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
+                        : view === "finances"
+                          ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
+                          : view === "backup"
+                            ? "Create an encrypted recovery copy, or validate one before restoring it."
+                            : "Everything you need, shared between the two of you."}
               </p>
             </div>
             <div className="row-actions">
@@ -1959,6 +2108,147 @@ export function Workspace({
               </section>
             </>
           )}
+          {view === "events" && (
+            <>
+              <div className="list-toolbar" style={{ flexWrap: "wrap" }}>
+                <label className="search-label" style={{ maxWidth: "22ch" }}>
+                  Search the event log
+                  <input
+                    type="search"
+                    placeholder="Title or detail…"
+                    value={eventQuery}
+                    onChange={(e) => setEventQuery(e.target.value)}
+                  />
+                </label>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    alignItems: "flex-end",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setEventOrder(
+                        eventOrder === "newest" ? "oldest" : "newest",
+                      )
+                    }
+                    title={
+                      eventOrder === "newest"
+                        ? "Order: most recent first — activate to show oldest first"
+                        : "Order: oldest first — activate to show most recent first"
+                    }
+                    aria-label={
+                      eventOrder === "newest"
+                        ? "Order: most recent first — activate to show oldest first"
+                        : "Order: oldest first — activate to show most recent first"
+                    }
+                  >
+                    <ArrowUpDown size={16} aria-hidden />
+                    {eventOrder === "newest" ? "Z>A" : "A>Z"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={resetEventFilters}
+                    disabled={eventFiltersDefault}
+                  >
+                    Reset filters
+                  </Button>
+                  <Button onClick={() => edit("interaction")}>
+                    <Plus size={16} />
+                    Log interaction
+                  </Button>
+                </div>
+              </div>
+              <div className="filter-bar" style={{ flexWrap: "wrap" }}>
+                <label style={{ maxWidth: "32ch" }}>
+                  Organisation
+                  <select
+                    value={eventOrg}
+                    onChange={(e) => setEventOrg(e.target.value)}
+                  >
+                    <option value="all">All organisations</option>
+                    <option value="none">No organisation</option>
+                    {data.organisations.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ maxWidth: "29ch" }}>
+                  Project
+                  <select
+                    value={eventProject}
+                    onChange={(e) => setEventProject(e.target.value)}
+                  >
+                    <option value="all">All projects</option>
+                    <option value="none">No project</option>
+                    {data.projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ maxWidth: "16ch", minWidth: 0 }}>
+                  Type
+                  <select
+                    value={eventKind}
+                    onChange={(e) => setEventKind(e.target.value)}
+                  >
+                    <option value="all">All types</option>
+                    {["call", "email", "letter", "web_form", "note"].map(
+                      (k) => (
+                        <option key={k} value={k}>
+                          {label(k)}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+                <label style={{ maxWidth: "15ch", minWidth: 0 }}>
+                  Recorded by
+                  <select
+                    value={eventRecorder}
+                    onChange={(e) => setEventRecorder(e.target.value)}
+                  >
+                    <option value="all">Everyone</option>
+                    {users.map((u) => (
+                      <option key={u} value={u}>
+                        {names(u)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <section className="panel">
+                {filteredEvents.map(eventRow)}
+                {!filteredEvents.length && (
+                  <div className="empty-state">
+                    <ScrollText size={26} />
+                    <h2>
+                      {data.interactions.length
+                        ? "No matching events"
+                        : "Your event log is empty"}
+                    </h2>
+                    <p>
+                      {data.interactions.length
+                        ? "Adjust your search or filters."
+                        : "Record a call, email, letter, web form or quick note and it will appear here, most recent first."}
+                    </p>
+                    {!data.interactions.length && (
+                      <Button onClick={() => edit("interaction")}>
+                        Log your first interaction
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
           {view === "bin" && (
             <>
               <div className="panel">
@@ -2532,7 +2822,11 @@ export function Workspace({
                 setContactQuickView(null);
               }}
               closeLabel={
-                view === "documents" ? "Back to documents" : "Back to the task"
+                view === "documents"
+                  ? "Back to documents"
+                  : view === "events"
+                    ? "Back to the event log"
+                    : "Back to the task"
               }
             />
           ) : null;
@@ -3433,8 +3727,8 @@ function DocumentLinkPicker({
 
 /**
  * The four contact fields — Main contact, Phone numbers, Email and Account /
- * reference — with tap-to-dial and copy. The quick popup on a task or document
- * row and the contact screen itself both render this one component, so the
+ * reference — with tap-to-dial and copy. The quick popup on a task, document
+ * or event row and the contact screen itself both render this one component, so the
  * same information reads the same in both places: same labels, same order,
  * "Not added" for an empty field, and "Copied" only when the browser
  * confirmed the write.
@@ -3561,7 +3855,7 @@ function ContactFieldList({
 }
 
 /**
- * The small popup the contact name opens on a task or document row: the
+ * The small popup the contact name opens on a task, document or event row: the
  * contact's name and status, then the shared field list, then a way back and
  * a way on to the full contact. It opens over the list rather than navigating
  * away, so the row you were reading stays underneath.

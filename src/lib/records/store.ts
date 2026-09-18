@@ -1005,6 +1005,10 @@ export function recordStore(
               .set({ projectId: null })
               .where(eq(tasks.projectId, id))
               .run();
+            db.update(interactions)
+              .set({ projectId: null })
+              .where(eq(interactions.projectId, id))
+              .run();
             db.delete(organisationProjects)
               .where(eq(organisationProjects.projectId, id))
               .run();
@@ -1167,6 +1171,22 @@ export function recordStore(
           )
             throw new RecordError(
               "The linked organisation is in the bin. Restore it first, or remove the link.",
+            );
+          if (
+            before.projectId &&
+            !db
+              .select()
+              .from(projects)
+              .where(
+                and(
+                  eq(projects.id, before.projectId),
+                  isNull(projects.deletedAt),
+                ),
+              )
+              .get()
+          )
+            throw new RecordError(
+              "The linked project is in the bin. Restore it first.",
             );
           const after = {
             ...before,

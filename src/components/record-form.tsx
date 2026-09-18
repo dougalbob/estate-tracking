@@ -292,6 +292,7 @@ export function RecordForm({
       input = {
         ...base,
         organisationId: chosenOrganisationId,
+        projectId: nullable("projectId"),
         title: get("title"),
         detail: get("detail"),
         kind: get("kind"),
@@ -986,6 +987,17 @@ export function RecordForm({
                       />
                     </label>
                   </div>
+                  <label>
+                    Project <small>Optional — like tasks, one at most</small>
+                    <select name="projectId" defaultValue={value("projectId")}>
+                      <option value="">No project</option>
+                      {data.projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label>
                     Title <small>Optional for a quick note</small>
                     <input
