@@ -266,6 +266,7 @@ export function RecordForm({
           .filter(Boolean),
         email: nullable("email"),
         reference: nullable("reference"),
+        mapUrl: nullable("mapUrl"),
         notes: get("notes"),
         status: get("status"),
         confirmResolve: form.get("confirmResolve") === "on",
@@ -493,6 +494,15 @@ export function RecordForm({
               <label>
                 Account / reference
                 <input name="reference" defaultValue={value("reference")} />
+              </label>
+              <label>
+                Map link <small>Optional – paste a Google Maps link</small>
+                <input
+                  type="url"
+                  name="mapUrl"
+                  maxLength={2000}
+                  defaultValue={value("mapUrl")}
+                />
               </label>
               <label>
                 Notes

@@ -19,6 +19,7 @@ import {
   Phone,
   Mail,
   Globe,
+  MapPin,
   StickyNote,
   ScrollText,
   ArrowUpDown,
@@ -889,16 +890,28 @@ export function Workspace({
   }
   function noteCard(note: Snapshot["interactions"][number]) {
     const docs = getLinkedDocuments({ interactionId: note.id });
+    /**
+     * The icon the Event log row carries for this kind, from the same map and in
+     * the same box, so a call looks like a call in both lists. The kind in words
+     * stays in the line under the title: the icon is never the only cue.
+     */
+    const KindIcon = eventKindIcon(note.kind);
     return (
       <article className="panel note-card" key={note.id}>
         <div className="section-heading">
-          <div>
-            <span className="badge">{label(note.kind)}</span>
-            <h2>{note.title}</h2>
-            <p>
-              {formatTime(note.occurredAt)} · {names(note.createdBy)} ·{" "}
-              {orgName(note.organisationId)}
-            </p>
+          <div className="note-head">
+            <span className="task-icon">
+              <KindIcon size={18} />
+            </span>
+            <div>
+              <h2>{note.title}</h2>
+              <p>
+                <span className="badge">{label(note.kind)}</span>
+                {" · "}
+                {formatTime(note.occurredAt)} · {names(note.createdBy)} ·{" "}
+                {orgName(note.organisationId)}
+              </p>
+            </div>
           </div>
           <div className="row-actions">
             <button
@@ -1657,7 +1670,15 @@ export function Workspace({
                 </div>
                 <ContactFieldList contact={organisation} />
                 {organisation.notes && (
-                  <p className="note-detail">{organisation.notes}</p>
+                  <>
+                    <div
+                      className="section-heading"
+                      style={{ padding: "0 24px 6px" }}
+                    >
+                      <h3>Notes</h3>
+                    </div>
+                    <p className="note-detail">{organisation.notes}</p>
+                  </>
                 )}
                 {organisationProjectIds(organisation.id).length > 0 && (
                   <div
@@ -3726,12 +3747,12 @@ function DocumentLinkPicker({
 }
 
 /**
- * The four contact fields — Main contact, Phone numbers, Email and Account /
- * reference — with tap-to-dial and copy. The quick popup on a task, document
- * or event row and the contact screen itself both render this one component, so the
- * same information reads the same in both places: same labels, same order,
- * "Not added" for an empty field, and "Copied" only when the browser
- * confirmed the write.
+ * The five contact fields — Main contact, Phone numbers, Email, Account /
+ * reference and Map link — with tap-to-dial, tap-to-open and copy. The quick
+ * popup on a task, document or event row and the contact screen itself both
+ * render this one component, so the same information reads the same in both
+ * places: same labels, same order, "Not added" for an empty field, and
+ * "Copied" only when the browser confirmed the write.
  *
  * Everything here is already in the browser in `data.organisations`, so it
  * costs no request, no server action and no migration. Notes are deliberately
@@ -3795,7 +3816,16 @@ function ContactFieldList({
     );
   }
   const numbers = contact.phoneNumbers.map((n) => n.trim()).filter(Boolean);
-  const anyDialable = numbers.some((n) => telHref(n));
+  /**
+   * Only ever a reply to the copy the user just tapped: confirmed, or refused
+   * with a way round it. No idle help line — a tappable number explains
+   * itself, and a line of text where nothing is happening is noise.
+   */
+  const copyState = clipboardBlocked
+    ? "Your browser did not let the app copy. Select the text and copy it yourself."
+    : copied
+      ? "Copied – paste it wherever you need it."
+      : null;
 
   return (
     <div className="form-fields">
@@ -3815,7 +3845,7 @@ function ContactFieldList({
                   >
                     {href ? (
                       <a
-                        className="contact-call"
+                        className="contact-link"
                         href={href}
                         aria-label={`Call ${number}`}
                       >
@@ -3840,16 +3870,33 @@ function ContactFieldList({
         </div>
         {fieldRow("email", "Email", contact.email)}
         {fieldRow("reference", "Account / reference", contact.reference)}
+        <div className="contact-quick-item">
+          <dt>Map link</dt>
+          <dd>
+            {canCopy(contact.mapUrl) ? (
+              <>
+                <a
+                  className="contact-link"
+                  href={contact.mapUrl as string}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <MapPin size={13} aria-hidden />
+                  Open map
+                </a>
+                {copyButton("map", contact.mapUrl as string, "map link")}
+              </>
+            ) : (
+              <span className="contact-quick-empty">Not added</span>
+            )}
+          </dd>
+        </div>
       </dl>
-      <p className="form-help copy-state" role="status">
-        {clipboardBlocked
-          ? "Your browser did not let the app copy. Select the text and copy it yourself."
-          : copied
-            ? "Copied – paste it wherever you need it."
-            : anyDialable
-              ? "Tapping the number starts a call on this device."
-              : "Nothing here is dialable as typed – copy it instead."}
-      </p>
+      {copyState && (
+        <p className="form-help copy-state" role="status">
+          {copyState}
+        </p>
+      )}
     </div>
   );
 }

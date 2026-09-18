@@ -5,7 +5,11 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../src/lib/db/schema";
 import { recordStore, RecordError } from "../src/lib/records/store";
-import { attentionDate, londonToday } from "../src/lib/records/validation";
+import {
+  attentionDate,
+  londonToday,
+  organisationInput,
+} from "../src/lib/records/validation";
 const users = ["alex@example.invalid", "jamie@example.invalid"];
 const org = {
   name: "Bank1",
@@ -872,6 +876,122 @@ test("restoring an interaction is refused while its project is in the bin", () =
     assert.equal(
       store.snapshot().interactions.find((i) => i.id === id)?.projectId,
       projId,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+// v0.2.9: the map link is typed in by hand, so it is only ever an http(s)
+// address. Anything else is refused with a plain message rather than stored as
+// a link that would not open when tapped.
+test("contact map link accepts a web address and refuses anything else", () => {
+  const map = "https://maps.google.com/?q=1+Example+Street";
+  const good = organisationInput.safeParse({ ...org, mapUrl: map });
+  assert.equal(good.success, true);
+  if (good.success) assert.equal(good.data.mapUrl, map);
+  // http is allowed as well: not every map link is https.
+  assert.equal(
+    organisationInput.safeParse({ ...org, mapUrl: "http://example.invalid/m" })
+      .success,
+    true,
+  );
+  // Blank, null and nothing at all all mean no map link. The last one is a
+  // contact saved before v0.2.9, whose payload has no mapUrl key.
+  for (const blank of ["", null, undefined]) {
+    const parsed = organisationInput.safeParse({ ...org, mapUrl: blank });
+    assert.equal(parsed.success, true);
+    if (parsed.success) assert.equal(parsed.data.mapUrl, null);
+  }
+  const legacy = organisationInput.safeParse(org);
+  assert.equal(legacy.success, true);
+  if (legacy.success) assert.equal(legacy.data.mapUrl, null);
+  for (const bad of [
+    "maps.google.com/?q=1+Example+Street",
+    "1 Example Street",
+    "javascript:alert(1)",
+    "ftp://example.invalid/map",
+    "https://",
+  ]) {
+    const refused = organisationInput.safeParse({ ...org, mapUrl: bad });
+    assert.equal(refused.success, false, `${bad} must be refused`);
+    if (!refused.success)
+      assert.equal(
+        refused.error.issues[0].message,
+        "Enter a link that starts with http:// or https://",
+      );
+  }
+  // A pasted link can be long, but not absurdly so.
+  assert.equal(
+    organisationInput.safeParse({
+      ...org,
+      mapUrl: `https://example.invalid/${"a".repeat(2000)}`,
+    }).success,
+    false,
+  );
+});
+
+test("contact map link: save, change and clear with history", () => {
+  const { sqlite, store } = setup();
+  try {
+    const map = "https://maps.google.com/?q=1+Example+Street";
+    const withMap = store.saveOrganisation({ ...org, mapUrl: map }, users[0]);
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === withMap)?.mapUrl,
+      map,
+    );
+    // A contact saved without one, then given one from Edit, then cleared again
+    const id = store.saveOrganisation(org, users[0]);
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === id)?.mapUrl,
+      null,
+    );
+    store.saveOrganisation({ ...org, id, version: 1, mapUrl: map }, users[0]);
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === id)?.mapUrl,
+      map,
+    );
+    const other = "https://maps.google.com/?q=2+Example+Street";
+    store.saveOrganisation({ ...org, id, version: 2, mapUrl: other }, users[1]);
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === id)?.mapUrl,
+      other,
+    );
+    store.saveOrganisation({ ...org, id, version: 3, mapUrl: null }, users[1]);
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === id)?.mapUrl,
+      null,
+    );
+    // A refused link is refused before anything is written, so the record and
+    // its version are untouched.
+    assert.throws(() =>
+      store.saveOrganisation(
+        { ...org, id, version: 4, mapUrl: "not a link" },
+        users[0],
+      ),
+    );
+    assert.equal(
+      store.snapshot().organisations.find((o) => o.id === id)?.version,
+      4,
+    );
+    // The map link is part of the readable history, like every other field.
+    // Found by content rather than by position: the history is newest-first and
+    // saves within the same millisecond would make the order unstable.
+    const revisions = store
+      .snapshot()
+      .revisions.filter(
+        (r) => r.entity === "organisation" && r.entityId === id,
+      );
+    assert.equal(revisions.length, 4);
+    const updated = revisions.filter((r) => r.action === "updated");
+    assert.equal(updated.length, 3);
+    assert.ok(
+      updated.some((r) => r.before?.mapUrl == null && r.after.mapUrl === map),
+    );
+    assert.ok(
+      updated.some((r) => r.before?.mapUrl === map && r.after.mapUrl === other),
+    );
+    assert.ok(
+      updated.some((r) => r.before?.mapUrl === other && r.after.mapUrl == null),
     );
   } finally {
     sqlite.close();

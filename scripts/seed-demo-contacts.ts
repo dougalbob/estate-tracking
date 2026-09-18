@@ -3,10 +3,11 @@
  * only – never point this at a real estate database.
  *
  * The demo needs contacts with something in the popup: a main contact name,
- * phone numbers typed in more than one format, an email and an account
- * reference. Two of the three deliberately show the other cases — one with a
- * couple of fields empty, one with almost nothing filled in, so "Not added" and
- * the copy-only behaviour can be seen without inventing an unrealistic record.
+ * phone numbers typed in more than one format, an email, an account reference
+ * and a map link. Two of the three deliberately show the other cases — one with
+ * a couple of fields empty, one with almost nothing filled in, so "Not added"
+ * and the copy-only behaviour can be seen without inventing an unrealistic
+ * record.
  */
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -35,6 +36,7 @@ type DemoContact = {
   phoneNumbers: string[];
   email: string | null;
   reference: string | null;
+  mapUrl: string | null;
   notes: string;
   status: "not_contacted" | "in_progress" | "awaiting_response" | "resolved";
   projectIds: string[];
@@ -56,6 +58,9 @@ const contacts: DemoContact[] = [
     phoneNumbers: ["0121 000 0000", "+44 121 000 0000"],
     email: "estate.accounts@example.invalid",
     reference: "ACC-8891024",
+    // The documented Google Maps link format, pointed at a fictional street.
+    mapUrl:
+      "https://www.google.com/maps/search/?api=1&query=1+Example+Street+Birmingham",
     notes: "Fictional bank contact with every field filled in.",
     status: "awaiting_response",
     projectIds: ["probate"],
@@ -75,6 +80,7 @@ const contacts: DemoContact[] = [
     phoneNumbers: ["(0121) 000-0000"],
     email: null,
     reference: null,
+    mapUrl: null,
     notes: "Fictional funeral director, quoted by phone only.",
     status: "in_progress",
     projectIds: ["funeral"],
@@ -93,6 +99,7 @@ const contacts: DemoContact[] = [
     phoneNumbers: [],
     email: null,
     reference: null,
+    mapUrl: null,
     notes:
       "Fictional contact with nothing filled in yet, to check empty fields.",
     status: "not_contacted",
@@ -119,6 +126,7 @@ for (const contact of contacts) {
       phoneNumbers: contact.phoneNumbers,
       email: contact.email,
       reference: contact.reference,
+      mapUrl: contact.mapUrl,
       notes: contact.notes,
       status: contact.status,
       projectIds: contact.projectIds,

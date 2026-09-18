@@ -7,6 +7,7 @@ const captions: Record<string, string> = {
   phoneNumbers: "Phone numbers",
   email: "Email",
   reference: "Account / reference",
+  mapUrl: "Map link",
   notes: "Notes",
   title: "Title",
   detail: "Detail",
