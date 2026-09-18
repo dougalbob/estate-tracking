@@ -14,6 +14,12 @@ export const organisations = sqliteTable("organisations", {
     .default([]),
   email: text("email"),
   reference: text("reference"),
+  /**
+   * A link to this contact on a map, typed in by hand. Never derived from
+   * anything else on the record: there is no address field, and guessing a
+   * location from the notes would be a guess.
+   */
+  mapUrl: text("map_url"),
   notes: text("notes"),
   status: text("status", {
     enum: ["not_contacted", "in_progress", "awaiting_response", "resolved"],

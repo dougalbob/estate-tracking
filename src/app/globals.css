@@ -810,9 +810,20 @@ label.checkbox-label {
 .note-card {
   margin-bottom: 18px;
 }
-.note-card h2 {
-  margin-top: 9px;
+/* The kind icon sits in the same box the Event log uses, to the left of the
+   note's title, so a call looks like a call in both lists. The kind in words
+   stays in the line under the title: the icon is never the only cue. */
+.note-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
 }
+.note-head > div {
+  min-width: 0;
+}
+/* The title used to sit under a kind chip; the icon box now leads the row, so
+   the title starts level with the top of the icon rather than below it. */
 .note-detail {
   padding: 0 24px 24px;
   white-space: pre-wrap;
@@ -1206,8 +1217,9 @@ summary {
   gap: 8px;
   flex-wrap: wrap;
 }
-/* The number is the call, not a button beside it — so it reads as a link. */
-.contact-call {
+/* The value is the action, not a button beside it — the number to dial, the
+   map to open — so it reads as a link. */
+.contact-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1220,10 +1232,10 @@ summary {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.contact-call:hover {
+.contact-link:hover {
   background: var(--accent);
 }
-.contact-call:focus-visible {
+.contact-link:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }

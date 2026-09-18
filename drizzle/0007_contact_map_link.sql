@@ -1,0 +1,1 @@
+ALTER TABLE `organisations` ADD `map_url` text;

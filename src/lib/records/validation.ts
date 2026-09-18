@@ -28,6 +28,27 @@ const optionalText = z
   .max(500)
   .nullable()
   .transform((v) => v || null);
+/**
+ * A web address typed in by hand, for the map link on a contact. Optional, and
+ * only ever http or https: the link is opened in a new tab, so anything else
+ * has no business being stored.
+ */
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(2000, "That link is too long")
+  .refine((v) => {
+    if (v === "") return true;
+    if (!/^https?:\/\//i.test(v)) return false;
+    try {
+      new URL(v);
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Enter a link that starts with http:// or https://")
+  .nullable()
+  .transform((v) => v || null);
 const date = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -51,6 +72,9 @@ export const organisationInput = z.object({
     .union([z.email(), z.literal(""), z.null()])
     .transform((v) => v || null),
   reference: optionalText,
+  // Optional so contacts saved before v0.2.9 (and their tests and seeds) still
+  // validate: missing means no map link, exactly like a stored null.
+  mapUrl: optionalUrl.default(null),
   notes: z.string().max(20000).nullable(),
   status: z.enum(organisationStatuses),
   confirmResolve: z.boolean().optional(),
