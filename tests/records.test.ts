@@ -695,3 +695,185 @@ test("documents: deleting linked record does not delete document, only unlinks",
     sqlite.close();
   }
 });
+
+test("interactions: project save, change and clear with history", () => {
+  const { sqlite, store } = setup();
+  try {
+    const p1 = store.saveProject({ name: "Project A" }, users[0]);
+    const p2 = store.saveProject({ name: "Project B" }, users[0]);
+    const note = {
+      organisationId: null,
+      title: "Called about the paperwork",
+      detail: "Promised to send copies",
+      kind: "call",
+      occurredAt: new Date().toISOString(),
+      followUps: [],
+    };
+    // Records saved without a project land under No project
+    const id = store.saveInteraction(note, users[0]);
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      null,
+    );
+    // File it, move it, then clear it again from Edit
+    store.saveInteraction({ ...note, id, version: 1, projectId: p1 }, users[0]);
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      p1,
+    );
+    store.saveInteraction({ ...note, id, version: 2, projectId: p2 }, users[1]);
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      p2,
+    );
+    store.saveInteraction(
+      { ...note, id, version: 3, projectId: null },
+      users[1],
+    );
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      null,
+    );
+    // The project link is part of the readable history, like tasks. Found
+    // by content rather than by position: the history is newest-first and
+    // saves within the same millisecond would make the order unstable.
+    const revisions = store
+      .snapshot()
+      .revisions.filter((r) => r.entity === "interaction" && r.entityId === id);
+    assert.equal(revisions.length, 4);
+    const updated = revisions.filter((r) => r.action === "updated");
+    assert.equal(updated.length, 3);
+    assert.ok(
+      updated.some(
+        (r) => r.before?.projectId == null && r.after.projectId === p1,
+      ),
+    );
+    assert.ok(
+      updated.some(
+        (r) => r.before?.projectId === p1 && r.after.projectId === p2,
+      ),
+    );
+    assert.ok(
+      updated.some(
+        (r) => r.before?.projectId === p2 && r.after.projectId == null,
+      ),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("interactions: unknown or binned projects are refused on save", () => {
+  const { sqlite, store } = setup();
+  try {
+    const note = {
+      organisationId: null,
+      title: "Called about the paperwork",
+      detail: "Promised to send copies",
+      kind: "call",
+      occurredAt: new Date().toISOString(),
+      followUps: [],
+    };
+    assert.throws(
+      () => store.saveInteraction({ ...note, projectId: "missing" }, users[0]),
+      (e: unknown) =>
+        e instanceof RecordError && e.message === "Project no longer available",
+    );
+    const projId = store.saveProject({ name: "Temp" }, users[0]);
+    store.deleteRecord("project", projId, 1, users[0], false);
+    assert.throws(
+      () => store.saveInteraction({ ...note, projectId: projId }, users[0]),
+      (e: unknown) =>
+        e instanceof RecordError && e.message === "Project no longer available",
+    );
+    // Same rule when filing an existing interaction from Edit
+    const id = store.saveInteraction(note, users[0]);
+    assert.throws(
+      () =>
+        store.saveInteraction(
+          { ...note, id, version: 1, projectId: projId },
+          users[0],
+        ),
+      (e: unknown) =>
+        e instanceof RecordError && e.message === "Project no longer available",
+    );
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      null,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("project deletion keeps interactions while binned, unlinks on permanent deletion", () => {
+  const { sqlite, store } = setup();
+  try {
+    const projId = store.saveProject({ name: "House Clearance" }, users[0]);
+    const id = store.saveInteraction(
+      {
+        organisationId: null,
+        title: "Called the auction house",
+        detail: "Valuation visit booked",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        projectId: projId,
+        followUps: [],
+      },
+      users[0],
+    );
+    store.deleteRecord("project", projId, 1, users[0], false);
+    let snap = store.snapshot();
+    assert.equal(
+      snap.interactions.find((i) => i.id === id)?.projectId,
+      projId,
+      "interaction keeps projectId after soft delete",
+    );
+    store.deleteRecord("project", projId, 2, users[0], true);
+    snap = store.snapshot();
+    assert.equal(
+      snap.interactions.find((i) => i.id === id)?.projectId,
+      null,
+      "interaction unlinked after permanent project deletion",
+    );
+    assert.equal(snap.interactions.length, 1, "interaction not deleted");
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("restoring an interaction is refused while its project is in the bin", () => {
+  const { sqlite, store } = setup();
+  try {
+    const projId = store.saveProject({ name: "Temp" }, users[0]);
+    const id = store.saveInteraction(
+      {
+        organisationId: null,
+        title: "Called about the paperwork",
+        detail: "Promised to send copies",
+        kind: "call",
+        occurredAt: new Date().toISOString(),
+        projectId: projId,
+        followUps: [],
+      },
+      users[0],
+    );
+    store.deleteRecord("project", projId, 1, users[0], false);
+    store.deleteRecord("interaction", id, 1, users[0], false);
+    assert.throws(
+      () => store.restoreRecord("interaction", id, 2, users[0]),
+      (e: unknown) =>
+        e instanceof RecordError &&
+        e.message === "The linked project is in the bin. Restore it first.",
+    );
+    store.restoreRecord("project", projId, 2, users[0]);
+    store.restoreRecord("interaction", id, 2, users[0]);
+    assert.equal(store.snapshot().interactions.length, 1);
+    assert.equal(
+      store.snapshot().interactions.find((i) => i.id === id)?.projectId,
+      projId,
+    );
+  } finally {
+    sqlite.close();
+  }
+});

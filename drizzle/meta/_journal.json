@@ -43,6 +43,13 @@
       "when": 1789566527613,
       "tag": "0005_curvy_mattie_franklin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789719230436,
+      "tag": "0006_event_log_project_link",
+      "breakpoints": true
     }
   ]
 }

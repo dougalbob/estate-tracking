@@ -83,6 +83,9 @@ export const interactionInput = z
   .object({
     ...common,
     organisationId: optionalText,
+    // Optional so records saved before v0.2.8 (and their tests and seeds)
+    // still validate: missing means No project, exactly like a stored null.
+    projectId: optionalText.default(null),
     title: z.string().trim().max(300),
     detail: z.string().trim().min(1, "Add some detail to your note").max(20000),
     kind: z.enum(["call", "email", "letter", "web_form", "note"]),
