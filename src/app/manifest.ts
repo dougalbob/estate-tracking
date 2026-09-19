@@ -34,5 +34,36 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "maskable",
       },
     ],
+    share_target: {
+      action: "/share-target",
+      method: "POST",
+      enctype: "multipart/form-data",
+      params: {
+        files: [
+          {
+            name: "file",
+            accept: [
+              "application/pdf",
+              ".pdf",
+              "image/jpeg",
+              ".jpg",
+              ".jpeg",
+              "image/png",
+              ".png",
+              "image/webp",
+              ".webp",
+              "image/tiff",
+              ".tiff",
+              "image/heic",
+              ".heic",
+              "image/heif",
+              ".heif",
+              "text/plain",
+              ".txt",
+            ],
+          },
+        ],
+      },
+    },
   };
 }

@@ -1,5 +1,9 @@
 import { uploadDocument } from "@/app/actions";
 import { maxDocumentSizeBytes } from "@/lib/records/validation";
+import {
+  fileTooLarge as sharedFileTooLarge,
+  formatSize as sharedFormatSize,
+} from "@/lib/documents/size";
 
 export type UploadResponse = {
   ok: boolean;
@@ -8,17 +12,11 @@ export type UploadResponse = {
   warning?: string;
 };
 
-export const formatSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+export const formatSize = sharedFormatSize;
 
 /** The same size guard the upload dialog applies, reusable before queuing a file. */
 export function fileTooLarge(file: { size: number }) {
-  return file.size > maxDocumentSizeBytes
-    ? `File too large – ${formatSize(file.size)} exceeds ${formatSize(maxDocumentSizeBytes)} limit. Try a smaller file or compress the scan.`
-    : "";
+  return sharedFileTooLarge(file);
 }
 
 /**
