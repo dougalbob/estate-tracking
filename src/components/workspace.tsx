@@ -77,6 +77,14 @@ import {
   uploadErrorMessage,
 } from "./document-upload";
 import { preferredSharedFile } from "@/lib/documents/shared-file";
+import {
+  defaultEventFilters,
+  eventFiltersKey,
+  isDefaultEventFilters,
+  parseEventFilters,
+  serialiseEventFilters,
+  type EventFilters,
+} from "./event-filters";
 import { BackupPanel } from "./backup-panel";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
@@ -90,8 +98,8 @@ import {
   documentCategories,
   financeKinds,
   movementKindFor,
-  allowedMimeTypes,
-  allowedFileExtensions,
+  interactionKinds,
+  uploadAcceptAttribute,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
@@ -342,12 +350,8 @@ export function Workspace({
     ),
     [docQuery, setDocQuery] = useState(""),
     [docCategory, setDocCategory] = useState("all"),
-    [eventQuery, setEventQuery] = useState(""),
-    [eventOrg, setEventOrg] = useState("all"),
-    [eventProject, setEventProject] = useState("all"),
-    [eventKind, setEventKind] = useState("all"),
-    [eventRecorder, setEventRecorder] = useState("all"),
-    [eventOrder, setEventOrder] = useState("newest"),
+    [eventFilters, setEventFilters] =
+      useState<EventFilters>(defaultEventFilters),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [docUpload, setDocUpload] = useState<DocUploadInitial | null>(null),
@@ -372,6 +376,59 @@ export function Workspace({
     [financeFilter, setFinanceFilter] = useState<
       "all" | (typeof financeKinds)[number]
     >("all");
+
+  /**
+   * The Event log's filters, remembered in this browser between visits. They are
+   * read back in an effect rather than in the initial state because this
+   * component is server-rendered too, and the markup the server sends has to
+   * match what the browser first draws.
+   */
+  const {
+    query: eventQuery,
+    organisationId: eventOrg,
+    projectId: eventProject,
+    kind: eventKind,
+    recorder: eventRecorder,
+    order: eventOrder,
+  } = eventFilters;
+  /** What a stored filter may legitimately point at on this visit. */
+  const eventFilterOptions = {
+    organisationIds: data.organisations.map((o) => o.id),
+    projectIds: data.projects.map((p) => p.id),
+    kinds: [...interactionKinds],
+    recorders: users,
+  };
+  const eventFiltersRestored = useRef(false);
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(eventFiltersKey);
+    } catch {
+      // A browser that will not hold storage simply starts from the defaults.
+    }
+    // Anything stored that no longer exists – a deleted contact or project –
+    // falls back to "all" here, so it can never hide the whole log.
+    setEventFilters(parseEventFilters(stored, eventFilterOptions));
+    eventFiltersRestored.current = true;
+    // Read once, on mount. Re-reading on every refresh would throw away an edit
+    // in progress, and the values are checked against this visit's records.
+  }, []);
+  useEffect(() => {
+    // Never write during the first render, or the defaults would overwrite what
+    // is stored before it has been read.
+    if (!eventFiltersRestored.current) return;
+    try {
+      if (isDefaultEventFilters(eventFilters))
+        window.localStorage.removeItem(eventFiltersKey);
+      else
+        window.localStorage.setItem(
+          eventFiltersKey,
+          serialiseEventFilters(eventFilters),
+        );
+    } catch {
+      // Not being able to remember the filters is not worth troubling anyone.
+    }
+  }, [eventFilters]);
 
   const router = useRouter();
   useEffect(() => {
@@ -779,21 +836,13 @@ export function Workspace({
     setHistory(null);
     setQuery("");
     setDocQuery("");
-    setEventQuery("");
-    setEventOrg("all");
-    setEventProject("all");
-    setEventKind("all");
-    setEventRecorder("all");
-    setEventOrder("newest");
+    // The Event log's filters are deliberately left alone here: they are
+    // remembered between visits, so clearing them on every tab change would
+    // undo the one view the app keeps. Reset filters is the way to clear them.
     setError("");
   }
   function resetEventFilters() {
-    setEventQuery("");
-    setEventOrg("all");
-    setEventProject("all");
-    setEventKind("all");
-    setEventRecorder("all");
-    setEventOrder("newest");
+    setEventFilters(defaultEventFilters);
   }
   function edit(kind: Editor["kind"], id?: string, organisationId?: string) {
     setEditor({ kind, id, organisationId });
@@ -1542,13 +1591,10 @@ export function Workspace({
     return matchesQuery && matchesCategory;
   });
 
-  const eventFiltersDefault =
-    eventQuery.trim() === "" &&
-    eventOrg === "all" &&
-    eventProject === "all" &&
-    eventKind === "all" &&
-    eventRecorder === "all" &&
-    eventOrder === "newest";
+  // The same rule that decides whether there is anything stored: with the
+  // defaults back in place the button has nothing to do and the browser holds
+  // nothing either.
+  const eventFiltersDefault = isDefaultEventFilters(eventFilters);
   const filteredEvents = [...data.interactions]
     .filter((event) => {
       const words = eventQuery
@@ -2651,7 +2697,12 @@ export function Workspace({
                     type="search"
                     placeholder="Title or detail…"
                     value={eventQuery}
-                    onChange={(e) => setEventQuery(e.target.value)}
+                    onChange={(e) =>
+                      setEventFilters({
+                        ...eventFilters,
+                        query: e.target.value,
+                      })
+                    }
                   />
                 </label>
                 <div
@@ -2665,9 +2716,10 @@ export function Workspace({
                   <Button
                     variant="outline"
                     onClick={() =>
-                      setEventOrder(
-                        eventOrder === "newest" ? "oldest" : "newest",
-                      )
+                      setEventFilters({
+                        ...eventFilters,
+                        order: eventOrder === "newest" ? "oldest" : "newest",
+                      })
                     }
                     title={
                       eventOrder === "newest"
@@ -2701,7 +2753,12 @@ export function Workspace({
                   Organisation
                   <select
                     value={eventOrg}
-                    onChange={(e) => setEventOrg(e.target.value)}
+                    onChange={(e) =>
+                      setEventFilters({
+                        ...eventFilters,
+                        organisationId: e.target.value,
+                      })
+                    }
                   >
                     <option value="all">All organisations</option>
                     <option value="none">No organisation</option>
@@ -2716,7 +2773,12 @@ export function Workspace({
                   Project
                   <select
                     value={eventProject}
-                    onChange={(e) => setEventProject(e.target.value)}
+                    onChange={(e) =>
+                      setEventFilters({
+                        ...eventFilters,
+                        projectId: e.target.value,
+                      })
+                    }
                   >
                     <option value="all">All projects</option>
                     <option value="none">No project</option>
@@ -2731,23 +2793,28 @@ export function Workspace({
                   Type
                   <select
                     value={eventKind}
-                    onChange={(e) => setEventKind(e.target.value)}
+                    onChange={(e) =>
+                      setEventFilters({ ...eventFilters, kind: e.target.value })
+                    }
                   >
                     <option value="all">All types</option>
-                    {["call", "email", "letter", "web_form", "note"].map(
-                      (k) => (
-                        <option key={k} value={k}>
-                          {label(k)}
-                        </option>
-                      ),
-                    )}
+                    {interactionKinds.map((k) => (
+                      <option key={k} value={k}>
+                        {label(k)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label style={{ maxWidth: "15ch", minWidth: 0 }}>
                   Recorded by
                   <select
                     value={eventRecorder}
-                    onChange={(e) => setEventRecorder(e.target.value)}
+                    onChange={(e) =>
+                      setEventFilters({
+                        ...eventFilters,
+                        recorder: e.target.value,
+                      })
+                    }
                   >
                     <option value="all">All recorders</option>
                     {users.map((u) => (
@@ -2758,6 +2825,12 @@ export function Workspace({
                   </select>
                 </label>
               </div>
+              {!eventFiltersDefault && (
+                <p className="form-help">
+                  These filters are remembered in this browser, so the log opens
+                  the same way next time.
+                </p>
+              )}
               <section className="panel">
                 {filteredEvents.map(eventRow)}
                 {!filteredEvents.length && (
@@ -3854,7 +3927,7 @@ function DocumentUploadDialog({
             File <small>PDF, image, or text – max 20 MB</small>
             <input
               type="file"
-              accept={[...allowedMimeTypes, ...allowedFileExtensions].join(",")}
+              accept={uploadAcceptAttribute}
               required={!file}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;

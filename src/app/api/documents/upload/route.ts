@@ -5,24 +5,27 @@ import { recordStore, RecordError } from "@/lib/records/store";
 import { writeFile, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import {
-  documentsPath,
   ensureDocumentsPath,
   safeStorageName,
   safeOriginalName,
   fullPath,
 } from "@/lib/documents/storage";
 import {
-  isAllowedUploadFile,
-  maxDocumentSizeBytes,
-  documentInput,
-} from "@/lib/records/validation";
+  prepareUpload,
+  uploadSentences,
+} from "@/lib/documents/upload-validation";
+import { demoUsers } from "@/lib/records/with-store";
 
 /**
  * Upload via Route Handler – more robust than Server Actions for large files.
  * Server Actions default to 1 MB and need explicit bodySizeLimit; Route Handlers
- * stream the multipart body and avoid that limit. This endpoint mirrors
- * uploadDocument action but returns JSON and logs detailed diagnostics for
- * production troubleshooting (docker logs, df -h, 413 vs 502/504).
+ * stream the multipart body and avoid that limit.
+ *
+ * The rule about what may be uploaded is `prepareUpload`, which the server action
+ * reads too, so the two paths cannot disagree about types, sizes or names. What
+ * differs is only the shape of the answer: JSON with a status here, a result
+ * object there. The sentences are the same, and the technical detail for the
+ * container log stays in the log.
  */
 export async function POST(request: Request) {
   const startedAt = Date.now();
@@ -37,79 +40,36 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
+    const users = user.demo ? demoUsers : authConfiguration(process.env).users;
     const store = recordStore(database(), users);
 
     let formData: FormData;
     try {
       formData = await request.formData();
-    } catch (e) {
-      console.error("[upload:api] formData parse failed", e);
+    } catch (error) {
+      console.error("[upload:api] formData parse failed", error);
       return Response.json(
-        {
-          error:
-            "Unable to parse upload – body too large or connection interrupted. Check bodySizeLimit (should be 25mb) and try a smaller file. If behind Cloudflare Tunnel, check for 413/502/504 in browser DevTools Network tab.",
-        },
+        { error: uploadSentences.incomplete },
         { status: 413 },
       );
     }
 
-    const file = formData.get("file") as File | null;
-    const friendlyNameRaw = formData.get("friendlyName") as string | null;
-    const categoryRaw = formData.get("category") as string | null;
-    const organisationId = (formData.get("organisationId") as string) || null;
-    const interactionId = (formData.get("interactionId") as string) || null;
-    const taskId = (formData.get("taskId") as string) || null;
-    const projectId = (formData.get("projectId") as string) || null;
-    const financeRecordId = (formData.get("financeRecordId") as string) || null;
-
-    if (!file || typeof file === "string" || file.size === 0) {
-      return Response.json(
-        { error: "Choose a file to upload" },
-        { status: 400 },
-      );
-    }
-    if (file.size > maxDocumentSizeBytes) {
+    const prepared = prepareUpload(formData);
+    if (!prepared.ok) {
       console.warn(
-        `[upload:api] rejected too large: ${file.name} ${file.size} > ${maxDocumentSizeBytes} by ${user.email}`,
+        `[upload:api] refused by ${user.email}: ${prepared.rejection.error}`,
       );
       return Response.json(
-        {
-          error: `File too large – max ${maxDocumentSizeBytes / (1024 * 1024)} MB`,
-        },
-        { status: 413 },
+        { error: prepared.rejection.error },
+        { status: prepared.rejection.status },
       );
     }
-
-    const mime = file.type || "application/octet-stream";
-    // The same shared rule the upload action and the share helper use, so the
-    // three paths can never disagree about which types the app stores.
-    if (!isAllowedUploadFile(file)) {
-      console.warn(
-        `[upload:api] rejected type: ${file.name} (${mime}) by ${user.email}`,
-      );
-      return Response.json(
-        { error: "Unsupported file type – use PDF, image, or text" },
-        { status: 400 },
-      );
-    }
-
-    const parsedMeta = documentInput.safeParse({
-      friendlyName: friendlyNameRaw || file.name.replace(/\.[^/.]+$/, ""),
-      category: categoryRaw || null,
-    });
-    if (!parsedMeta.success) {
-      return Response.json(
-        { error: parsedMeta.error.issues.map((i) => i.message).join("; ") },
-        { status: 400 },
-      );
-    }
+    const { file, mime, friendlyName, category, links, hasLink } =
+      prepared.upload;
 
     const docsPath = ensureDocumentsPath();
     console.log(
-      `[upload:api] attempt by ${user.email}: ${file.name} (${file.size} bytes, ${mime}) -> ${docsPath} friendly="${parsedMeta.data.friendlyName}"`,
+      `[upload:api] attempt by ${user.email}: ${file.name} (${file.size} bytes, ${mime}) -> ${docsPath} friendly="${friendlyName}"`,
     );
 
     const originalName = safeOriginalName(file.name);
@@ -117,14 +77,16 @@ export async function POST(request: Request) {
     let buffer: Buffer;
     try {
       buffer = Buffer.from(await file.arrayBuffer());
-    } catch (e) {
-      console.error(`[upload:api] arrayBuffer failed for ${file.name}`, e);
+    } catch (error) {
+      console.error(`[upload:api] arrayBuffer failed for ${file.name}`, error);
       return Response.json(
-        { error: "Unable to read file – try again with a smaller file" },
+        { error: uploadSentences.unreadable },
         { status: 500 },
       );
     }
 
+    // The file is written first and the record second; if the record fails the
+    // file is removed again, so a failed upload leaves nothing behind.
     const path = fullPath(storageName);
     storagePath = path;
     try {
@@ -133,63 +95,42 @@ export async function POST(request: Request) {
         `[upload:api] wrote ${path} ${buffer.length} bytes in ${Date.now() - startedAt}ms`,
       );
     } catch (writeErr: unknown) {
-      const msg =
-        writeErr instanceof Error ? writeErr.message : String(writeErr);
       const code = (writeErr as NodeJS.ErrnoException)?.code;
       console.error(
-        `[upload:api] write failed ${path} code=${code} msg=${msg} – check df -h ${docsPath}`,
+        `[upload:api] write failed ${path} code=${code} – check the README's document upload troubleshooting section`,
         writeErr,
       );
-      if (code === "ENOSPC") {
-        return Response.json(
-          {
-            error: `Disk full – unable to store file. Free space on ${docsPath} (df -h) and try again.`,
-          },
-          { status: 507 },
-        );
-      }
       return Response.json(
         {
-          error: `Unable to store file – check server storage (${code || msg}). Try: df -h ${docsPath} and docker logs estate-organiser`,
+          error:
+            code === "ENOSPC"
+              ? uploadSentences.diskFull
+              : uploadSentences.storage,
         },
-        { status: 500 },
+        { status: code === "ENOSPC" ? 507 : 500 },
       );
     }
 
     try {
       const docId = store.createDocumentFromUpload(
         {
-          friendlyName: parsedMeta.data.friendlyName!,
+          friendlyName,
           originalName,
           storageName,
           mimeType: mime,
           size: file.size,
-          category: parsedMeta.data.category ?? null,
+          category,
         },
         user.email,
       );
 
-      if (
-        organisationId ||
-        interactionId ||
-        taskId ||
-        projectId ||
-        financeRecordId
-      ) {
+      if (hasLink) {
         try {
-          store.linkDocument(
-            {
-              documentId: docId,
-              organisationId,
-              interactionId,
-              taskId,
-              projectId,
-              financeRecordId,
-            },
-            user.email,
-          );
+          store.linkDocument({ documentId: docId, ...links }, user.email);
         } catch (linkError) {
           if (linkError instanceof RecordError) {
+            // The document is safe; only the link failed, and it can be made
+            // again from the record.
             console.warn(
               `[upload:api] document ${docId} saved but link failed: ${linkError.message}`,
             );
@@ -210,6 +151,7 @@ export async function POST(request: Request) {
       try {
         if (storagePath && existsSync(storagePath)) await unlink(storagePath);
       } catch {}
+      storagePath = null;
       if (dbError instanceof RecordError) {
         console.warn(
           `[upload:api] db error for ${originalName}: ${dbError.message}`,
@@ -221,7 +163,7 @@ export async function POST(request: Request) {
         dbError,
       );
       return Response.json(
-        { error: "Unable to save document record" },
+        { error: uploadSentences.unexpected },
         { status: 500 },
       );
     }
@@ -233,10 +175,7 @@ export async function POST(request: Request) {
       } catch {}
     }
     return Response.json(
-      {
-        error:
-          "Unable to upload – check your access and try again. If this persists, check docker logs estate-organiser and df -h /mnt/user/appdata/estate-organiser",
-      },
+      { error: uploadSentences.unexpected },
       { status: 500 },
     );
   }
