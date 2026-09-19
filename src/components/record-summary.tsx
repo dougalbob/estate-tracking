@@ -20,6 +20,8 @@ const captions: Record<string, string> = {
   status: "Status",
   organisationId: "Organisation",
   interactionId: "Source interaction",
+  /** v0.2.18: the task an interaction was created from, by its title handle. */
+  sourceTaskId: "Created from task",
   projectId: "Project",
   projectIds: "Projects",
   assignee: "Assigned to",
@@ -63,6 +65,12 @@ export function RecordSummary({
         data.interactions.find((o) => o.id === value)?.title ??
         data.deletedInteractions.find((o) => o.id === value)?.title ??
         "Linked interaction"
+      );
+    if (key === "sourceTaskId")
+      return (
+        data.tasks.find((t) => t.id === value)?.title ??
+        data.deletedTasks.find((t) => t.id === value)?.title ??
+        "Linked task"
       );
     if (key === "projectId")
       return (

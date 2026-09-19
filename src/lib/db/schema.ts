@@ -50,6 +50,14 @@ export const interactions = sqliteTable("interactions", {
   detail: text("detail").notNull(),
   kind: text("kind").notNull(),
   occurredAt: text("occurred_at").notNull(),
+  /**
+   * The task this interaction was created from, when it was created with
+   * Create interaction, and null for one written by hand. Set once at creation
+   * and never edited. Like `tasks.template_item_id`, deliberately not a
+   * foreign key: permanently deleting the task must never touch the record of
+   * what happened, and the hop from the task row simply finds nothing.
+   */
+  sourceTaskId: text("source_task_id"),
   version: integer("version").notNull().default(1),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),

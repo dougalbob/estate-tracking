@@ -49,6 +49,7 @@ import {
   HandCoins,
   PoundSterling,
   ListChecks,
+  MessageSquare,
 } from "lucide-react";
 import {
   switchDemoUser,
@@ -362,9 +363,18 @@ export function Workspace({
     [collapsedProjects, setCollapsedProjects] = useState<
       Record<string, boolean>
     >({}),
-    [projectHideDone, setProjectHideDone] = useState<Record<string, boolean>>(
+    // Sparse, like collapsedProjects: a missing key is the default. Since
+    // v0.2.18 the default is done tasks hidden, so the map records only the
+    // panels whose done tasks the user has asked to see - hence "show", not
+    // "hide", so the name and the sense of a missing key agree.
+    [projectShowDone, setProjectShowDone] = useState<Record<string, boolean>>(
       {},
     ),
+    // One value for the contact screen, not a map: the id of the contact
+    // whose done tasks are currently on show, or null. Every contact therefore
+    // opens with its done tasks hidden, and a choice made on one contact does
+    // not follow you to the next - without any reset when the selection moves.
+    [contactShowDone, setContactShowDone] = useState<string | null>(null),
     [docQuery, setDocQuery] = useState(""),
     [docCategory, setDocCategory] = useState("all"),
     [eventFilters, setEventFilters] =
@@ -1109,7 +1119,13 @@ export function Workspace({
 
   function taskRow(t: Snapshot["tasks"][number]) {
     const date = attentionDate(t),
-      source = data.interactions.find((n) => n.id === t.interactionId);
+      source = data.interactions.find((n) => n.id === t.interactionId),
+      // The interaction Create interaction made from this task, if it was
+      // saved. Live records only - one in the bin is no longer an outcome on
+      // show - and the earliest if there is somehow more than one.
+      outcome = data.interactions
+        .filter((n) => n.sourceTaskId === t.id)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     const docs = getLinkedDocuments({ taskId: t.id });
     const contact = liveOrganisation(t.organisationId);
     const KindIcon = t.kind
@@ -1186,6 +1202,18 @@ export function Workspace({
               onClick={() => edit("interaction", source.id)}
             >
               From: {source.title}
+            </button>
+          )}
+          {/* Named by when it happened, never by its title (v0.2.17 rule). */}
+          {outcome && (
+            <button
+              className="text-link source-link"
+              aria-label={`Open the interaction logged from this task on ${formatDate(outcome.occurredAt)}`}
+              title={`Open the interaction logged from this task on ${formatDate(outcome.occurredAt)}`}
+              onClick={() => edit("interaction", outcome.id)}
+            >
+              <MessageSquare size={11} aria-hidden />
+              Outcome logged: {formatDate(outcome.occurredAt)}
             </button>
           )}
           {docs.length > 0 && (
@@ -2193,32 +2221,90 @@ export function Workspace({
                   </p>
                 </section>
               )}
-              <div className="list-toolbar">
-                <h2>Linked tasks</h2>
-                <div className="row-actions">
-                  <Button
-                    variant="outline"
-                    onClick={() => setTaskLinkPicker(organisation.id)}
-                  >
-                    <Link2 size={14} />
-                    Link existing task
-                  </Button>
-                  <Button
-                    onClick={() => edit("task", undefined, organisation.id)}
-                  >
-                    <Plus size={16} />
-                    Add task
-                  </Button>
-                </div>
-              </div>
-              <section className="panel">
-                {data.tasks
-                  .filter((t) => t.organisationId === organisation.id)
-                  .map(taskRow)}
-                {!data.tasks.some(
+              {(() => {
+                // The contact's linked tasks open with done ones hidden, the
+                // project journal's rule: done only, so a cancelled task stays
+                // in view. The toggle sits with the list's actions and, like
+                // the project one, only appears once there is a task to filter.
+                const linkedTasks = data.tasks.filter(
                   (t) => t.organisationId === organisation.id,
-                ) && <p className="empty-state">No linked tasks yet.</p>}
-              </section>
+                );
+                const linkedDoneCount = linkedTasks.filter(
+                  (t) => t.status === "done",
+                ).length;
+                const showingDone = contactShowDone === organisation.id;
+                const visibleLinked = showingDone
+                  ? linkedTasks
+                  : linkedTasks.filter((t) => t.status !== "done");
+                return (
+                  <>
+                    <div className="list-toolbar">
+                      <h2>Linked tasks</h2>
+                      <div className="row-actions">
+                        {linkedTasks.length > 0 && (
+                          <Button
+                            // Pressed means the filter is on, exactly as on
+                            // the project panel and the contacts list.
+                            variant={showingDone ? "outline" : "default"}
+                            aria-pressed={!showingDone}
+                            title={
+                              showingDone
+                                ? "Hide done tasks from this contact's list"
+                                : `${linkedDoneCount} done task${linkedDoneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                            }
+                            aria-label={
+                              showingDone
+                                ? "Hide done tasks from this contact's list"
+                                : `${linkedDoneCount} done task${linkedDoneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                            }
+                            onClick={() =>
+                              setContactShowDone(
+                                showingDone ? null : organisation.id,
+                              )
+                            }
+                          >
+                            {showingDone ? (
+                              <EyeOff size={16} aria-hidden />
+                            ) : (
+                              <Eye size={16} aria-hidden />
+                            )}
+                            {showingDone
+                              ? "Hide Done"
+                              : `Show Done (${linkedDoneCount})`}
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          onClick={() => setTaskLinkPicker(organisation.id)}
+                        >
+                          <Link2 size={14} />
+                          Link existing task
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            edit("task", undefined, organisation.id)
+                          }
+                        >
+                          <Plus size={16} />
+                          Add task
+                        </Button>
+                      </div>
+                    </div>
+                    <section className="panel">
+                      {visibleLinked.map(taskRow)}
+                      {linkedTasks.length === 0 && (
+                        <p className="empty-state">No linked tasks yet.</p>
+                      )}
+                      {linkedTasks.length > 0 && visibleLinked.length === 0 && (
+                        <p className="empty-state">
+                          Every task linked to this contact is done, so the list
+                          is empty while done tasks are hidden.
+                        </p>
+                      )}
+                    </section>
+                  </>
+                );
+              })()}
             </>
           )}
           {view === "tasks" && (
@@ -2441,7 +2527,7 @@ export function Workspace({
                   (t) => t.status === "done",
                 ).length;
                 const isCollapsed = !!collapsedProjects[p.id];
-                const isHideDone = !!projectHideDone[p.id];
+                const isHideDone = !projectShowDone[p.id];
                 const visibleTasks = isHideDone
                   ? allTasks.filter((t) => t.status !== "done")
                   : allTasks;
@@ -2641,7 +2727,7 @@ export function Workspace({
                                     : "Hide done tasks from this project"
                                 }
                                 onClick={() =>
-                                  setProjectHideDone((prev) => ({
+                                  setProjectShowDone((prev) => ({
                                     ...prev,
                                     [p.id]: !prev[p.id],
                                   }))

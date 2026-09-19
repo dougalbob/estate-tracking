@@ -207,7 +207,10 @@ export function RecordForm({
   /**
    * Saves the task as it stands, then opens an ordinary interaction for the
    * same contact with the title, type and outcome already filled in. Nothing
-   * is written to the event log until the interaction itself is saved.
+   * is written to the event log until the interaction itself is saved. The
+   * task's id travels as `sourceTaskId`: when the interaction is saved the
+   * store stamps it and links the task's documents to the new interaction in
+   * the same transaction, and the task row gains an "Outcome logged" hop.
    *
    * "+ New contact…" is not an id: it means the save in front of us is the one
    * that creates the contact. So the interaction is opened for the id that save
@@ -232,6 +235,7 @@ export function RecordForm({
       detail: outcome,
       kind: interactionKindFor(fieldNow("kind")),
       occurredAt: new Date().toISOString(),
+      sourceTaskId: editor.id ?? null,
     });
     await submit(new FormData(form.current), (_id, savedOrganisationId) =>
       onOpenInteraction(prefill(savedOrganisationId)),
@@ -462,6 +466,9 @@ export function RecordForm({
         detail: get("detail"),
         kind: get("kind"),
         occurredAt: new Date(get("occurredAt")).toISOString(),
+        // Only a new interaction opened from a task carries this; the store
+        // ignores it on an edit, so an existing record's stamp cannot move.
+        sourceTaskId: editor.id ? null : (initial.sourceTaskId ?? null),
         followUps: followUps.map((i) => task(`follow${i}.`)),
       };
     const organisationForNewContact = {
@@ -1281,7 +1288,9 @@ export function RecordForm({
                     Saves this task, then opens an interaction for the same
                     contact with the title, type and outcome already filled in.
                     Nothing goes in the event log until you save the
-                    interaction, and you can change any of it first.
+                    interaction, and you can change any of it first. Documents
+                    linked to this task are linked to the interaction too when
+                    it is saved, and can be unlinked from it afterwards.
                   </p>
                   <Button
                     type="button"

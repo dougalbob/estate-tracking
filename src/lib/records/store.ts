@@ -238,6 +238,15 @@ export function recordStore(
     });
   }
 
+  /**
+   * Saves an interaction. When a new one names a `sourceTaskId` - the Create
+   * interaction button on a task - the stamp is kept on the row and the
+   * task's linked documents are linked to the new interaction as well, as
+   * ordinary `document_links` rows in the same transaction: they show
+   * everywhere a link shows and can be unlinked by hand like any other. An
+   * inheritance, not a rule - nothing about the task itself changes, and an
+   * interaction written by hand has a null stamp and is left alone.
+   */
   function saveInteraction(raw: unknown, actor: string) {
     actorCheck(actor);
     const input = interactionInput.parse(raw);
@@ -255,6 +264,22 @@ export function recordStore(
         (!before || before.deletedAt || before.version !== input.version)
       )
         conflict();
+      // The source task is fixed at creation. An edit cannot set or move it,
+      // and a task that has since gone to the bin does not undo the stamp.
+      const sourceTask =
+        !before && input.sourceTaskId
+          ? db
+              .select()
+              .from(tasks)
+              .where(eq(tasks.id, input.sourceTaskId))
+              .get()
+          : undefined;
+      if (
+        !before &&
+        input.sourceTaskId &&
+        (!sourceTask || sourceTask.deletedAt)
+      )
+        throw new RecordError("The source task is no longer available");
       if (
         before &&
         before.organisationId !== input.organisationId &&
@@ -269,13 +294,20 @@ export function recordStore(
         throw new RecordError(
           "This note has linked tasks. Keep its organisation unchanged.",
         );
-      const { id: suppliedId, version, followUps, ...values } = input;
+      const {
+        id: suppliedId,
+        version,
+        followUps,
+        sourceTaskId,
+        ...values
+      } = input;
       const id = suppliedId || randomUUID(),
         now = new Date().toISOString();
       const after = {
         ...values,
         title: values.title || "Quick note",
         id,
+        sourceTaskId: before ? before.sourceTaskId : sourceTaskId,
         version: (before?.version ?? 0) + 1,
         createdBy: before?.createdBy ?? actor,
         createdAt: before?.createdAt ?? now,
@@ -295,6 +327,24 @@ export function recordStore(
           conflict();
       } else db.insert(interactions).values(after).run();
       audit("interaction", id, actor, before ?? null, after);
+      if (sourceTask) {
+        // Each of the task's live documents becomes a real link to the new
+        // interaction, audited like one made by hand. Nothing on the task's
+        // own links changes.
+        const inherited = db
+          .select({ documentId: documentLinks.documentId })
+          .from(documentLinks)
+          .innerJoin(documents, eq(documents.id, documentLinks.documentId))
+          .where(
+            and(
+              eq(documentLinks.taskId, sourceTask.id),
+              isNull(documents.deletedAt),
+            ),
+          )
+          .all();
+        for (const { documentId } of inherited)
+          linkDocument({ documentId, interactionId: id }, actor);
+      }
       for (const task of followUps)
         saveTask(
           {
@@ -304,6 +354,129 @@ export function recordStore(
           },
           actor,
         );
+      return id;
+    });
+  }
+
+  function linkDocument(raw: unknown, actor: string) {
+    actorCheck(actor);
+    const input = documentLinkInput.parse(raw);
+    return db.transaction(() => {
+      const doc = db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, input.documentId))
+        .get();
+      if (!doc || doc.deletedAt)
+        throw new RecordError("Document no longer available");
+      const count = [
+        input.organisationId,
+        input.interactionId,
+        input.taskId,
+        input.projectId,
+        input.financeRecordId,
+      ].filter(Boolean).length;
+      if (count !== 1)
+        throw new RecordError("Link a document to exactly one record");
+      if (input.organisationId) {
+        if (
+          !db
+            .select()
+            .from(organisations)
+            .where(
+              and(
+                eq(organisations.id, input.organisationId),
+                isNull(organisations.deletedAt),
+              ),
+            )
+            .get()
+        )
+          throw new RecordError("Organisation no longer available");
+      }
+      if (input.interactionId) {
+        const note = db
+          .select()
+          .from(interactions)
+          .where(eq(interactions.id, input.interactionId))
+          .get();
+        if (!note || note.deletedAt)
+          throw new RecordError("Note no longer available");
+      }
+      if (input.taskId) {
+        const t = db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.id, input.taskId))
+          .get();
+        if (!t || t.deletedAt)
+          throw new RecordError("Task no longer available");
+      }
+      if (input.projectId) {
+        if (
+          !db
+            .select()
+            .from(projects)
+            .where(
+              and(eq(projects.id, input.projectId), isNull(projects.deletedAt)),
+            )
+            .get()
+        )
+          throw new RecordError("Project no longer available");
+      }
+      if (input.financeRecordId) {
+        const finance = db
+          .select()
+          .from(financeRecords)
+          .where(eq(financeRecords.id, input.financeRecordId))
+          .get();
+        if (!finance || finance.deletedAt)
+          throw new RecordError("Financial record no longer available");
+      }
+      const existing = db
+        .select()
+        .from(documentLinks)
+        .where(
+          and(
+            eq(documentLinks.documentId, input.documentId),
+            input.organisationId
+              ? eq(documentLinks.organisationId, input.organisationId)
+              : isNull(documentLinks.organisationId),
+            input.interactionId
+              ? eq(documentLinks.interactionId, input.interactionId)
+              : isNull(documentLinks.interactionId),
+            input.taskId
+              ? eq(documentLinks.taskId, input.taskId)
+              : isNull(documentLinks.taskId),
+            input.projectId
+              ? eq(documentLinks.projectId, input.projectId)
+              : isNull(documentLinks.projectId),
+            input.financeRecordId
+              ? eq(documentLinks.financeRecordId, input.financeRecordId)
+              : isNull(documentLinks.financeRecordId),
+          ),
+        )
+        .get();
+      if (existing) return existing.id;
+      const id = randomUUID();
+      db.insert(documentLinks)
+        .values({
+          id,
+          documentId: input.documentId,
+          organisationId: input.organisationId,
+          interactionId: input.interactionId,
+          taskId: input.taskId,
+          projectId: input.projectId,
+          financeRecordId: input.financeRecordId,
+        })
+        .run();
+      audit("document_link", id, actor, null, {
+        documentId: input.documentId,
+        organisationId: input.organisationId,
+        interactionId: input.interactionId,
+        taskId: input.taskId,
+        projectId: input.projectId,
+        financeRecordId: input.financeRecordId,
+      });
       return id;
     });
   }
@@ -715,131 +888,7 @@ export function recordStore(
         return id;
       });
     },
-    linkDocument(raw: unknown, actor: string) {
-      actorCheck(actor);
-      const input = documentLinkInput.parse(raw);
-      return db.transaction(() => {
-        const doc = db
-          .select()
-          .from(documents)
-          .where(eq(documents.id, input.documentId))
-          .get();
-        if (!doc || doc.deletedAt)
-          throw new RecordError("Document no longer available");
-        const count = [
-          input.organisationId,
-          input.interactionId,
-          input.taskId,
-          input.projectId,
-          input.financeRecordId,
-        ].filter(Boolean).length;
-        if (count !== 1)
-          throw new RecordError("Link a document to exactly one record");
-        if (input.organisationId) {
-          if (
-            !db
-              .select()
-              .from(organisations)
-              .where(
-                and(
-                  eq(organisations.id, input.organisationId),
-                  isNull(organisations.deletedAt),
-                ),
-              )
-              .get()
-          )
-            throw new RecordError("Organisation no longer available");
-        }
-        if (input.interactionId) {
-          const note = db
-            .select()
-            .from(interactions)
-            .where(eq(interactions.id, input.interactionId))
-            .get();
-          if (!note || note.deletedAt)
-            throw new RecordError("Note no longer available");
-        }
-        if (input.taskId) {
-          const t = db
-            .select()
-            .from(tasks)
-            .where(eq(tasks.id, input.taskId))
-            .get();
-          if (!t || t.deletedAt)
-            throw new RecordError("Task no longer available");
-        }
-        if (input.projectId) {
-          if (
-            !db
-              .select()
-              .from(projects)
-              .where(
-                and(
-                  eq(projects.id, input.projectId),
-                  isNull(projects.deletedAt),
-                ),
-              )
-              .get()
-          )
-            throw new RecordError("Project no longer available");
-        }
-        if (input.financeRecordId) {
-          const finance = db
-            .select()
-            .from(financeRecords)
-            .where(eq(financeRecords.id, input.financeRecordId))
-            .get();
-          if (!finance || finance.deletedAt)
-            throw new RecordError("Financial record no longer available");
-        }
-        const existing = db
-          .select()
-          .from(documentLinks)
-          .where(
-            and(
-              eq(documentLinks.documentId, input.documentId),
-              input.organisationId
-                ? eq(documentLinks.organisationId, input.organisationId)
-                : isNull(documentLinks.organisationId),
-              input.interactionId
-                ? eq(documentLinks.interactionId, input.interactionId)
-                : isNull(documentLinks.interactionId),
-              input.taskId
-                ? eq(documentLinks.taskId, input.taskId)
-                : isNull(documentLinks.taskId),
-              input.projectId
-                ? eq(documentLinks.projectId, input.projectId)
-                : isNull(documentLinks.projectId),
-              input.financeRecordId
-                ? eq(documentLinks.financeRecordId, input.financeRecordId)
-                : isNull(documentLinks.financeRecordId),
-            ),
-          )
-          .get();
-        if (existing) return existing.id;
-        const id = randomUUID();
-        db.insert(documentLinks)
-          .values({
-            id,
-            documentId: input.documentId,
-            organisationId: input.organisationId,
-            interactionId: input.interactionId,
-            taskId: input.taskId,
-            projectId: input.projectId,
-            financeRecordId: input.financeRecordId,
-          })
-          .run();
-        audit("document_link", id, actor, null, {
-          documentId: input.documentId,
-          organisationId: input.organisationId,
-          interactionId: input.interactionId,
-          taskId: input.taskId,
-          projectId: input.projectId,
-          financeRecordId: input.financeRecordId,
-        });
-        return id;
-      });
-    },
+    linkDocument,
     unlinkDocument(linkId: string, actor: string) {
       actorCheck(actor);
       return db.transaction(() => {
