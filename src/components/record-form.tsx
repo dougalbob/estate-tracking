@@ -1,7 +1,17 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Plus, Link2Off, Lightbulb, Trash2, FileText } from "lucide-react";
+import {
+  X,
+  Plus,
+  Link2Off,
+  Lightbulb,
+  Trash2,
+  FileText,
+  MessageSquarePlus,
+  Lock,
+  LockOpen,
+} from "lucide-react";
 import { RecordSummary } from "./record-summary";
 import { Button } from "./ui/button";
 import {
@@ -15,6 +25,8 @@ import {
   label,
   organisationStatuses,
   taskStatuses,
+  taskKinds,
+  everyoneAssignee,
   documentCategories,
 } from "@/lib/records/validation";
 export type Editor = {
@@ -22,6 +34,13 @@ export type Editor = {
   id?: string;
   organisationId?: string;
   interactionId?: string;
+  /**
+   * Values to open the form with, used when one record is started from
+   * another - an interaction from a task's outcome, say. Only ever a
+   * starting point: everything in it stays editable, and it is ignored
+   * entirely when an existing record is being edited.
+   */
+  initial?: Record<string, unknown>;
 };
 type Props = {
   editor: Editor;
@@ -29,6 +48,8 @@ type Props = {
   users: string[];
   onClose: () => void;
   onSaved: (id: string, newContactName?: string) => void;
+  /** Opens a fresh interaction already filled in from the record being edited. */
+  onOpenInteraction: (initial: Record<string, unknown>) => void;
   /** Opens the in-app viewer for a linked document, without leaving the form. */
   onViewDocument: (doc: Snapshot["documents"][number]) => void;
 };
@@ -43,6 +64,7 @@ export function RecordForm({
   users,
   onClose,
   onSaved,
+  onOpenInteraction,
   onViewDocument,
 }: Props) {
   const router = useRouter();
@@ -57,7 +79,11 @@ export function RecordForm({
             ? data.projects
             : data.documents;
   const record = rows.find((r) => r.id === editor.id);
-  const initial = (record ?? {}) as unknown as Record<string, unknown>;
+  // An existing record wins: a pre-fill only ever fills an empty form.
+  const initial = (record ?? editor.initial ?? {}) as unknown as Record<
+    string,
+    unknown
+  >;
   const value = (name: string, fallback = "") =>
     String(initial[name] ?? fallback);
   const [version, setVersion] = useState(record?.version);
@@ -77,7 +103,12 @@ export function RecordForm({
   const [followUps, setFollowUps] = useState<number[]>([]);
   const counter = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const [dirty, setDirty] = useState(false);
+  // What a task was set up to do is history once it is saved, so an existing
+  // task opens with Task Start locked. It is never hidden, and the padlock
+  // beside the label unlocks it when something genuinely needs correcting.
+  const [startLocked, setStartLocked] = useState(true);
   const linkedProjectIds = editor.id
     ? data.organisationProjects
         .filter((op) => op.organisationId === editor.id)
@@ -138,7 +169,50 @@ export function RecordForm({
       .toISOString()
       .slice(0, 16);
   };
-  function taskFields(prefix = "", defaults: Record<string, unknown> = {}) {
+  /**
+   * Reads a field exactly as it is on screen right now. The task form is
+   * uncontrolled, so a button that acts on what has been typed has to go and
+   * look rather than trust the value the record was last saved with.
+   */
+  const fieldNow = (name: string) => {
+    // Duck-typed rather than checked against HTMLInputElement and friends:
+    // this form is server-rendered too, and those globals do not exist there.
+    const el = form.current?.elements.namedItem(name) as
+      { value?: unknown } | null | undefined;
+    return typeof el?.value === "string" ? el.value : "";
+  };
+  /**
+   * A task type is not always an interaction kind. Calls and emails carry
+   * straight over; the rest have no kind of their own, so they land as a note
+   * with the same words in it.
+   */
+  const interactionKindFor = (kind: string) =>
+    kind === "call" || kind === "email" ? kind : "note";
+  /**
+   * Saves the task as it stands, then opens an ordinary interaction for the
+   * same contact with the title, type and outcome already filled in. Nothing
+   * is written to the event log until the interaction itself is saved.
+   */
+  async function createInteractionFromTask() {
+    if (!form.current) return;
+    const outcome = fieldNow("outcome").trim();
+    if (!outcome) return;
+    const prefill = {
+      organisationId: organisationId || null,
+      projectId: fieldNow("projectId") || null,
+      title: fieldNow("title").trim(),
+      detail: outcome,
+      kind: interactionKindFor(fieldNow("kind")),
+      occurredAt: new Date().toISOString(),
+    };
+    await submit(new FormData(form.current), () => onOpenInteraction(prefill));
+  }
+  function taskFields(
+    prefix = "",
+    defaults: Record<string, unknown> = {},
+    /** Set for a task that already exists, whose start can be locked. */
+    lockable = false,
+  ) {
     const v = (key: string) => String(defaults[key] ?? "");
     return (
       <>
@@ -153,18 +227,66 @@ export function RecordForm({
           />
         </label>
         <label>
-          Detail
+          Task Start{" "}
+          {lockable && (
+            <button
+              type="button"
+              className="lock-toggle"
+              aria-pressed={startLocked}
+              title={
+                startLocked
+                  ? "Task Start is locked so it is not quietly rewritten later. Activate to unlock it for editing."
+                  : "Task Start is unlocked and can be edited. Activate to lock it again."
+              }
+              onClick={() => setStartLocked(!startLocked)}
+            >
+              {startLocked ? (
+                <Lock size={11} aria-hidden />
+              ) : (
+                <LockOpen size={11} aria-hidden />
+              )}
+              {/* The word carries the state, not the padlock alone. */}
+              {startLocked ? "Locked" : "Unlocked"}
+            </button>
+          )}
+          <small>What is being asked for</small>
           <textarea
             name={`${prefix}detail`}
             defaultValue={v("detail")}
             rows={2}
+            // readOnly, never disabled: a disabled field is left out of the
+            // submitted form, which would quietly clear the task's start.
+            readOnly={lockable && startLocked}
+            className={lockable && startLocked ? "locked-field" : undefined}
+          />
+        </label>
+        <label>
+          Task Outcome <small>What happened, once it has happened</small>
+          <textarea
+            name={`${prefix}outcome`}
+            defaultValue={v("outcome")}
+            rows={2}
+            placeholder="For example, what was agreed on the call"
           />
         </label>
         <div className="form-grid">
           <label>
+            Type of task <small>Optional</small>
+            <select name={`${prefix}kind`} defaultValue={v("kind")}>
+              <option value="">No type</option>
+              {taskKinds.map((k) => (
+                <option key={k} value={k}>
+                  {label(k)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Assigned to
             <select name={`${prefix}assignee`} defaultValue={v("assignee")}>
               <option value="">Unassigned</option>
+              {/* Work the two of you have to do together, not one of you. */}
+              <option value={everyoneAssignee}>Everyone</option>
               {users.map((u) => (
                 <option key={u} value={u}>
                   {u.split("@")[0]}
@@ -226,7 +348,11 @@ export function RecordForm({
       </>
     );
   }
-  async function submit(form: FormData) {
+  async function submit(
+    form: FormData,
+    /** Runs instead of closing the form, once the save has landed. */
+    afterSave?: (id: string) => void,
+  ) {
     setBusy(true);
     setError("");
     setCode("");
@@ -245,6 +371,8 @@ export function RecordForm({
     const task = (prefix = "") => ({
       title: get(prefix + "title"),
       detail: get(prefix + "detail"),
+      outcome: nullable(prefix + "outcome"),
+      kind: nullable(prefix + "kind"),
       organisationId: chosenOrganisationId,
       interactionId: editor.interactionId ?? null,
       projectId: nullable(prefix + "projectId"),
@@ -323,7 +451,12 @@ export function RecordForm({
       if (result.ok) {
         setDirty(false);
         router.refresh();
-        onSaved(result.id, createContact ? newContact.name.trim() : undefined);
+        if (afterSave) afterSave(result.id);
+        else
+          onSaved(
+            result.id,
+            createContact ? newContact.name.trim() : undefined,
+          );
       } else {
         setError(result.error);
         setCode(result.code);
@@ -413,6 +546,7 @@ export function RecordForm({
       aria-labelledby="form-title"
     >
       <form
+        ref={form}
         onChange={() => setDirty(true)}
         onSubmit={(e) => {
           e.preventDefault();
@@ -963,7 +1097,7 @@ export function RecordForm({
                 </fieldset>
               )}
               {editor.kind === "task" ? (
-                taskFields("", initial)
+                taskFields("", initial, !!editor.id)
               ) : (
                 <>
                   <div className="form-grid">
@@ -1062,6 +1196,39 @@ export function RecordForm({
                     Add a follow-up task
                   </Button>
                 </>
+              )}
+              {editor.kind === "task" && editor.id && (
+                <fieldset className="follow-up">
+                  <legend>Create an interaction from this task</legend>
+                  <p className="form-help">
+                    Saves this task, then opens an interaction for the same
+                    contact with the title, type and outcome already filled in.
+                    Nothing goes in the event log until you save the
+                    interaction, and you can change any of it first.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={
+                      busy ||
+                      !fieldNow("outcome").trim() ||
+                      // The contact has to exist before an interaction can
+                      // point at it.
+                      organisationId === NEW_CONTACT
+                    }
+                    title={
+                      organisationId === NEW_CONTACT
+                        ? "Save the new contact first, then create the interaction"
+                        : fieldNow("outcome").trim()
+                          ? "Save the task, then open an interaction with the outcome filled in"
+                          : "Write an outcome first - an interaction needs something to say"
+                    }
+                    onClick={() => void createInteractionFromTask()}
+                  >
+                    <MessageSquarePlus size={16} />
+                    Create interaction
+                  </Button>
+                </fieldset>
               )}
               {editor.kind === "task" && editor.id && (
                 <fieldset className="follow-up">

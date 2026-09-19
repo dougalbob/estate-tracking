@@ -4,16 +4,16 @@
 
 ## Current state — 18 September 2026
 
-| | |
-|---|---|
-| Live release | **v0.2.9** — a map link typed in by hand on each contact, a **Notes** label on the contact screen, and the Event log's kind icons on interaction cards — built by GitHub Actions and published to GHCR as `v0.2.9`, `latest`, and a git-SHA tag. Until Unraid pulls the new image the server is still running **v0.2.8** |
-| Earlier releases | v0.2.0 – v0.2.8, all published 16–18 September 2026 |
-| Data in use | **Real estate records and real documents, entered by both users.** The installation runs on Unraid behind Cloudflare Access |
-| Verified in production | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026) |
-| Verified by hand, not in a browser | The v0.2.5, v0.2.6, v0.2.7, v0.2.8 and v0.2.9 changes were checked by rendering the real components to markup and by HTTP against the development server; the sandbox has no browser, so no click-through test has ever run in one |
-| Automated gates | 89 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit |
-| Still outstanding | A full accessibility and security review, and four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support |
-| How to read the rest of this file | Dated checkpoints and the original proposal are kept as a written record. Where the text below says something is planned or unverified, this table is the current position |
+|                                    |                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Live release                       | **v0.2.9** — a map link typed in by hand on each contact, a **Notes** label on the contact screen, and the Event log's kind icons on interaction cards — built by GitHub Actions and published to GHCR as `v0.2.9`, `latest`, and a git-SHA tag. Until Unraid pulls the new image the server is still running **v0.2.8** |
+| Earlier releases                   | v0.2.0 – v0.2.8, all published 16–18 September 2026                                                                                                                                                                                                                                                                      |
+| Data in use                        | **Real estate records and real documents, entered by both users.** The installation runs on Unraid behind Cloudflare Access                                                                                                                                                                                              |
+| Verified in production             | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)     |
+| Verified by hand, not in a browser | The v0.2.5, v0.2.6, v0.2.7, v0.2.8 and v0.2.9 changes were checked by rendering the real components to markup and by HTTP against the development server; the sandbox has no browser, so no click-through test has ever run in one                                                                                       |
+| Automated gates                    | 89 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit                                                                                                                                                                                                                 |
+| Still outstanding                  | A full accessibility and security review, and four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                   |
+| How to read the rest of this file  | Dated checkpoints and the original proposal are kept as a written record. Where the text below says something is planned or unverified, this table is the current position                                                                                                                                               |
 
 **Because the installation now holds real records**, every development and demo instruction in this file must be pointed at the isolated demo database, never at `/mnt/user/appdata/estate-organiser`.
 
@@ -60,9 +60,11 @@ One record per organisation, with name, main contact name, phone number(s), emai
 
 The first five of those — main contact, phone numbers, email, account/reference and the map link — appear in the small popup that a task, document or event row's contact name opens, with the same labels and in the same order, so a number can be dialled, a map opened, or any value copied without leaving the list ([Tasks, dates, and projects](#tasks-dates-and-projects)). They are the contact screen's own field list too, with tap-to-dial numbers and copy buttons, because the popup and the contact screen render one shared component and cannot drift apart. The contact screen's notes sit under a **Notes** heading, shown only when there are notes to read.
 
-Statuses: **Not Contacted → In Progress → Awaiting Response → Resolved**.
+Statuses: **Not Contacted → In Progress → Awaiting Response → Resolved**. Every row carries its status in words, so a Resolved contact is recognisable before the filter is used.
 
 Status changes are manual and independent of tasks. Resolving an organisation with open tasks gives a warning; it does not close them. Organisations can link to multiple projects.
+
+The contacts list has a **Sort** menu beside the search box — Added order, A>Z, or Newest first — and a **Hide resolved** filter beside it. Added order is what the list opens in: the order the contacts were added, oldest first. Hide resolved reads **Hide resolved** when it is off and **Show resolved (2)** when it is on, counting resolved contacts across the whole list rather than only the current search, so the number is what the filter takes away. Both work together, and the search keeps working on top of whichever order is chosen.
 
 ### Interaction history
 
@@ -95,7 +97,7 @@ Quick notes accept an optional title and free-text detail, with automatic time a
 ## Tasks, dates, and projects
 
 - Tasks may stand alone, optionally link to an organisation and source interaction, and have one optional project.
-- Assign to either user or leave unassigned.
+- Assign to either user, to **Everyone**, or leave unassigned. Everyone is for work the two of you have to do together — attending a meeting, say — and is not the same as Unassigned: a task given to Everyone stays in view when the list is filtered to either person, and never appears under Unassigned.
 - **A contact's details are one tap from the task.** On a task row the contact name is a button: it opens a small popup over the list with the main contact name, every phone number, the email, the account/reference and the map link. Tapping a phone number starts a call on the device, the map link opens in a new tab, and every value has a copy button beside it, so the number or reference can be pasted into another app. Nothing is saved by opening it and nothing is sent to the server — the details are already on the screen. It works the same on the Tasks tab and on the home screen, because both use the same row, and the same popup opens from a directly linked contact name on a document row, where the close button reads **Back to documents** ([Documents](#documents)), and from the contact name on an event row, where it reads **Back to the event log**.
   - The popup deliberately leaves notes out; **Open full contact** is beside it for when you want the rest.
   - A contact with a field not filled in still opens, and that field reads **“Not added”**, exactly as on the contact screen.
@@ -104,9 +106,13 @@ Quick notes accept an optional title and free-text detail, with automatic time a
   - Copy says **“Copied”** only when the browser confirmed the write. If it refuses, the popup says so and tells you to select the text yourself.
   - A task with no contact keeps its “No organisation” label as plain text, and so does the name of a contact that is in the recoverable bin — there is no live record to show for it.
 - **A linked document's name is tappable.** Where a task has documents attached, its row lists each one by friendly name; tapping a name opens it in the in-app viewer (images inline, PDFs in a frame, with a Download button inside), so a certificate or statement can be read without leaving the list. The same names behave the same way inside the task's edit dialog.
-- States: **To do, In progress, Waiting, Done, Cancelled**.
+- States: **To do, In progress, Scheduled, Done, Cancelled**.
 - Distinguish a **due date** (action needed), **follow-up date** (check/chase), and **confirmed deadline** (a firm date entered by a user).
-- Waiting tasks resurface on their follow-up date.
+- Scheduled tasks resurface on their follow-up date.
+- A task whose dates have passed is marked **Needs attention**, but a task that is **Done** or **Cancelled** is not: a finished task awaits nothing, however far in the past its dates have fallen.
+- A task has an optional **type** — Call, Email, Meeting, Research or Review — shown on the row as an icon with the word beside it, and recorded in the task's history. Types saved before this existed simply have none.
+- A task carries two pieces of text: **Task Start**, what is being asked for, and **Task Outcome**, what happened once it happened. Keeping them apart means recording what came of a call never overwrites the reason it was made. On a task that already exists, Task Start opens locked — it is a record of what was asked for at the time, not a running note — with a padlock beside the label that reads **Locked** or **Unlocked** and unlocks it when something genuinely needs correcting. It is locked rather than hidden, so the words can still be read. A brand new task has nothing to lock yet and shows no padlock.
+- **Create interaction**, in a task's edit dialog, saves the task and then opens the ordinary interaction editor for the same contact with the title, project, type and outcome already filled in: a Call task becomes a call, an Email task an email, and the rest become a note. Nothing reaches the event log until that interaction is saved, and every part of it can be changed first. The button is unavailable until an outcome has been written, because an interaction cannot be saved without one. The interaction stands on its own afterwards, exactly as if it had been typed by hand.
 - No automatic calculation of legal deadlines.
 - Reminders are in-app only; no email or browser/push notifications.
 
@@ -143,7 +149,7 @@ Uploads are limited to 20 MB per file (`maxDocumentSizeBytes`) and the server al
 2. **Container logs** at the moment of the attempt: `docker logs estate-organiser` – look for `[upload]` or `[upload:api]` lines with file name, size, and write result. `ENOSPC` means disk full, other codes point at permission/storage issues.
 3. **Free space** on the data volume: `df -h /mnt/user/appdata/estate-organiser` — a full disk fails uploads specifically while other saves still work. The server now returns `507` with a disk-full message when `ENOSPC` is detected.
 4. **Small file vs large file** — upload a tiny text file first. If small works but large fails, you are hitting a body-size limit: check `next.config.ts` has `experimental.serverActions.bodySizeLimit: "25mb"` (it must be nested under `experimental` – a top-level `serverActions` key is not valid in Next 16 and fails the build with `TS2353`), rebuild the image, and Force Update on Unraid. The `/api/documents/upload` route handler also bypasses the Server Actions limit.
-5. **Browser DevTools → Network** on a failed attempt: `413` = body too big (increase limit or compress scan), `502/504` = Cloudflare Tunnel or edge trouble (check tunnel status, `docker logs`, and retry), *no response* / `failed to fetch` = a stall or connectivity drop (retry, check tunnel logs, and container health at `/api/health`).
+5. **Browser DevTools → Network** on a failed attempt: `413` = body too big (increase limit or compress scan), `502/504` = Cloudflare Tunnel or edge trouble (check tunnel status, `docker logs`, and retry), _no response_ / `failed to fetch` = a stall or connectivity drop (retry, check tunnel logs, and container health at `/api/health`).
 
 Common fixes after an image update: ensure `public/` is copied in the Dockerfile runtime stage (PWA assets), `next.config.ts` is present in the runtime image (it is copied from the build stage), and the container was Force Updated after the release.
 
@@ -176,9 +182,11 @@ Implemented behaviour:
 - No tax, debt-priority, or entitlement calculation appears anywhere in the summaries.
 
 For fictional demo rows on the finances screens:
+
 ```bash
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-finances.ts
 ```
+
 The script refuses to run against a database path that does not contain `demo`.
 
 ## Shared history, corrections, and recovery
@@ -264,7 +272,7 @@ Before anything is merged, this file and `docs/IMPLEMENTATION_PLAN.md` are corre
 
 The workflow can also be started manually with `workflow_dispatch`, which publishes `latest` and the current SHA. The image cannot be built in the Arena sandbox because no Docker daemon is available, so GitHub Actions is the only builder: the first image was published at v0.2.0 and every release since, up to v0.2.9, has been built there.
 
-**If a release build fails, nothing is broken and nothing is released.** No image is pushed for the failed tag and `latest` does not move, so the running installation is untouched. Fix the cause on a working branch, open a pull request and merge it to `main`, then re-point the same tag at the new merge commit and force-push it — which is safe *only* because no image was published for that tag:
+**If a release build fails, nothing is broken and nothing is released.** No image is pushed for the failed tag and `latest` does not move, so the running installation is untouched. Fix the cause on a working branch, open a pull request and merge it to `main`, then re-point the same tag at the new merge commit and force-push it — which is safe _only_ because no image was published for that tag:
 
 ```bash
 git fetch origin main
@@ -306,17 +314,17 @@ Every other path, including `/` and `/api/*`, stays behind the existing Access p
 
 This section is kept as a record of the pre-scaffolding plan. The right-hand column is what the running app uses today.
 
-| Layer | Proposed before scaffolding | Shipped |
-|---|---|---|
-| Framework | Next.js 15 App Router, patched version to be checked at build time | Next.js **16.3.5** App Router |
-| Language | TypeScript | TypeScript, strict, checked on every build |
-| ORM | Drizzle | Drizzle ORM with versioned SQL migrations in `drizzle/` |
-| Database | SQLite (`better-sqlite3`) | SQLite via `better-sqlite3` in WAL mode |
-| Styling | Tailwind CSS with semantic CSS-variable theme tokens | Tailwind CSS v4 with semantic tokens in `src/app/globals.css` |
-| UI components | shadcn/ui | One shadcn/ui `Button` plus local components |
-| Mobile installation | Web app manifest; no sensitive offline caching | Manifest, no-op service worker and icons; installed on Android, still no offline caching |
-| Authentication | Server-verified Cloudflare Access JWTs | As proposed, plus an explicit development-only mock identity that cannot be enabled in production |
-| Deployment | Docker on Unraid | Multi-stage Node 22 image published to GHCR and run on Unraid, host port 3005 |
+| Layer               | Proposed before scaffolding                                        | Shipped                                                                                           |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Framework           | Next.js 15 App Router, patched version to be checked at build time | Next.js **16.3.5** App Router                                                                     |
+| Language            | TypeScript                                                         | TypeScript, strict, checked on every build                                                        |
+| ORM                 | Drizzle                                                            | Drizzle ORM with versioned SQL migrations in `drizzle/`                                           |
+| Database            | SQLite (`better-sqlite3`)                                          | SQLite via `better-sqlite3` in WAL mode                                                           |
+| Styling             | Tailwind CSS with semantic CSS-variable theme tokens               | Tailwind CSS v4 with semantic tokens in `src/app/globals.css`                                     |
+| UI components       | shadcn/ui                                                          | One shadcn/ui `Button` plus local components                                                      |
+| Mobile installation | Web app manifest; no sensitive offline caching                     | Manifest, no-op service worker and icons; installed on Android, still no offline caching          |
+| Authentication      | Server-verified Cloudflare Access JWTs                             | As proposed, plus an explicit development-only mock identity that cannot be enabled in production |
+| Deployment          | Docker on Unraid                                                   | Multi-stage Node 22 image published to GHCR and run on Unraid, host port 3005                     |
 
 Two changes from the original plan are worth recording. The proposal specified Next.js 15; the app was built on 16, where `serverActions` must be nested inside `experimental` in `next.config.ts` — a top-level key is not read and fails the production type check with `TS2353`. Offline support was dropped as a requirement, so no caching plugin was added; the service worker exists only so Chrome offers the install prompt.
 

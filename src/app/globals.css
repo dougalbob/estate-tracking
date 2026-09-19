@@ -777,6 +777,23 @@ label.checkbox-label {
   color: var(--primary) !important;
   padding: 5px;
 }
+.lock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--notice);
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.locked-field {
+  background: var(--notice);
+  color: var(--muted);
+  cursor: default;
+}
 .record-title {
   text-align: left;
   font-weight: 600;

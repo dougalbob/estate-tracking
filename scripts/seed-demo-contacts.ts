@@ -14,6 +14,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../src/lib/db/schema";
 import { recordStore } from "../src/lib/records/store";
+import { everyoneAssignee } from "../src/lib/records/validation";
 
 const path = process.env.DATABASE_PATH || "./data/demo.sqlite";
 if (!path.includes("demo")) {
@@ -43,9 +44,14 @@ type DemoContact = {
   task: {
     title: string;
     detail: string;
-    status: "to_do" | "in_progress" | "waiting" | "done" | "cancelled";
+    /** What sort of work it is. Every kind appears once across the demo. */
+    kind: "call" | "email" | "meeting" | "research" | "review";
+    /** What happened, for the tasks that have already happened. */
+    outcome: string | null;
+    status: "to_do" | "in_progress" | "scheduled" | "done" | "cancelled";
     dueDate: string | null;
     followUpDate: string | null;
+    /** null is unassigned; everyoneAssignee means the two of you together. */
     assignee: string | null;
   };
 };
@@ -68,7 +74,9 @@ const contacts: DemoContact[] = [
       title: "Confirm the balance for the estate accounts (fictional)",
       detail:
         "Ask for the balance at the date of death and the closing letter.",
-      status: "waiting",
+      kind: "call",
+      outcome: null,
+      status: "scheduled",
       dueDate: null,
       followUpDate: "2026-09-24",
       assignee: users[0],
@@ -87,6 +95,8 @@ const contacts: DemoContact[] = [
     task: {
       title: "Ask for the itemised funeral bill (fictional)",
       detail: "Needed before the costs can be recorded in Estate finances.",
+      kind: "email",
+      outcome: null,
       status: "to_do",
       dueDate: "2026-09-21",
       followUpDate: null,
@@ -107,10 +117,86 @@ const contacts: DemoContact[] = [
     task: {
       title: "Report the change of occupancy (fictional)",
       detail: "",
+      kind: "research",
+      outcome: null,
+      // Deliberately overdue and still open, so "Needs attention" can be seen
+      // next to the Done task that no longer says it.
       status: "to_do",
-      dueDate: null,
+      dueDate: "2026-09-15",
       followUpDate: null,
       assignee: null,
+    },
+  },
+  {
+    // Resolved, so the Hide resolved filter has something to count. Its task is
+    // done and its due date has passed: it should read plainly as Done, with no
+    // "Needs attention" chasing it.
+    name: "Co-op Funeral Services (fictional)",
+    mainContact: "Ms Whitfield",
+    phoneNumbers: ["0121 000 0001"],
+    email: "funeralcare@example.invalid",
+    reference: "FC-4417",
+    mapUrl: null,
+    notes: "Fictional resolved contact. The service has been arranged.",
+    status: "resolved",
+    projectIds: ["funeral"],
+    task: {
+      title: "Call co-op funeral services (fictional)",
+      detail:
+        "Need to discuss floral arrangements and refreshments after service",
+      kind: "call",
+      outcome:
+        "Agreed a simple sheaf on the coffin and tea for forty in the hall afterwards. Confirmed in writing on the 18th.",
+      status: "done",
+      dueDate: "2026-09-18",
+      followUpDate: null,
+      assignee: users[1],
+    },
+  },
+  {
+    // The second resolved contact, so the count beside the filter is a number
+    // and not simply one.
+    name: "Meridian Probate Registry (fictional)",
+    mainContact: null,
+    phoneNumbers: ["0121 000 0002"],
+    email: null,
+    reference: "PR-90211",
+    mapUrl: null,
+    notes: "Fictional resolved contact. The grant has been issued.",
+    status: "resolved",
+    projectIds: ["probate"],
+    task: {
+      title: "Review the grant of probate paperwork (fictional)",
+      detail: "Check the grant against the estate accounts once it arrives.",
+      kind: "review",
+      outcome:
+        "Grant matches the figures already recorded. Nothing further to chase.",
+      status: "done",
+      dueDate: null,
+      followUpDate: null,
+      assignee: users[0],
+    },
+  },
+  {
+    name: "Bramble Lane Solicitors (fictional)",
+    mainContact: "Mr Adeyemi",
+    phoneNumbers: ["0121 000 0003"],
+    email: "wills@example.invalid",
+    reference: null,
+    mapUrl: null,
+    notes: "Fictional solicitor holding the will.",
+    status: "in_progress",
+    projectIds: ["probate"],
+    task: {
+      title: "Meeting to go through the will (fictional)",
+      detail: "Take the list of questions about the residue of the estate.",
+      kind: "meeting",
+      outcome: null,
+      status: "to_do",
+      dueDate: "2026-09-30",
+      followUpDate: null,
+      // Both of them have to be there, so it belongs to both of them.
+      assignee: everyoneAssignee,
     },
   },
 ];
@@ -137,6 +223,8 @@ for (const contact of contacts) {
     {
       title: contact.task.title,
       detail: contact.task.detail,
+      kind: contact.task.kind,
+      outcome: contact.task.outcome,
       organisationId: id,
       interactionId: null,
       projectId: contact.projectIds[0] ?? null,

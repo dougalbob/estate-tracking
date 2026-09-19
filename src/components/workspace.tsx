@@ -23,6 +23,9 @@ import {
   StickyNote,
   ScrollText,
   ArrowUpDown,
+  CalendarDays,
+  Search,
+  ClipboardCheck,
   Copy,
   Check,
   Trash2,
@@ -34,6 +37,7 @@ import {
   Link2,
   X,
   Eye,
+  EyeOff,
   Landmark,
   Receipt,
   TrendingUp,
@@ -77,6 +81,8 @@ import {
   label,
   londonToday,
   taskStatuses,
+  taskKinds,
+  everyoneAssignee,
   documentCategories,
   financeKinds,
   movementKindFor,
@@ -142,6 +148,17 @@ const formatDate = (value: string | Date) =>
  * One icon per interaction kind for the Event log rows. The icon is never
  * the only cue: every row also carries the kind as a text badge.
  */
+/**
+ * One icon per task type. The word is always beside the icon, so the icon is
+ * never the only cue - the same rule the Event log rows follow.
+ */
+const taskKindIcons = {
+  call: Phone,
+  email: Mail,
+  meeting: CalendarDays,
+  research: Search,
+  review: ClipboardCheck,
+};
 const eventKindIcons = {
   call: Phone,
   email: Mail,
@@ -317,6 +334,12 @@ export function Workspace({
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("open"),
     [owner, setOwner] = useState("all"),
+    // "added" is the list as it comes back from the database, which is the
+    // order contacts were added in. Neither sort is on until it is asked for.
+    [contactSort, setContactSort] = useState<"added" | "name" | "newest">(
+      "added",
+    ),
+    [hideResolved, setHideResolved] = useState(false),
     [docQuery, setDocQuery] = useState(""),
     [docCategory, setDocCategory] = useState("all"),
     [eventQuery, setEventQuery] = useState(""),
@@ -386,7 +409,11 @@ export function Workspace({
 
   const organisation = data.organisations.find((o) => o.id === selected);
   const names = (email: string | null) =>
-    email ? email.split("@")[0] : "Unassigned";
+    !email
+      ? "Unassigned"
+      : email === everyoneAssignee
+        ? "Everyone"
+        : email.split("@")[0];
   const orgName = (id: string | null) => {
     if (!id) return "No organisation";
     return (
@@ -796,6 +823,9 @@ export function Workspace({
       source = data.interactions.find((n) => n.id === t.interactionId);
     const docs = getLinkedDocuments({ taskId: t.id });
     const contact = liveOrganisation(t.organisationId);
+    const KindIcon = t.kind
+      ? taskKindIcons[t.kind as keyof typeof taskKindIcons]
+      : null;
     return (
       <div className="task-row" key={t.id}>
         <span className="task-icon">
@@ -828,7 +858,28 @@ export function Workspace({
           </p>
           <p>
             {label(t.status)}
-            {date && date < londonToday() && <> · Needs attention</>}
+            {KindIcon && (
+              <>
+                {" · "}
+                <span
+                  className="badge"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <KindIcon size={11} aria-hidden />
+                  {label(t.kind!)}
+                </span>
+              </>
+            )}
+            {/* A task that is done or called off awaits nothing, however far
+                into the past its dates have fallen. */}
+            {date &&
+              date < londonToday() &&
+              t.status !== "done" &&
+              t.status !== "cancelled" && <> · Needs attention</>}
           </p>
           <p>
             {[
@@ -1305,6 +1356,10 @@ export function Workspace({
           a.createdAt.localeCompare(b.createdAt),
     );
 
+  const resolvedContactCount = data.organisations.filter(
+    (o) => o.status === "resolved",
+  ).length;
+
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -1553,7 +1608,7 @@ export function Workspace({
           )}
           {view === "contacts" && !organisation && (
             <>
-              <div className="list-toolbar">
+              <div className="list-toolbar" style={{ flexWrap: "wrap" }}>
                 <label className="search-label">
                   Find an organisation
                   <input
@@ -1563,72 +1618,146 @@ export function Workspace({
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </label>
-                <Button onClick={() => edit("organisation")}>
-                  <Plus size={16} />
-                  Add organisation
-                </Button>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    alignItems: "flex-end",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <label style={{ maxWidth: "24ch" }}>
+                    Sort
+                    <select
+                      value={contactSort}
+                      onChange={(e) =>
+                        setContactSort(
+                          e.target.value as "added" | "name" | "newest",
+                        )
+                      }
+                    >
+                      {/* Added order is the list as it comes from the database,
+                          and is what the list opens in. */}
+                      <option value="added">Added order</option>
+                      <option value="name">A&gt;Z</option>
+                      <option value="newest">Newest first</option>
+                    </select>
+                  </label>
+                  {/*
+                    Off it says what pressing it will do; on it says what it is
+                    doing and how many contacts that is.
+                  */}
+                  <Button
+                    variant={hideResolved ? "default" : "outline"}
+                    aria-pressed={hideResolved}
+                    title={
+                      hideResolved
+                        ? `${resolvedContactCount} resolved contact${resolvedContactCount === 1 ? "" : "s"} hidden - activate to show them again`
+                        : "Hide resolved contacts from the list"
+                    }
+                    aria-label={
+                      hideResolved
+                        ? `${resolvedContactCount} resolved contact${resolvedContactCount === 1 ? "" : "s"} hidden - activate to show them again`
+                        : "Hide resolved contacts from the list"
+                    }
+                    onClick={() => setHideResolved(!hideResolved)}
+                  >
+                    {hideResolved ? (
+                      <Eye size={16} aria-hidden />
+                    ) : (
+                      <EyeOff size={16} aria-hidden />
+                    )}
+                    {hideResolved
+                      ? `Show resolved (${resolvedContactCount})`
+                      : "Hide resolved"}
+                  </Button>
+                  <Button onClick={() => edit("organisation")}>
+                    <Plus size={16} />
+                    Add organisation
+                  </Button>
+                </div>
               </div>
               <div className="panel">
-                {data.organisations
-                  .filter((o) =>
+                {(() => {
+                  // One pass over the contacts: the search first, then the
+                  // resolved filter, then whichever sort is on. Both filters
+                  // return fresh arrays, so sorting never reorders the
+                  // snapshot the rest of the screen is reading.
+                  const matches = data.organisations.filter((o) =>
                     [o.name, o.mainContact, o.reference]
                       .join(" ")
                       .toLowerCase()
                       .includes(query.toLowerCase()),
-                  )
-                  .map((o) => (
-                    <button
-                      key={o.id}
-                      className="contact-row"
-                      onClick={() => setSelected(o.id)}
-                    >
-                      <span className="task-icon">
-                        <Users size={19} />
-                      </span>
-                      <span>
-                        <strong>{o.name}</strong>
-                        <small>
-                          {o.mainContact ||
-                            o.email ||
-                            "Contact details ready to add"}
-                          {organisationProjectIds(o.id).length > 0 && (
-                            <>
-                              {" "}
-                              ·{" "}
-                              {organisationProjectIds(o.id)
-                                .map((pid) => projectName(pid))
-                                .join(", ")}
-                            </>
-                          )}
-                          {getLinkedDocumentsForOrg(o.id).length > 0 && (
-                            <> · {getLinkedDocumentsForOrg(o.id).length} docs</>
-                          )}
-                        </small>
-                      </span>
-                      <span className="badge">{label(o.status)}</span>
-                      <ChevronRight size={18} />
-                    </button>
-                  ))}
-                {!data.organisations.length && (
-                  <div className="empty-state">
-                    <Users size={27} />
-                    <h2>Start with one organisation</h2>
-                    <p>
-                      A bank, funeral director, or anyone you need to contact.
-                    </p>
-                  </div>
-                )}
-                {data.organisations.length > 0 &&
-                  !data.organisations.some((o) =>
-                    [o.name, o.mainContact, o.reference]
-                      .join(" ")
-                      .toLowerCase()
-                      .includes(query.toLowerCase()),
-                  ) && (
-                    <p className="empty-state">
-                      No organisations match your search.
-                    </p>
-                  )}
+                  );
+                  const visible = (
+                    hideResolved
+                      ? matches.filter((o) => o.status !== "resolved")
+                      : matches
+                  ).sort((a, b) => {
+                    if (contactSort === "name")
+                      return a.name.localeCompare(b.name);
+                    if (contactSort === "newest")
+                      return b.createdAt.getTime() - a.createdAt.getTime();
+                    return 0;
+                  });
+                  return (
+                    <>
+                      {visible.map((o) => (
+                        <button
+                          key={o.id}
+                          className="contact-row"
+                          onClick={() => setSelected(o.id)}
+                        >
+                          <span className="task-icon">
+                            <Users size={19} />
+                          </span>
+                          <span>
+                            <strong>{o.name}</strong>
+                            <small>
+                              {o.mainContact ||
+                                o.email ||
+                                "Contact details ready to add"}
+                              {organisationProjectIds(o.id).length > 0 && (
+                                <>
+                                  {" "}
+                                  ·{" "}
+                                  {organisationProjectIds(o.id)
+                                    .map((pid) => projectName(pid))
+                                    .join(", ")}
+                                </>
+                              )}
+                              {getLinkedDocumentsForOrg(o.id).length > 0 && (
+                                <>
+                                  {" "}
+                                  · {getLinkedDocumentsForOrg(o.id).length} docs
+                                </>
+                              )}
+                            </small>
+                          </span>
+                          <span className="badge">{label(o.status)}</span>
+                          <ChevronRight size={18} />
+                        </button>
+                      ))}
+                      {!data.organisations.length && (
+                        <div className="empty-state">
+                          <Users size={27} />
+                          <h2>Start with one organisation</h2>
+                          <p>
+                            A bank, funeral director, or anyone you need to
+                            contact.
+                          </p>
+                        </div>
+                      )}
+                      {data.organisations.length > 0 && !visible.length && (
+                        <p className="empty-state">
+                          {matches.length
+                            ? "Every contact that matches is resolved, so the list is empty while resolved contacts are hidden."
+                            : "No organisations match your search."}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </>
           )}
@@ -1872,7 +2001,13 @@ export function Workspace({
                           (status === "open"
                             ? !["done", "cancelled"].includes(t.status)
                             : t.status === status)) &&
-                        (owner === "all" || (t.assignee ?? "") === owner),
+                        (owner === "all" ||
+                          (t.assignee ?? "") === owner ||
+                          // Work given to everyone belongs to each of the two,
+                          // so it stays in view when the list is narrowed to
+                          // one of them. It is not unassigned work, so it does
+                          // not appear under Unassigned.
+                          (owner !== "" && t.assignee === everyoneAssignee)),
                     )
                     .sort((a, b) =>
                       (attentionDate(a) ?? "9999").localeCompare(
@@ -2746,6 +2881,9 @@ export function Workspace({
           data={data}
           users={users}
           onViewDocument={setViewingDoc}
+          onOpenInteraction={(initial) =>
+            setEditor({ kind: "interaction", initial })
+          }
           onClose={() => setEditor(null)}
           onSaved={(id, newContactName) => {
             setMessage(

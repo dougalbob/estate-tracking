@@ -57,6 +57,13 @@
       "when": 1789732169737,
       "tag": "0007_contact_map_link",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789799029792,
+      "tag": "0008_task_type_outcome_and_scheduled",
+      "breakpoints": true
     }
   ]
 }
