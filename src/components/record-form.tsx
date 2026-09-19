@@ -29,6 +29,7 @@ import {
   everyoneAssignee,
   documentCategories,
 } from "@/lib/records/validation";
+import { byContactName } from "@/lib/contacts/sort";
 export type Editor = {
   kind: "organisation" | "interaction" | "task" | "project" | "document";
   id?: string;
@@ -893,11 +894,13 @@ export function RecordForm({
                         }}
                       >
                         <option value="">Pick contact…</option>
-                        {data.organisations.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name}
-                          </option>
-                        ))}
+                        {[...data.organisations]
+                          .sort(byContactName)
+                          .map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
+                            </option>
+                          ))}
                       </select>
                     </label>
                   )}
@@ -1031,7 +1034,7 @@ export function RecordForm({
                       ? "Unfiled note / no organisation"
                       : "No organisation"}
                   </option>
-                  {data.organisations.map((o) => (
+                  {[...data.organisations].sort(byContactName).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
                     </option>

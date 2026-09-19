@@ -37,6 +37,7 @@ import {
 import { formatPence } from "@/lib/finances/money";
 import { movementAmountHint } from "@/lib/finances/movement-hint";
 import type { FinanceMovement, FinanceRecord } from "@/lib/finances/summary";
+import { byContactName } from "@/lib/contacts/sort";
 
 export type FinanceRecordEditor = { id?: string };
 
@@ -397,7 +398,7 @@ export function FinanceRecordForm({
                 defaultValue={record?.organisationId ?? ""}
               >
                 <option value="">No organisation</option>
-                {data.organisations.map((o) => (
+                {[...data.organisations].sort(byContactName).map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
                   </option>
