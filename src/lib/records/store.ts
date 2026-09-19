@@ -12,6 +12,7 @@ import {
   interactionInput,
   taskInput,
   taskLinkInput,
+  taskDueDateInput,
   everyoneAssignee,
   projectInput,
   documentInput,
@@ -592,6 +593,45 @@ export function recordStore(
             id,
             version: input.version,
             organisationId: input.organisationId,
+          },
+          actor,
+        );
+      });
+    },
+    /**
+     * Dragging a task to another day on the calendar. One column changes: the
+     * follow-up date and the confirmed deadline stay exactly where they were.
+     * Dropping a task back on the day it is already on writes nothing at all, so
+     * an accidental jiggle does not add a revision to the history.
+     */
+    setTaskDueDate(raw: unknown, actor: string) {
+      actorCheck(actor);
+      const input = taskDueDateInput.parse(raw);
+      return db.transaction(() => {
+        const task = db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.id, input.taskId))
+          .get();
+        if (!task || task.deletedAt)
+          throw new RecordError("That task is no longer available");
+        if (task.dueDate === input.dueDate) return task.id;
+        if (task.version !== input.version) conflict();
+        const {
+          id,
+          version,
+          createdBy: _createdBy,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          deletedAt: _deletedAt,
+          ...fields
+        } = task;
+        return saveTask(
+          {
+            ...fields,
+            id,
+            version,
+            dueDate: input.dueDate,
           },
           actor,
         );

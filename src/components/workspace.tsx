@@ -69,6 +69,7 @@ import {
   type FinanceRecordEditor,
 } from "./finance-forms";
 import { ProjectChecklist } from "./checklist";
+import { CalendarPage } from "./calendar";
 import {
   formatSize,
   fileTooLarge,
@@ -1242,21 +1243,23 @@ export function Workspace({
         ? (organisation?.name ?? "Contacts")
         : view === "tasks"
           ? "All tasks"
-          : view === "notes"
-            ? "Unfiled notes"
-            : view === "projects"
-              ? "Your projects"
-              : view === "documents"
-                ? "Documents"
-                : view === "events"
-                  ? "Event log"
-                  : view === "bin"
-                    ? "Recoverable bin"
-                    : view === "finances"
-                      ? "Estate finances"
-                      : view === "backup"
-                        ? "Backup & restore"
-                        : "Documents";
+          : view === "calendar"
+            ? "Calendar"
+            : view === "notes"
+              ? "Unfiled notes"
+              : view === "projects"
+                ? "Your projects"
+                : view === "documents"
+                  ? "Documents"
+                  : view === "events"
+                    ? "Event log"
+                    : view === "bin"
+                      ? "Recoverable bin"
+                      : view === "finances"
+                        ? "Estate finances"
+                        : view === "backup"
+                          ? "Backup & restore"
+                          : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
@@ -1392,6 +1395,7 @@ export function Workspace({
             { id: "events", title: "Event log", icon: ScrollText },
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
+            { id: "calendar", title: "Calendar", icon: CalendarDays },
             { id: "finances", title: "Estate finances", icon: Wallet },
             { id: "backup", title: "Backup & restore", icon: ArchiveRestore },
             {
@@ -1462,13 +1466,15 @@ export function Workspace({
                     ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
                     : view === "documents"
                       ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
-                      : view === "events"
-                        ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
-                        : view === "finances"
-                          ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
-                          : view === "backup"
-                            ? "Create an encrypted recovery copy, or validate one before restoring it."
-                            : "Everything you need, shared between the two of you."}
+                      : view === "calendar"
+                        ? "Every task with a due date, by month or by week, colour coded by project. Tick the statuses and the people you want to see, and open a task by clicking it."
+                        : view === "events"
+                          ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
+                          : view === "finances"
+                            ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
+                            : view === "backup"
+                              ? "Create an encrypted recovery copy, or validate one before restoring it."
+                              : "Everything you need, shared between the two of you."}
               </p>
             </div>
             <div className="row-actions">
@@ -2078,6 +2084,19 @@ export function Workspace({
                 })()}
               </section>
             </>
+          )}
+          {view === "calendar" && (
+            <CalendarPage
+              tasks={data.tasks}
+              projects={data.projects}
+              users={users}
+              displayName={names}
+              projectName={projectName}
+              onOpenTask={(id) => edit("task", id)}
+              onAddTask={() => edit("task")}
+              onMessage={setMessage}
+              onError={setError}
+            />
           )}
           {view === "notes" && (
             <>

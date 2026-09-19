@@ -67,16 +67,21 @@ const optionalUrl = z
   }, "Enter a link that starts with http:// or https://")
   .nullable()
   .transform((v) => v || null);
-const date = z
+/**
+ * One calendar day as typed into a date field: `YYYY-MM-DD`, and a day that
+ * really exists. Read as UTC, so the day stored is the day shown — the same rule
+ * the Calendar page works to.
+ */
+const requiredDate = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
   .refine(
     (v) =>
       Number.isFinite(Date.parse(v)) &&
       new Date(v).toISOString().slice(0, 10) === v,
     "Enter a valid date",
-  )
-  .nullable();
+  );
+const date = requiredDate.nullable();
 const common = {
   id: z.string().min(1).optional(),
   version: z.number().int().positive().optional(),
@@ -139,6 +144,18 @@ export const taskInput = z.object({
 export const taskLinkInput = z.object({
   taskId: z.string().min(1),
   organisationId: z.string().min(1),
+  version: z.number().int().positive(),
+});
+/**
+ * Moving a task to another day on the calendar changes exactly one column, and
+ * always to a real day: a task on the calendar has a due date by definition. The
+ * version comes from the screen that was open, so a calendar left open on a
+ * stale page is refused rather than overwriting a task the other person has just
+ * edited.
+ */
+export const taskDueDateInput = z.object({
+  taskId: z.string().min(1),
+  dueDate: requiredDate,
   version: z.number().int().positive(),
 });
 export const interactionInput = z
@@ -326,6 +343,7 @@ export type ProjectInput = z.input<typeof projectInput>;
 export type DocumentInput = z.input<typeof documentInput>;
 export type DocumentLinkInput = z.input<typeof documentLinkInput>;
 export type TaskLinkInput = z.input<typeof taskLinkInput>;
+export type TaskDueDateInput = z.input<typeof taskDueDateInput>;
 export const label = (value: string) =>
   value
     .split("_")
