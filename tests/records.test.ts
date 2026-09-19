@@ -7,8 +7,11 @@ import * as schema from "../src/lib/db/schema";
 import { recordStore, RecordError } from "../src/lib/records/store";
 import {
   attentionDate,
+  everyoneAssignee,
   londonToday,
   organisationInput,
+  taskKinds,
+  taskStatuses,
 } from "../src/lib/records/validation";
 const users = ["alex@example.invalid", "jamie@example.invalid"];
 const org = {
@@ -993,6 +996,137 @@ test("contact map link: save, change and clear with history", () => {
     assert.ok(
       updated.some((r) => r.before?.mapUrl === other && r.after.mapUrl == null),
     );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("task type: saved, changed and cleared, and refused when unknown", () => {
+  const { sqlite, store } = setup();
+  try {
+    // A task saved with no type at all, exactly as every task before v0.2.10
+    // was written, still saves and reads back as no type.
+    const untyped = store.saveTask({ ...task, title: "Untyped" }, users[0]);
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === untyped)?.kind,
+      null,
+    );
+    // Choose one, then change it, then clear it again from Edit.
+    const id = store.saveTask({ ...task, kind: "call" }, users[0]);
+    assert.equal(store.snapshot().tasks.find((t) => t.id === id)?.kind, "call");
+    store.saveTask({ ...task, id, version: 1, kind: "meeting" }, users[1]);
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === id)?.kind,
+      "meeting",
+    );
+    store.saveTask({ ...task, id, version: 2, kind: null }, users[1]);
+    assert.equal(store.snapshot().tasks.find((t) => t.id === id)?.kind, null);
+
+    // Every type in the list is storable, and nothing outside it is.
+    for (const kind of taskKinds) {
+      const k = store.saveTask(
+        { ...task, title: `Typed ${kind}`, kind },
+        users[0],
+      );
+      assert.equal(store.snapshot().tasks.find((t) => t.id === k)?.kind, kind);
+    }
+    assert.throws(() =>
+      store.saveTask({ ...task, kind: "carrier_pigeon" }, users[0]),
+    );
+
+    // The type is part of the readable history, like every other field.
+    const revisions = store
+      .snapshot()
+      .revisions.filter((r) => r.entity === "task" && r.entityId === id);
+    const updated = revisions.filter((r) => r.action === "updated");
+    assert.equal(updated.length, 2);
+    assert.ok(
+      updated.some(
+        (r) => r.before?.kind === "call" && r.after.kind === "meeting",
+      ),
+    );
+    assert.ok(
+      updated.some((r) => r.before?.kind === "meeting" && r.after.kind == null),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("task outcome is kept apart from the detail the task was set with", () => {
+  const { sqlite, store } = setup();
+  try {
+    const id = store.saveTask(
+      {
+        ...task,
+        detail: "Need to discuss floral arrangements and refreshments",
+        outcome: "Agreed a simple sheaf and tea for forty in the hall.",
+      },
+      users[0],
+    );
+    const saved = store.snapshot().tasks.find((t) => t.id === id);
+    // Both survive together: the task keeps what was asked for and records
+    // what actually happened, and neither overwrites the other.
+    assert.match(saved?.detail ?? "", /floral arrangements/);
+    assert.match(saved?.outcome ?? "", /tea for forty/);
+    // A task with no outcome yet is null, not an empty string.
+    const bare = store.saveTask({ ...task, title: "No outcome yet" }, users[0]);
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === bare)?.outcome,
+      null,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("Scheduled is the status the app offers, and Waiting is no longer accepted", () => {
+  const { sqlite, store } = setup();
+  try {
+    assert.ok(taskStatuses.includes("scheduled"));
+    assert.ok(!(taskStatuses as readonly string[]).includes("waiting"));
+    const id = store.saveTask({ ...task, status: "scheduled" }, users[0]);
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === id)?.status,
+      "scheduled",
+    );
+    // The old word is refused outright, so nothing can write it again.
+    assert.throws(() =>
+      store.saveTask({ ...task, status: "waiting" }, users[0]),
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("a task can be given to everyone, and an unknown person is still refused", () => {
+  const { sqlite, store } = setup();
+  try {
+    // Work the two of you do together - attending a meeting, say - is not
+    // work for one of you, and it is not unassigned either.
+    const id = store.saveTask(
+      { ...task, assignee: everyoneAssignee },
+      users[0],
+    );
+    assert.equal(
+      store.snapshot().tasks.find((t) => t.id === id)?.assignee,
+      everyoneAssignee,
+    );
+    // The guard is still there for everyone else: only the two workspace
+    // users, or the shared value, may be named.
+    assert.throws(() =>
+      store.saveTask(
+        { ...task, assignee: "stranger@example.invalid" },
+        users[0],
+      ),
+    );
+    for (const user of users) {
+      const theirs = store.saveTask({ ...task, assignee: user }, users[0]);
+      assert.equal(
+        store.snapshot().tasks.find((t) => t.id === theirs)?.assignee,
+        user,
+      );
+    }
   } finally {
     sqlite.close();
   }

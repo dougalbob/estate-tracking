@@ -59,7 +59,19 @@ export const interactions = sqliteTable("interactions", {
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
+  /** What was asked for when the task was set. */
   detail: text("detail").notNull().default(""),
+  /**
+   * What actually happened, written afterwards. Kept apart from `detail` so
+   * the two never overwrite each other, and null until there is an outcome.
+   */
+  outcome: text("outcome"),
+  /**
+   * What sort of work this is — call, email, meeting, research or review. No
+   * database enum: a task saved before v0.2.10 has no type, and adding one is
+   * always optional.
+   */
+  kind: text("kind"),
   organisationId: text("organisation_id").references(() => organisations.id),
   interactionId: text("interaction_id").references(() => interactions.id),
   projectId: text("project_id").references(() => projects.id),

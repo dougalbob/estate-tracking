@@ -12,6 +12,7 @@ import {
   interactionInput,
   taskInput,
   taskLinkInput,
+  everyoneAssignee,
   projectInput,
   documentInput,
   documentLinkInput,
@@ -68,7 +69,13 @@ export function recordStore(
         .get()
     )
       throw new RecordError("Project no longer available");
-    if (t.assignee && !users.includes(t.assignee))
+    // "Everyone" is a real choice, not one of the two people, so it is let
+    // through here and read back as a name of its own.
+    if (
+      t.assignee &&
+      t.assignee !== everyoneAssignee &&
+      !users.includes(t.assignee)
+    )
       throw new RecordError("Choose one of the two workspace users");
     if (t.interactionId) {
       const note = db

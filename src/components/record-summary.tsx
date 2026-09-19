@@ -1,5 +1,5 @@
 import type { Snapshot } from "@/lib/records/store";
-import { label } from "@/lib/records/validation";
+import { everyoneAssignee, label } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 const captions: Record<string, string> = {
   name: "Organisation",
@@ -11,6 +11,11 @@ const captions: Record<string, string> = {
   notes: "Notes",
   title: "Title",
   detail: "Detail",
+  /**
+   * What happened, once it has happened. Kept apart from Detail, which on a
+   * task is what was asked for when the task was set.
+   */
+  outcome: "Outcome",
   kind: "Type",
   status: "Status",
   organisationId: "Organisation",
@@ -100,7 +105,10 @@ export function RecordSummary({
         data.deletedDocuments.find((d) => d.id === value)?.friendlyName ??
         "Linked document"
       );
-    if (key === "assignee") return String(value).split("@")[0];
+    if (key === "assignee")
+      return String(value) === everyoneAssignee
+        ? "Everyone"
+        : String(value).split("@")[0];
     if (key === "status" || key === "kind" || key === "category")
       return label(String(value));
     if (key === "occurredAt")

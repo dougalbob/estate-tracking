@@ -8,10 +8,28 @@ export const organisationStatuses = [
 export const taskStatuses = [
   "to_do",
   "in_progress",
-  "waiting",
+  "scheduled",
   "done",
   "cancelled",
 ] as const;
+/**
+ * What sort of work a task is. Optional: a task saved before v0.2.10 has no
+ * type, and that stays valid — "No type" simply means nobody chose one.
+ */
+export const taskKinds = [
+  "call",
+  "email",
+  "meeting",
+  "research",
+  "review",
+] as const;
+/**
+ * The stored assignee meaning "both of the workspace users", for work they
+ * have to do together - attending a meeting, say. Deliberately not shaped like
+ * an email address, so it can never be mistaken for one of the two people,
+ * whichever way round the list is read.
+ */
+export const everyoneAssignee = "__everyone__";
 export const documentCategories = [
   "certificate",
   "correspondence",
@@ -84,6 +102,26 @@ export const taskInput = z.object({
   ...common,
   title: z.string().trim().min(1, "A task title is required").max(300),
   detail: z.string().max(20000),
+  /**
+   * What happened, written once it has happened. Optional and separate from
+   * `detail`, which keeps what was asked for when the task was set. Nullable
+   * with a default so tasks saved before v0.2.10 (and follow-ups built inside
+   * an interaction) still validate untouched.
+   */
+  outcome: z
+    .string()
+    .max(20000)
+    .nullable()
+    .transform((v) => (v === "" ? null : v))
+    .default(null),
+  // Same reasoning as `outcome`: optional, so every task saved before this
+  // field existed still validates.
+  kind: z
+    .enum(taskKinds)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null)
+    .default(null),
   organisationId: optionalText,
   interactionId: optionalText,
   projectId: optionalText,
