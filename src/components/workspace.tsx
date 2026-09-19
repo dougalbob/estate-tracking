@@ -76,6 +76,7 @@ import {
   postDocumentUpload,
   uploadErrorMessage,
 } from "./document-upload";
+import { preferredSharedFile } from "@/lib/documents/shared-file";
 import { BackupPanel } from "./backup-panel";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
@@ -311,6 +312,7 @@ type DocUploadInitial = {
   taskId?: string;
   projectId?: string;
   financeRecordId?: string;
+  file?: File;
 };
 type LinkPickerInitial = {
   documentId?: string;
@@ -416,6 +418,229 @@ export function Workspace({
     voidTarget,
     router,
   ]);
+
+  // Web Share Target: when Chrome POSTs a shared file to /share-target the
+  // service worker stores it in the "estate-share-incoming" Cache and
+  // redirects to /?share-target=1. This effect consumes that entry once, opens
+  // the existing Upload document dialog with the file pre-filled, and removes
+  // the flag so a refresh does not reopen an empty dialog.
+  useEffect(() => {
+    let cancelled = false;
+    async function consumeShare() {
+      if (typeof window === "undefined") return;
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("share-target")) return;
+
+      // Helper to clear the flag without disturbing any other query.
+      const clearFlag = () => {
+        if (cancelled) return;
+        const next = new URL(window.location.href);
+        next.searchParams.delete("share-target");
+        const search = next.searchParams.toString();
+        const hash = next.hash || "";
+        const target =
+          next.pathname + (search ? "?" + search : "") + hash || "/";
+        try {
+          window.history.replaceState(null, "", target);
+        } catch {
+          // Fallback: strip everything after pathname
+          try {
+            window.history.replaceState(null, "", next.pathname);
+          } catch {}
+        }
+      };
+
+      // Only the dedicated Cache bucket ever holds these files; nothing else
+      // is cached by the app, so we delete only there.
+      if (!("caches" in window)) {
+        clearFlag();
+        return;
+      }
+
+      try {
+        const cache = await caches.open("estate-share-incoming");
+        const keys = await cache.keys();
+        const fileRequests = keys.filter((r) =>
+          r.url.includes("/__share-incoming__/file-"),
+        );
+
+        // Also support a legacy single-key name if an older SW stored it.
+        let legacySingle: Request | undefined;
+        if (fileRequests.length === 0) {
+          legacySingle = keys.find(
+            (r) =>
+              r.url.includes("/__share-incoming__/file") &&
+              !r.url.includes("/__share-incoming__/file-") &&
+              !r.url.includes("pending"),
+          );
+        }
+
+        let files: File[] = [];
+        let totalShared = 0;
+
+        // Try to read the manifest that records how many files the system
+        // actually handed over (to tell the user when others were ignored).
+        try {
+          const pending = await cache.match("/__share-incoming__/pending");
+          if (pending) {
+            const data = (await pending.json().catch(() => null)) as {
+              count?: number;
+              stored?: number;
+            } | null;
+            if (data && typeof data.count === "number") {
+              totalShared = data.count;
+            }
+          }
+        } catch {}
+
+        if (fileRequests.length > 0) {
+          // Sort to preserve phone order (file-0, file-1, …)
+          fileRequests.sort((a, b) => a.url.localeCompare(b.url));
+          for (const req of fileRequests) {
+            const res = await cache.match(req);
+            if (!res) continue;
+            const blob = await res.blob();
+            const name =
+              res.headers.get("X-File-Name") ||
+              res.headers.get("X-File-Name".toLowerCase()) ||
+              "shared-file";
+            const type =
+              res.headers.get("X-File-Type") ||
+              res.headers.get("Content-Type") ||
+              blob.type ||
+              "";
+            files.push(new File([blob], name, { type }));
+          }
+          if (!totalShared) totalShared = files.length;
+        } else if (legacySingle) {
+          const res = await cache.match(legacySingle);
+          if (res) {
+            const blob = await res.blob();
+            const name = res.headers.get("X-File-Name") || "shared-file";
+            const type =
+              res.headers.get("X-File-Type") ||
+              res.headers.get("Content-Type") ||
+              blob.type ||
+              "";
+            files.push(new File([blob], name, { type }));
+            if (!totalShared) totalShared = 1;
+          }
+        } else {
+          // No file entries — either nothing was shared or the SW has not
+          // yet stored it (very early load). Keep the flag for a moment and
+          // retry once shortly, otherwise clear it.
+          if (!totalShared) {
+            // Delete the manifest if present and clear flag; nothing to show.
+            try {
+              for (const r of keys) {
+                if (r.url.includes("/__share-incoming__")) {
+                  await cache.delete(r);
+                }
+              }
+            } catch {}
+            clearFlag();
+            return;
+          }
+        }
+
+        // Delete consumed entries immediately so a shared file lives only
+        // until it is taken into the dialog, and never survives a refresh.
+        try {
+          for (const r of keys) {
+            if (r.url.includes("/__share-incoming__")) {
+              await cache.delete(r);
+            }
+          }
+        } catch {}
+
+        if (cancelled) return;
+
+        if (files.length === 0) {
+          clearFlag();
+          return;
+        }
+
+        const preferred = preferredSharedFile(files);
+
+        if (!preferred) {
+          clearFlag();
+          // Distinguish too-large from unsupported type with the existing
+          // size wording, so the message stays in one place.
+          const tooLarge = files.find((f) => fileTooLarge(f));
+          if (tooLarge) {
+            setError(fileTooLarge(tooLarge) || "That file is too large.");
+          } else {
+            setError(
+              "That file type is not supported – please use a PDF, image, or text file.",
+            );
+          }
+          return;
+        }
+
+        // Guard once more before opening (helper already filtered, but the
+        // page owns the wording).
+        const sizeProblem = fileTooLarge(preferred);
+        if (sizeProblem) {
+          clearFlag();
+          setError(sizeProblem);
+          return;
+        }
+
+        // Open the existing dialog with the file already chosen. Nothing is
+        // written to disk or the database until the user presses Upload.
+        setView("documents");
+        setDocUpload({ file: preferred });
+        // Inform when several files arrived — take the first acceptable.
+        if (totalShared > 1) {
+          setMessage(
+            `Only the first file was used – ${totalShared - 1} other file(s) were ignored. Share them one at a time if needed.`,
+          );
+        } else if (files.length > 1) {
+          setMessage(
+            `Only the first file was used – ${files.length - 1} other file(s) were ignored. Share them one at a time if needed.`,
+          );
+        }
+
+        clearFlag();
+      } catch (err) {
+        console.warn("[share] failed to consume", err);
+        try {
+          const cache = await caches.open("estate-share-incoming");
+          const keys = await cache.keys();
+          for (const r of keys) {
+            if (r.url.includes("/__share-incoming__")) {
+              await cache.delete(r);
+            }
+          }
+        } catch {}
+        clearFlag();
+      }
+    }
+
+    consumeShare();
+
+    // Also handle a direct postMessage delivery if the SW uses it alongside Cache.
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as unknown as { sharedFile?: unknown } | null;
+      // No postMessage share path in v1; ignore unrelated messages.
+      if (!data || typeof data !== "object") return;
+    };
+
+    if (
+      typeof navigator !== "undefined" &&
+      "serviceWorker" in navigator &&
+      typeof window !== "undefined"
+    ) {
+      navigator.serviceWorker.addEventListener("message", onMessage);
+      return () => {
+        cancelled = true;
+        navigator.serviceWorker.removeEventListener("message", onMessage);
+      };
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const organisation = data.organisations.find((o) => o.id === selected);
   const names = (email: string | null) =>
@@ -3491,7 +3716,9 @@ function DocumentUploadDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
-  const [friendlyName, setFriendlyName] = useState("");
+  const [friendlyName, setFriendlyName] = useState(
+    initial.file ? initial.file.name.replace(/\.[^/.]+$/, "") : "",
+  );
   const [category, setCategory] = useState("");
   const [linkKind, setLinkKind] = useState<
     "none" | "organisation" | "interaction" | "task" | "project" | "finance"
@@ -3516,11 +3743,24 @@ function DocumentUploadDialog({
       initial.financeRecordId ??
       "",
   );
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(initial.file ?? null);
 
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
+
+  // When a share arrives the dialog opens with the file already chosen. The
+  // friendly name is pre-filled from the file name with the extension stripped,
+  // exactly as the file picker does, and the user can still pick a different
+  // file before uploading. Nothing is written until they press Upload.
+  useEffect(() => {
+    if (initial.file) {
+      setFile(initial.file);
+      setFriendlyName((prev) =>
+        prev ? prev : initial.file!.name.replace(/\.[^/.]+$/, ""),
+      );
+    }
+  }, [initial.file]);
 
   // When initial changes, sync linkKind/linkId (for safety)
   useEffect(() => {
@@ -3622,15 +3862,34 @@ function DocumentUploadDialog({
             <input
               type="file"
               accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf"
-              required
+              required={!file}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 setFile(f);
-                if (f && !friendlyName)
-                  setFriendlyName(f.name.replace(/\.[^/.]+$/, ""));
+                if (f) {
+                  setFriendlyName((prev) =>
+                    prev ? prev : f.name.replace(/\.[^/.]+$/, ""),
+                  );
+                }
               }}
             />
           </label>
+          {file && (
+            <p className="form-help" role="status">
+              Selected: <strong>{file.name}</strong> · {formatSize(file.size)}
+              {initial.file
+                ? " (from share – you can still choose a different file)"
+                : ""}{" "}
+              ·{" "}
+              <button
+                type="button"
+                className="text-link"
+                onClick={() => setFile(null)}
+              >
+                Clear
+              </button>
+            </p>
+          )}
           <label>
             Friendly name
             <input
