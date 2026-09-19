@@ -106,6 +106,19 @@ export function RecordForm({
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const [dirty, setDirty] = useState(false);
+  /**
+   * Counts the changes made anywhere in the form, and is not read by anything:
+   * it exists to make the form render again. Every field here is uncontrolled,
+   * so typing changes no state of its own, and React ignores a state update
+   * that sets the same value - so `fieldNow` (which reads the DOM) was only
+   * ever re-read when something else happened to re-render. That is why
+   * choosing "+ New contact…" before writing an outcome left Create
+   * interaction greyed out: the last render had seen an empty outcome, and
+   * typing into it rendered nothing. Writing the outcome first worked only
+   * because the contact list is controlled, so choosing a contact afterwards
+   * re-rendered the form and the button read the outcome then.
+   */
+  const [, setFormChange] = useState(0);
   // What a task was set up to do is history once it is saved, so an existing
   // task opens with Task Start locked. It is never hidden, and the padlock
   // beside the label unlocks it when something genuinely needs correcting.
@@ -173,7 +186,9 @@ export function RecordForm({
   /**
    * Reads a field exactly as it is on screen right now. The task form is
    * uncontrolled, so a button that acts on what has been typed has to go and
-   * look rather than trust the value the record was last saved with.
+   * look rather than trust the value the record was last saved with. A read
+   * like this is only current at render time, which is why the form renders
+   * again on every change (see `setFormChange`).
    */
   const fieldNow = (name: string) => {
     // Duck-typed rather than checked against HTMLInputElement and friends:
@@ -575,7 +590,12 @@ export function RecordForm({
     >
       <form
         ref={form}
-        onChange={() => setDirty(true)}
+        onChange={() => {
+          setDirty(true);
+          // Renders again so anything derived from what is on screen is
+          // re-read as it is typed, not only when something controlled changes.
+          setFormChange((n) => n + 1);
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           void submit(new FormData(e.currentTarget));
