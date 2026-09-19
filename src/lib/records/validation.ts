@@ -189,6 +189,13 @@ export const interactionInput = z
     detail: z.string().trim().min(1, "Add some detail to your note").max(20000),
     kind: z.enum(interactionKinds),
     occurredAt: z.iso.datetime(),
+    /**
+     * The task this interaction is being created from (Create interaction),
+     * or null for one written by hand. Read only when the interaction is new:
+     * the stored value is never changed by an edit. Optional so every record
+     * saved before v0.2.18 still validates.
+     */
+    sourceTaskId: optionalText.default(null),
     followUps: z
       .array(taskInput.omit({ id: true, version: true }))
       .max(30)

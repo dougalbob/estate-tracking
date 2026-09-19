@@ -1,0 +1,1 @@
+ALTER TABLE `interactions` ADD `source_task_id` text;
