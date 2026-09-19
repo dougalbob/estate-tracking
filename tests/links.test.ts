@@ -298,6 +298,10 @@ test("a contact created with a task is saved once: both exist and are linked", (
     assert.equal(snap.organisations[0].status, "not_contacted");
     const saved = snap.tasks.find((t) => t.id === result.id)!;
     assert.equal(saved.organisationId, snap.organisations[0].id);
+    // The id is returned as well as written, because the browser needs it: a
+    // task saved with a brand-new contact can open an interaction for that
+    // contact straight away, and it can only name it by the id the server chose.
+    assert.equal(result.organisationId, snap.organisations[0].id);
   } finally {
     sqlite.close();
   }

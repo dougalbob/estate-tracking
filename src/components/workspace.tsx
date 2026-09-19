@@ -335,8 +335,20 @@ export function Workspace({
 }) {
   const [view, setView] = useState("overview"),
     [selected, setSelected] = useState<string | null>(null),
-    [editor, setEditor] = useState<Editor | null>(null),
+    [editor, setEditorState] = useState<Editor | null>(null),
+    [editorKey, setEditorKey] = useState(0),
     [history, setHistory] = useState<{ id: string; kind: string } | null>(null);
+  /**
+   * Opening a form is always a fresh form. The fields are uncontrolled and some
+   * of the answers live in state, so a form handed a different record used to
+   * carry the last one's contact, follow-ups and version into the new one - a
+   * task's "+ New contact…" still selected on the note opened by Create
+   * interaction, for instance. The key is what makes that impossible.
+   */
+  function setEditor(next: Editor | null) {
+    setEditorKey((key) => key + 1);
+    setEditorState(next);
+  }
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("open"),
     [owner, setOwner] = useState("all"),
@@ -3393,6 +3405,7 @@ export function Workspace({
       </div>
       {editor && (
         <RecordForm
+          key={editorKey}
           editor={editor}
           data={data}
           users={users}

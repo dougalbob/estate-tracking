@@ -193,20 +193,34 @@ export function RecordForm({
    * Saves the task as it stands, then opens an ordinary interaction for the
    * same contact with the title, type and outcome already filled in. Nothing
    * is written to the event log until the interaction itself is saved.
+   *
+   * "+ New contact…" is not an id: it means the save in front of us is the one
+   * that creates the contact. So the interaction is opened for the id that save
+   * has just written, never for the sentinel - otherwise the note would be
+   * filed against nothing, or its own dropdown would still be offering to make
+   * a contact that by then exists.
    */
   async function createInteractionFromTask() {
     if (!form.current) return;
     const outcome = fieldNow("outcome").trim();
     if (!outcome) return;
-    const prefill = {
-      organisationId: organisationId || null,
+    const chosen = organisationId;
+    const prefill = (savedOrganisationId?: string) => ({
+      organisationId:
+        chosen === NEW_CONTACT ? (savedOrganisationId ?? null) : chosen || null,
+      // The name travels with the id so the new contact can be named in the
+      // interaction's dropdown before the refreshed snapshot arrives.
+      organisationName:
+        chosen === NEW_CONTACT ? newContact.name.trim() : undefined,
       projectId: fieldNow("projectId") || null,
       title: fieldNow("title").trim(),
       detail: outcome,
       kind: interactionKindFor(fieldNow("kind")),
       occurredAt: new Date().toISOString(),
-    };
-    await submit(new FormData(form.current), () => onOpenInteraction(prefill));
+    });
+    await submit(new FormData(form.current), (_id, savedOrganisationId) =>
+      onOpenInteraction(prefill(savedOrganisationId)),
+    );
   }
   function taskFields(
     prefix = "",
@@ -351,8 +365,13 @@ export function RecordForm({
   }
   async function submit(
     form: FormData,
-    /** Runs instead of closing the form, once the save has landed. */
-    afterSave?: (id: string) => void,
+    /**
+     * Runs instead of closing the form, once the save has landed. It is given
+     * the id of the new contact when this save created one, because a caller
+     * that opens a second record straight away has to name that contact by the
+     * id the server chose.
+     */
+    afterSave?: (id: string, organisationId?: string) => void,
   ) {
     setBusy(true);
     setError("");
@@ -453,7 +472,14 @@ export function RecordForm({
       if (result.ok) {
         setDirty(false);
         router.refresh();
-        if (afterSave) afterSave(result.id);
+        // A save that made a contact returns its id; every other save has no
+        // contact to report and the caller is handed `undefined`.
+        const newOrganisationId =
+          "organisationId" in result &&
+          typeof result.organisationId === "string"
+            ? result.organisationId
+            : undefined;
+        if (afterSave) afterSave(result.id, newOrganisationId);
         else
           onSaved(
             result.id,
@@ -1052,6 +1078,21 @@ export function RecordForm({
                       {o.name}
                     </option>
                   ))}
+                  {/*
+                    A contact saved a moment ago is named here by the caller
+                    until the refreshed snapshot arrives - the form opened from
+                    "Create interaction" holds an id the browser cannot look up
+                    yet, and without this the dropdown would read as if no
+                    contact had been chosen at all.
+                  */}
+                  {organisationId &&
+                    organisationId !== NEW_CONTACT &&
+                    !data.organisations.some((o) => o.id === organisationId) &&
+                    value("organisationName") && (
+                      <option value={organisationId}>
+                        {value("organisationName")}
+                      </option>
+                    )}
                   <option value={NEW_CONTACT}>+ New contact…</option>
                 </select>
               </label>
@@ -1225,19 +1266,19 @@ export function RecordForm({
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={
-                      busy ||
-                      !fieldNow("outcome").trim() ||
-                      // The contact has to exist before an interaction can
-                      // point at it.
-                      organisationId === NEW_CONTACT
-                    }
+                    // Only a missing outcome gates this. Choosing "+ New
+                    // contact…" is no reason to refuse: the save below is what
+                    // creates the contact, and the interaction opens for the
+                    // id it has just written.
+                    disabled={busy || !fieldNow("outcome").trim()}
                     title={
-                      organisationId === NEW_CONTACT
-                        ? "Save the new contact first, then create the interaction"
-                        : fieldNow("outcome").trim()
-                          ? "Save the task, then open an interaction with the outcome filled in"
-                          : "Write an outcome first - an interaction needs something to say"
+                      !fieldNow("outcome").trim()
+                        ? "Write an outcome first - an interaction needs something to say"
+                        : organisationId === NEW_CONTACT
+                          ? newContact.name.trim()
+                            ? "Saves the task, creates the contact, then opens the interaction for it"
+                            : "The new contact needs a name - it is saved with the task"
+                          : "Save the task, then open an interaction with the outcome filled in"
                     }
                     onClick={() => void createInteractionFromTask()}
                   >
