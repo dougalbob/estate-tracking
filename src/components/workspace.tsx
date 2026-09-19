@@ -3,7 +3,9 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import {
   ArrowUpRight,
   BookOpen,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   FolderOpen,
   Home,
   Leaf,
@@ -340,6 +342,13 @@ export function Workspace({
       "added",
     ),
     [hideResolved, setHideResolved] = useState(false),
+    [hideDoneScheduled, setHideDoneScheduled] = useState(false),
+    [collapsedProjects, setCollapsedProjects] = useState<
+      Record<string, boolean>
+    >({}),
+    [projectHideDone, setProjectHideDone] = useState<Record<string, boolean>>(
+      {},
+    ),
     [docQuery, setDocQuery] = useState(""),
     [docCategory, setDocCategory] = useState("all"),
     [eventQuery, setEventQuery] = useState(""),
@@ -1959,7 +1968,7 @@ export function Workspace({
                   Add task
                 </Button>
               </div>
-              <div className="filter-bar">
+              <div className="filter-bar" style={{ flexWrap: "wrap" }}>
                 <label>
                   Status
                   <select
@@ -1990,30 +1999,73 @@ export function Workspace({
                     ))}
                   </select>
                 </label>
+                {(() => {
+                  const base = [...data.tasks].filter(
+                    (t) =>
+                      t.title.toLowerCase().includes(query.toLowerCase()) &&
+                      (status === "all" ||
+                        (status === "open"
+                          ? !["done", "cancelled"].includes(t.status)
+                          : t.status === status)) &&
+                      (owner === "all" ||
+                        (t.assignee ?? "") === owner ||
+                        (owner !== "" && t.assignee === everyoneAssignee)),
+                  );
+                  const hidden = base.filter((t) =>
+                    ["done", "scheduled"].includes(t.status),
+                  ).length;
+                  return (
+                    <Button
+                      variant={hideDoneScheduled ? "default" : "outline"}
+                      aria-pressed={hideDoneScheduled}
+                      title={
+                        hideDoneScheduled
+                          ? `${hidden} done or scheduled task${hidden === 1 ? "" : "s"} hidden - activate to show them again`
+                          : "Hide done and scheduled tasks from the list"
+                      }
+                      aria-label={
+                        hideDoneScheduled
+                          ? `${hidden} done or scheduled task${hidden === 1 ? "" : "s"} hidden - activate to show them again`
+                          : "Hide done and scheduled tasks from the list"
+                      }
+                      onClick={() => setHideDoneScheduled(!hideDoneScheduled)}
+                    >
+                      {hideDoneScheduled ? (
+                        <Eye size={16} aria-hidden />
+                      ) : (
+                        <EyeOff size={16} aria-hidden />
+                      )}
+                      {hideDoneScheduled
+                        ? `Show Done/Scheduled (${hidden})`
+                        : "Hide Done/Scheduled"}
+                    </Button>
+                  );
+                })()}
               </div>
               <section className="panel">
                 {(() => {
-                  const filtered = [...data.tasks]
-                    .filter(
-                      (t) =>
-                        t.title.toLowerCase().includes(query.toLowerCase()) &&
-                        (status === "all" ||
-                          (status === "open"
-                            ? !["done", "cancelled"].includes(t.status)
-                            : t.status === status)) &&
-                        (owner === "all" ||
-                          (t.assignee ?? "") === owner ||
-                          // Work given to everyone belongs to each of the two,
-                          // so it stays in view when the list is narrowed to
-                          // one of them. It is not unassigned work, so it does
-                          // not appear under Unassigned.
-                          (owner !== "" && t.assignee === everyoneAssignee)),
-                    )
-                    .sort((a, b) =>
-                      (attentionDate(a) ?? "9999").localeCompare(
-                        attentionDate(b) ?? "9999",
-                      ),
-                    );
+                  const base = [...data.tasks].filter(
+                    (t) =>
+                      t.title.toLowerCase().includes(query.toLowerCase()) &&
+                      (status === "all" ||
+                        (status === "open"
+                          ? !["done", "cancelled"].includes(t.status)
+                          : t.status === status)) &&
+                      (owner === "all" ||
+                        (t.assignee ?? "") === owner ||
+                        (owner !== "" && t.assignee === everyoneAssignee)),
+                  );
+                  const filtered = (
+                    hideDoneScheduled
+                      ? base.filter(
+                          (t) => !["done", "scheduled"].includes(t.status),
+                        )
+                      : base
+                  ).sort((a, b) =>
+                    (attentionDate(a) ?? "9999").localeCompare(
+                      attentionDate(b) ?? "9999",
+                    ),
+                  );
                   return filtered.length ? (
                     filtered.map(taskRow)
                   ) : (
@@ -2067,19 +2119,58 @@ export function Workspace({
                   )
                   .filter(Boolean) as Snapshot["organisations"];
                 const docs = getLinkedDocuments({ projectId: p.id });
+                const allTasks = data.tasks.filter((t) => t.projectId === p.id);
+                const doneCount = allTasks.filter(
+                  (t) => t.status === "done",
+                ).length;
+                const isCollapsed = !!collapsedProjects[p.id];
+                const isHideDone = !!projectHideDone[p.id];
+                const visibleTasks = isHideDone
+                  ? allTasks.filter((t) => t.status !== "done")
+                  : allTasks;
                 return (
                   <section className="panel project-panel spaced" key={p.id}>
                     <div className="section-heading">
-                      <div>
-                        <h2>{p.name}</h2>
-                        <p>
-                          {
-                            data.tasks.filter((t) => t.projectId === p.id)
-                              .length
-                          }{" "}
-                          tasks · {linkedOrgs.length} organisations ·{" "}
-                          {docs.length} docs
-                        </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "8px",
+                        }}
+                      >
+                        <button
+                          className="subtle-button"
+                          aria-label={
+                            isCollapsed
+                              ? `Expand ${p.name}`
+                              : `Collapse ${p.name}`
+                          }
+                          title={
+                            isCollapsed
+                              ? `Expand ${p.name}`
+                              : `Collapse ${p.name}`
+                          }
+                          aria-expanded={!isCollapsed}
+                          onClick={() =>
+                            setCollapsedProjects((prev) => ({
+                              ...prev,
+                              [p.id]: !prev[p.id],
+                            }))
+                          }
+                        >
+                          {isCollapsed ? (
+                            <ChevronDown size={16} aria-hidden />
+                          ) : (
+                            <ChevronUp size={16} aria-hidden />
+                          )}
+                        </button>
+                        <div>
+                          <h2>{p.name}</h2>
+                          <p>
+                            {allTasks.length} tasks · {linkedOrgs.length}{" "}
+                            organisations · {docs.length} docs
+                          </p>
+                        </div>
                       </div>
                       <div className="row-actions">
                         <button
@@ -2101,85 +2192,136 @@ export function Workspace({
                         </button>
                       </div>
                     </div>
-                    {linkedOrgs.length > 0 && (
-                      <div
-                        className="project-pills"
-                        style={{ padding: "0 24px 12px" }}
-                      >
-                        {linkedOrgs.map((o) => (
-                          <span key={o.id}>{o.name}</span>
-                        ))}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        padding: "0 24px 12px",
-                        borderTop: linkedOrgs.length
-                          ? "1px solid var(--border)"
-                          : "0",
-                        display: "flex",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {docs.map((d) => (
-                        <span key={d.id} className="badge">
-                          <FileText size={10} /> {d.friendlyName}
-                          <button
-                            type="button"
-                            onClick={() => setViewingDoc(d)}
-                            className="subtle-button"
-                            style={{ marginLeft: "4px" }}
-                            title="View in app"
+                    {!isCollapsed && (
+                      <>
+                        {linkedOrgs.length > 0 && (
+                          <div
+                            className="project-pills"
+                            style={{ padding: "0 24px 12px" }}
                           >
-                            <Eye size={10} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              downloadDocument(d.id, d.originalName)
-                            }
-                            className="subtle-button"
-                            title="Download"
-                          >
-                            <Download size={10} />
-                          </button>
-                        </span>
-                      ))}
-                      <button
-                        className="subtle-button"
-                        onClick={() => setDocUpload({ projectId: p.id })}
-                      >
-                        <FileText size={12} /> Attach doc
-                      </button>
-                      <button
-                        className="subtle-button"
-                        onClick={() => setLinkPicker({ projectId: p.id })}
-                      >
-                        <Link2 size={12} /> Link existing
-                      </button>
-                    </div>
-                    {data.taskTemplates.some((i) => i.projectId === p.id) && (
-                      <ProjectChecklist
-                        projectId={p.id}
-                        items={data.taskTemplates.filter(
-                          (i) => i.projectId === p.id,
+                            {linkedOrgs.map((o) => (
+                              <span key={o.id}>{o.name}</span>
+                            ))}
+                          </div>
                         )}
-                        tasks={data.tasks.filter((t) => t.projectId === p.id)}
-                        onMessage={setMessage}
-                        onError={setError}
-                      />
+                        <div
+                          style={{
+                            padding: "0 24px 12px",
+                            borderTop: linkedOrgs.length
+                              ? "1px solid var(--border)"
+                              : "0",
+                            display: "flex",
+                            gap: "8px",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {docs.map((d) => (
+                            <span key={d.id} className="badge">
+                              <FileText size={10} /> {d.friendlyName}
+                              <button
+                                type="button"
+                                onClick={() => setViewingDoc(d)}
+                                className="subtle-button"
+                                style={{ marginLeft: "4px" }}
+                                title="View in app"
+                              >
+                                <Eye size={10} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  downloadDocument(d.id, d.originalName)
+                                }
+                                className="subtle-button"
+                                title="Download"
+                              >
+                                <Download size={10} />
+                              </button>
+                            </span>
+                          ))}
+                          <button
+                            className="subtle-button"
+                            onClick={() => setDocUpload({ projectId: p.id })}
+                          >
+                            <FileText size={12} /> Attach doc
+                          </button>
+                          <button
+                            className="subtle-button"
+                            onClick={() => setLinkPicker({ projectId: p.id })}
+                          >
+                            <Link2 size={12} /> Link existing
+                          </button>
+                        </div>
+                        {data.taskTemplates.some(
+                          (i) => i.projectId === p.id,
+                        ) && (
+                          <ProjectChecklist
+                            projectId={p.id}
+                            items={data.taskTemplates.filter(
+                              (i) => i.projectId === p.id,
+                            )}
+                            tasks={allTasks}
+                            onMessage={setMessage}
+                            onError={setError}
+                          />
+                        )}
+                        <div style={{ borderTop: "1px solid var(--border)" }}>
+                          {allTasks.length > 0 && (
+                            <div
+                              style={{
+                                padding: "8px 24px",
+                                display: "flex",
+                                justifyContent: "flex-end",
+                              }}
+                            >
+                              <Button
+                                variant={isHideDone ? "default" : "outline"}
+                                aria-pressed={isHideDone}
+                                title={
+                                  isHideDone
+                                    ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                                    : "Hide done tasks from this project"
+                                }
+                                aria-label={
+                                  isHideDone
+                                    ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                                    : "Hide done tasks from this project"
+                                }
+                                onClick={() =>
+                                  setProjectHideDone((prev) => ({
+                                    ...prev,
+                                    [p.id]: !prev[p.id],
+                                  }))
+                                }
+                              >
+                                {isHideDone ? (
+                                  <Eye size={16} aria-hidden />
+                                ) : (
+                                  <EyeOff size={16} aria-hidden />
+                                )}
+                                {isHideDone
+                                  ? `Show Done (${doneCount})`
+                                  : "Hide Done"}
+                              </Button>
+                            </div>
+                          )}
+                          {visibleTasks.map(taskRow)}
+                          {allTasks.length === 0 && (
+                            <p className="empty-state">
+                              No tasks assigned to this project yet.
+                            </p>
+                          )}
+                          {allTasks.length > 0 &&
+                            visibleTasks.length === 0 &&
+                            isHideDone && (
+                              <p className="empty-state">
+                                Every task in this project is done, so the list
+                                is empty while done tasks are hidden.
+                              </p>
+                            )}
+                        </div>
+                      </>
                     )}
-                    <div style={{ borderTop: "1px solid var(--border)" }}>
-                      {data.tasks
-                        .filter((t) => t.projectId === p.id)
-                        .map(taskRow)}
-                      {!data.tasks.some((t) => t.projectId === p.id) && (
-                        <p className="empty-state">
-                          No tasks assigned to this project yet.
-                        </p>
-                      )}
-                    </div>
                   </section>
                 );
               })}
