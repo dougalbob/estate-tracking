@@ -165,6 +165,16 @@ Uploads are limited to 20 MB per file (`maxDocumentSizeBytes`) and the server al
 
 Common fixes after an image update: ensure `public/` is copied in the Dockerfile runtime stage (PWA assets), `next.config.ts` is present in the runtime image (it is copied from the build stage), and the container was Force Updated after the release.
 
+### Document download troubleshooting
+
+The viewer's **Download** button tries several methods in order (a plain download link, a hidden frame, a fetched copy, a new tab, and finally a same-tab navigation), so a save dialog appears in most setups without any configuration. If a download still does not start:
+
+1. Use the **Direct link** button in the viewer, or right-click it and choose **Save link as…** — this asks the browser to save without any scripting involved.
+2. Check the browser downloaded nothing silently (some browsers save to a folder without opening a dialog), and that a mobile browser is not waiting for you to confirm the download in its notification bar.
+3. If the document opens instead of saving, it is being viewed inline — images and PDFs do that by design; use Direct link or the Download button for a copy.
+
+The app's own error wording stays plain ("The upload did not complete. Please try again."); the technical detail for any of the above is in the browser's console and the container's `[upload]`/`[upload:api]` log lines described in the upload section.
+
 ## Estate finances
 
 **GBP only.** Record and summarise facts without tax or entitlement calculations.
