@@ -3,80 +3,55 @@ import { currentUser } from "@/lib/auth/current-user";
 import { authConfiguration } from "@/lib/auth/verify";
 import { database } from "@/lib/db";
 import { recordStore, RecordError } from "@/lib/records/store";
-import { ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { writeFile, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import {
-  documentsPath,
   ensureDocumentsPath,
   safeStorageName,
   safeOriginalName,
   fullPath,
 } from "@/lib/documents/storage";
 import {
-  isAllowedUploadFile,
-  maxDocumentSizeBytes,
-  documentInput,
-  documentLinkInput,
-  financeVoidInput,
-} from "@/lib/records/validation";
-import { MoneyError } from "@/lib/finances/money";
+  prepareUpload,
+  uploadSentences,
+} from "@/lib/documents/upload-validation";
+import { toActionFailure } from "@/lib/records/action-errors";
+import { demoUsers, withStore } from "@/lib/records/with-store";
+import { documentLinkInput, financeVoidInput } from "@/lib/records/validation";
 
 type Kind = "organisation" | "interaction" | "task" | "project" | "document";
 type BinKind = Kind | "finance_record" | "finance_movement" | "template_item";
 
+/**
+ * Every action below is one line of intent wrapped in `withStore`, which owns
+ * the identity check, the store, the page revalidation and the mapping of a
+ * thrown error into a refusal. The second argument is the plain sentence the
+ * person sees if something unexpected happens, so each action can still say what
+ * it was trying to do.
+ */
 export async function saveRecord(kind: Kind, input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    let id: string;
-    switch (kind) {
-      case "organisation":
-        id = store.saveOrganisation(input, user.email);
-        break;
-      case "interaction":
-        id = store.saveInteraction(input, user.email);
-        break;
-      case "task":
-        id = store.saveTask(input, user.email);
-        break;
-      case "project":
-        id = store.saveProject(input, user.email);
-        break;
-      case "document":
-        id = store.saveDocument(input, user.email);
-        break;
-      default:
-        return {
-          ok: false as const,
-          error: "Unknown record type",
-          code: "validation",
-        };
-    }
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error:
-        "Unable to save. Check your access and try again. Your draft has been kept.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to save. Check your access and try again. Your draft has been kept.",
+    async ({ store, actor }) => {
+      switch (kind) {
+        case "organisation":
+          return { id: store.saveOrganisation(input, actor) };
+        case "interaction":
+          return { id: store.saveInteraction(input, actor) };
+        case "task":
+          return { id: store.saveTask(input, actor) };
+        case "project":
+          return { id: store.saveProject(input, actor) };
+        case "document":
+          return { id: store.saveDocument(input, actor) };
+        default:
+          // Unreachable while `kind` is one of the five above; a refusal rather
+          // than a silence, so a new kind cannot be saved by the wrong branch.
+          throw new RecordError("Unknown record type", "validation");
+      }
+    },
+  );
 }
 
 /**
@@ -85,33 +60,12 @@ export async function saveRecord(kind: Kind, input: unknown) {
  * cannot write an old copy of it back over a newer one.
  */
 export async function linkTaskToOrganisation(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const id = store.linkTaskToOrganisation(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error:
-        "Unable to link that task. Check your access and try again. Your draft has been kept.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to link that task. Check your access and try again. Your draft has been kept.",
+    ({ store, actor }) => ({
+      id: store.linkTaskToOrganisation(input, actor),
+    }),
+  );
 }
 
 /**
@@ -120,470 +74,203 @@ export async function linkTaskToOrganisation(input: unknown) {
  * anything else about it.
  */
 export async function rescheduleTask(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const id = store.setTaskDueDate(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error:
-        "Unable to move that task. Check your access and try again. Nothing has been changed.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to move that task. Check your access and try again. Nothing has been changed.",
+    ({ store, actor }) => ({ id: store.setTaskDueDate(input, actor) }),
+  );
 }
 
 /**
  * Create a contact and the task or note that needs it in one save (Item 2).
- * Both are written in a single database transaction, so a failure cannot leave
- * a contact behind on its own with no record explaining where it came from.
+ * Both are written in a single database transaction, so a failure cannot leave a
+ * contact behind on its own with no record explaining where it came from.
  */
 export async function saveRecordWithNewOrganisation(
   kind: "task" | "interaction",
   input: unknown,
   organisation: unknown,
 ) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const result = store.saveRecordWithNewOrganisation(
-      kind,
-      input,
-      organisation,
-      user.email,
-    );
-    revalidatePath("/");
-    return { ok: true as const, ...result };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error:
-        "Nothing was saved: the new contact and the task are both still unsaved. Your draft is still here – check your access and try again.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Nothing was saved: the new contact and the task are both still unsaved. Your draft is still here – check your access and try again.",
+    ({ store, actor }) =>
+      store.saveRecordWithNewOrganisation(kind, input, organisation, actor),
+  );
 }
 
 export async function saveFinanceRecord(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const id = store.saveFinanceRecord(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    if (error instanceof MoneyError)
-      return { ok: false as const, error: error.message, code: "validation" };
-    return {
-      ok: false as const,
-      error:
-        "Unable to save. Check your access and try again. Your draft has been kept.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to save. Check your access and try again. Your draft has been kept.",
+    ({ store, actor }) => ({ id: store.saveFinanceRecord(input, actor) }),
+  );
 }
 
 export async function saveFinanceMovement(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const id = store.saveFinanceMovement(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error: "Unable to save this money movement. Your draft has been kept.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to save this money movement. Your draft has been kept.",
+    ({ store, actor }) => ({ id: store.saveFinanceMovement(input, actor) }),
+  );
 }
 
 /** Voiding keeps a financial record visible, with a reason, out of the totals. */
 export async function setFinanceVoid(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const parsed = financeVoidInput.parse(input);
-    store.setFinanceVoid(parsed, user.email);
-    revalidatePath("/");
-    return { ok: true as const };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues.map((i) => i.message).join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error: "Unable to change this record. Check your access and try again.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to change this record. Check your access and try again.",
+    ({ store, actor }) => {
+      store.setFinanceVoid(financeVoidInput.parse(input), actor);
+      return {};
+    },
+  );
 }
 
 /** Turns selected checklist suggestions into ordinary, undated tasks. */
 export async function applyTemplate(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const result = store.applyTemplate(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, ...result };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues.map((i) => i.message).join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error: "Unable to add these suggestions. Please try again.",
-      code: "unavailable",
-    };
-  }
+  return withStore(
+    "Unable to add these suggestions. Please try again.",
+    ({ store, actor }) => store.applyTemplate(input, actor),
+  );
 }
 
 export async function saveTemplateItem(input: unknown) {
+  return withStore(
+    "Unable to save this checklist item. Your draft has been kept.",
+    ({ store, actor }) => ({ id: store.saveTemplateItem(input, actor) }),
+  );
+}
+
+/**
+ * The fallback upload path, used when the streaming route is unavailable (an
+ * older image). It answers in the same sentences as the route, because both read
+ * the same `prepareUpload` rule.
+ *
+ * This one does not use `withStore`: identity has to be verified before anything
+ * is written to disk, and the file has to be cleaned up again if the record
+ * cannot be saved. Both of those are this function's job, not a wrapper's.
+ */
+export async function uploadDocument(formData: FormData) {
+  const startedAt = Date.now();
+  let user;
   try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const id = store.saveTemplateItem(input, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues.map((i) => i.message).join("; "),
-        code: "validation",
-      };
+    user = await currentUser();
+  } catch {
+    // Nothing is written before identity is verified, so a request that cannot
+    // prove who it is leaves no file behind.
     return {
       ok: false as const,
-      error: "Unable to save this checklist item. Your draft has been kept.",
+      error: uploadSentences.unexpected,
       code: "unavailable",
     };
   }
-}
+  const users = user.demo ? demoUsers : authConfiguration(process.env).users;
+  const store = recordStore(database(), users);
 
-export async function uploadDocument(formData: FormData) {
-  const startedAt = Date.now();
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-
-    const file = formData.get("file") as File | null;
-    const friendlyNameRaw = formData.get("friendlyName") as string | null;
-    const categoryRaw = formData.get("category") as string | null;
-    const organisationId = (formData.get("organisationId") as string) || null;
-    const interactionId = (formData.get("interactionId") as string) || null;
-    const taskId = (formData.get("taskId") as string) || null;
-    const projectId = (formData.get("projectId") as string) || null;
-    const financeRecordId = (formData.get("financeRecordId") as string) || null;
-
-    if (!file || typeof file === "string" || file.size === 0) {
-      return {
-        ok: false as const,
-        error: "Choose a file to upload",
-        code: "validation",
-      };
-    }
-    if (file.size > maxDocumentSizeBytes) {
-      console.warn(
-        `[upload] rejected too large: ${file.name} ${file.size} bytes > ${maxDocumentSizeBytes} by ${user.email}`,
-      );
-      return {
-        ok: false as const,
-        error: `File too large – max ${maxDocumentSizeBytes / (1024 * 1024)} MB`,
-        code: "validation",
-      };
-    }
-    const mime = file.type || "application/octet-stream";
-    // One shared rule (beside the MIME and extension lists it reads) decides
-    // whether a file is of a type the app stores. The share helper, the file
-    // picker's accept attribute and this route all use it, so a HEIC shared
-    // from an app that omits the MIME is accepted here exactly as it was there.
-    if (!isAllowedUploadFile(file)) {
-      console.warn(
-        `[upload] rejected type: ${file.name} (${mime}) by ${user.email}`,
-      );
-      return {
-        ok: false as const,
-        error: "Unsupported file type – use PDF, image, or text",
-        code: "validation",
-      };
-    }
-
-    const parsedMeta = documentInput.safeParse({
-      friendlyName: friendlyNameRaw || file.name.replace(/\.[^/.]+$/, ""),
-      category: categoryRaw || null,
-    });
-    if (!parsedMeta.success) {
-      return {
-        ok: false as const,
-        error: parsedMeta.error.issues.map((i) => i.message).join("; "),
-        code: "validation",
-      };
-    }
-
-    const docsPath = ensureDocumentsPath();
-    console.log(
-      `[upload] attempt by ${user.email}: ${file.name} (${file.size} bytes, ${mime}) -> ${docsPath} friendly="${parsedMeta.data.friendlyName}"`,
+  const prepared = prepareUpload(formData);
+  if (!prepared.ok) {
+    console.warn(
+      `[upload] refused by ${user.email}: ${prepared.rejection.error}`,
     );
+    return {
+      ok: false as const,
+      error: prepared.rejection.error,
+      code: prepared.rejection.code,
+    };
+  }
+  const { file, mime, friendlyName, category, links, hasLink } =
+    prepared.upload;
 
-    const originalName = safeOriginalName(file.name);
-    const storageName = safeStorageName(originalName);
-    let buffer: Buffer;
-    try {
-      buffer = Buffer.from(await file.arrayBuffer());
-    } catch (e) {
-      console.error(`[upload] arrayBuffer failed for ${file.name}`, e);
-      return {
-        ok: false as const,
-        error: "Unable to read file – try again with a smaller file",
-        code: "unavailable",
-      };
-    }
+  const docsPath = ensureDocumentsPath();
+  console.log(
+    `[upload] attempt by ${user.email}: ${file.name} (${file.size} bytes, ${mime}) -> ${docsPath} friendly="${friendlyName}"`,
+  );
 
-    // Write file first, then DB – if DB fails, clean up file
-    const path = fullPath(storageName);
-    try {
-      await writeFile(path, buffer);
-      console.log(
-        `[upload] wrote ${path} ${buffer.length} bytes in ${Date.now() - startedAt}ms`,
-      );
-    } catch (writeErr: unknown) {
-      const msg =
-        writeErr instanceof Error ? writeErr.message : String(writeErr);
-      const code = (writeErr as NodeJS.ErrnoException)?.code;
-      console.error(
-        `[upload] write failed ${path} code=${code} msg=${msg} – check df -h ${docsPath}`,
-        writeErr,
-      );
-      if (code === "ENOSPC") {
-        return {
-          ok: false as const,
-          error: `Disk full – unable to store file. Free space on ${docsPath} (df -h) and try again.`,
-          code: "unavailable",
-        };
-      }
-      return {
-        ok: false as const,
-        error: `Unable to store file – check server storage (${code || msg}). Try: df -h ${docsPath} and docker logs estate-organiser`,
-        code: "unavailable",
-      };
-    }
-
-    try {
-      const docId = store.createDocumentFromUpload(
-        {
-          friendlyName: parsedMeta.data.friendlyName!,
-          originalName,
-          storageName,
-          mimeType: mime,
-          size: file.size,
-          category: parsedMeta.data.category ?? null,
-        },
-        user.email,
-      );
-      // Optional initial link
-      if (
-        organisationId ||
-        interactionId ||
-        taskId ||
-        projectId ||
-        financeRecordId
-      ) {
-        try {
-          store.linkDocument(
-            {
-              documentId: docId,
-              organisationId,
-              interactionId,
-              taskId,
-              projectId,
-              financeRecordId,
-            },
-            user.email,
-          );
-        } catch (linkError) {
-          if (linkError instanceof RecordError) {
-            revalidatePath("/");
-            console.warn(
-              `[upload] document ${docId} saved but link failed: ${linkError.message}`,
-            );
-            return {
-              ok: true as const,
-              id: docId,
-              warning: linkError.message,
-            };
-          }
-          throw linkError;
-        }
-      }
-      console.log(
-        `[upload] success ${docId} ${originalName} -> ${storageName} in ${Date.now() - startedAt}ms`,
-      );
-      revalidatePath("/");
-      return { ok: true as const, id: docId };
-    } catch (dbError) {
-      // Clean up orphan file
-      try {
-        if (existsSync(path)) await unlink(path);
-      } catch {}
-      if (dbError instanceof RecordError) {
-        console.warn(
-          `[upload] db error for ${originalName}: ${dbError.message}`,
-        );
-        return {
-          ok: false as const,
-          error: dbError.message,
-          code: dbError.code,
-        };
-      }
-      console.error(
-        `[upload] unexpected db error for ${originalName}`,
-        dbError,
-      );
-      throw dbError;
-    }
+  const originalName = safeOriginalName(file.name);
+  const storageName = safeStorageName(originalName);
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(await file.arrayBuffer());
   } catch (error) {
-    if (error instanceof RecordError) {
-      console.warn(`[upload] RecordError: ${error.message}`);
-      return { ok: false as const, error: error.message, code: error.code };
-    }
-    console.error("[upload] unexpected failure", error);
+    console.error(`[upload] arrayBuffer failed for ${file.name}`, error);
+    return {
+      ok: false as const,
+      error: uploadSentences.unreadable,
+      code: "unavailable",
+    };
+  }
+
+  // The file is written first and the record second, so a failure to save the
+  // record leaves nothing behind: the file is removed again below.
+  const path = fullPath(storageName);
+  try {
+    await writeFile(path, buffer);
+    console.log(
+      `[upload] wrote ${path} ${buffer.length} bytes in ${Date.now() - startedAt}ms`,
+    );
+  } catch (writeErr: unknown) {
+    const code = (writeErr as NodeJS.ErrnoException)?.code;
+    console.error(
+      `[upload] write failed ${path} code=${code} – check the README's document upload troubleshooting section`,
+      writeErr,
+    );
     return {
       ok: false as const,
       error:
-        "Unable to upload – check your access and try again. If this persists, check docker logs estate-organiser and df -h /mnt/user/appdata/estate-organiser",
+        code === "ENOSPC" ? uploadSentences.diskFull : uploadSentences.storage,
       code: "unavailable",
     };
+  }
+
+  try {
+    const id = store.createDocumentFromUpload(
+      {
+        friendlyName,
+        originalName,
+        storageName,
+        mimeType: mime,
+        size: file.size,
+        category,
+      },
+      user.email,
+    );
+    if (hasLink) {
+      try {
+        store.linkDocument({ documentId: id, ...links }, user.email);
+      } catch (linkError) {
+        if (linkError instanceof RecordError) {
+          // The document is safe and worth keeping; only the link failed, and
+          // it can be made again from the record.
+          revalidatePath("/");
+          console.warn(
+            `[upload] document ${id} saved but link failed: ${linkError.message}`,
+          );
+          return { ok: true as const, id, warning: linkError.message };
+        }
+        throw linkError;
+      }
+    }
+    console.log(
+      `[upload] success ${id} ${originalName} -> ${storageName} in ${Date.now() - startedAt}ms`,
+    );
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    try {
+      if (existsSync(path)) await unlink(path);
+    } catch {}
+    console.warn(`[upload] record not saved for ${originalName}`, error);
+    return toActionFailure(error, uploadSentences.unexpected);
   }
 }
 
 export async function linkDocument(input: unknown) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    const parsed = documentLinkInput.parse(input);
-    const id = store.linkDocument(parsed, user.email);
-    revalidatePath("/");
-    return { ok: true as const, id };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    if (error instanceof ZodError)
-      return {
-        ok: false as const,
-        error: error.issues.map((i) => i.message).join("; "),
-        code: "validation",
-      };
-    return {
-      ok: false as const,
-      error: "Unable to link document",
-      code: "unavailable",
-    };
-  }
+  return withStore("Unable to link document", ({ store, actor }) => ({
+    id: store.linkDocument(documentLinkInput.parse(input), actor),
+  }));
 }
 
 export async function unlinkDocument(linkId: string) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    store.unlinkDocument(linkId, user.email);
-    revalidatePath("/");
-    return { ok: true as const };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    return {
-      ok: false as const,
-      error: "Unable to remove link",
-      code: "unavailable",
-    };
-  }
+  return withStore("Unable to remove link", ({ store, actor }) => {
+    store.unlinkDocument(linkId, actor);
+    return {};
+  });
 }
 
 export async function deleteRecord(
@@ -592,53 +279,44 @@ export async function deleteRecord(
   version: number,
   permanent = false,
 ) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    if (kind === "template_item") {
-      store.deleteTemplateItem(id, version, user.email, permanent);
-      revalidatePath("/");
-      return { ok: true as const };
-    }
-    if (kind === "finance_record" || kind === "finance_movement") {
-      store.deleteFinance(
-        kind === "finance_record" ? "record" : "movement",
-        id,
-        version,
-        user.email,
-        permanent,
-      );
-      revalidatePath("/");
-      return { ok: true as const };
-    }
-    const result = store.deleteRecord(kind, id, version, user.email, permanent);
-    // For permanent document deletion, also remove file from disk
-    if (kind === "document" && permanent) {
-      const storageName = (result as { storageName?: string })?.storageName;
-      if (storageName) {
-        try {
-          const path = fullPath(storageName);
-          if (existsSync(path)) await unlink(path);
-        } catch {
-          // File deletion failure should not mark DB as not deleted – it already is
-          // But we return warning in log? For now, ignore – admin can clean orphan files
+  return withStore(
+    "Unable to delete. Check your access and try again.",
+    async ({ store, actor }) => {
+      if (kind === "template_item") {
+        store.deleteTemplateItem(id, version, actor, permanent);
+        return {};
+      }
+      if (kind === "finance_record" || kind === "finance_movement") {
+        store.deleteFinance(
+          kind === "finance_record" ? "record" : "movement",
+          id,
+          version,
+          actor,
+          permanent,
+        );
+        return {};
+      }
+      const result = store.deleteRecord(kind, id, version, actor, permanent);
+      // Permanently deleting a document removes its file too. A file that will
+      // not delete is not a reason to report the record as still there – it is
+      // gone from the database, and the orphan can be cleared by hand.
+      if (kind === "document" && permanent) {
+        const storageName = (result as { storageName?: string })?.storageName;
+        if (storageName) {
+          try {
+            const path = fullPath(storageName);
+            if (existsSync(path)) await unlink(path);
+          } catch (error) {
+            console.warn(
+              `[delete] document ${id} deleted but its file could not be removed`,
+              error,
+            );
+          }
         }
       }
-    }
-    revalidatePath("/");
-    return { ok: true as const };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    return {
-      ok: false as const,
-      error: "Unable to delete. Check your access and try again.",
-      code: "unavailable",
-    };
-  }
+      return {};
+    },
+  );
 }
 
 export async function restoreRecord(
@@ -646,54 +324,39 @@ export async function restoreRecord(
   id: string,
   version: number,
 ) {
-  try {
-    const user = await currentUser();
-    const users = user.demo
-      ? ["alex@example.invalid", "jamie@example.invalid"]
-      : authConfiguration(process.env).users;
-    const store = recordStore(database(), users);
-    if (kind === "template_item") {
-      store.restoreTemplateItem(id, version, user.email);
-      revalidatePath("/");
-      return { ok: true as const };
-    }
-    if (kind === "finance_record" || kind === "finance_movement") {
-      store.restoreFinance(
-        kind === "finance_record" ? "record" : "movement",
-        id,
-        version,
-        user.email,
-      );
-      revalidatePath("/");
-      return { ok: true as const };
-    }
-    // For documents, ensure file still exists before restore
-    if (kind === "document") {
-      const snap = store.snapshot();
-      const doc =
-        snap.deletedDocuments.find((d) => d.id === id) ||
-        snap.documents.find((d) => d.id === id);
-      if (doc && !existsSync(fullPath(doc.storageName))) {
-        return {
-          ok: false as const,
-          error:
-            "The file is missing from storage – it cannot be restored. Check your backup.",
-          code: "validation",
-        };
+  return withStore(
+    "Unable to restore. Check your access and try again.",
+    async ({ store, actor }) => {
+      if (kind === "template_item") {
+        store.restoreTemplateItem(id, version, actor);
+        return {};
       }
-    }
-    store.restoreRecord(kind, id, version, user.email);
-    revalidatePath("/");
-    return { ok: true as const };
-  } catch (error) {
-    if (error instanceof RecordError)
-      return { ok: false as const, error: error.message, code: error.code };
-    return {
-      ok: false as const,
-      error: "Unable to restore. Check your access and try again.",
-      code: "unavailable",
-    };
-  }
+      if (kind === "finance_record" || kind === "finance_movement") {
+        store.restoreFinance(
+          kind === "finance_record" ? "record" : "movement",
+          id,
+          version,
+          actor,
+        );
+        return {};
+      }
+      // A document whose file is gone cannot be restored into a row that points
+      // at nothing, so the file is checked first.
+      if (kind === "document") {
+        const snap = store.snapshot();
+        const doc =
+          snap.deletedDocuments.find((d) => d.id === id) ||
+          snap.documents.find((d) => d.id === id);
+        if (doc && !existsSync(fullPath(doc.storageName)))
+          throw new RecordError(
+            "The file is missing from storage – it cannot be restored. Check your backup.",
+            "validation",
+          );
+      }
+      store.restoreRecord(kind, id, version, actor);
+      return {};
+    },
+  );
 }
 
 export async function switchDemoUser(choice: string) {

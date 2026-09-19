@@ -32,8 +32,10 @@ import {
   label,
   londonToday,
   movementKindFor,
+  uploadAcceptAttribute,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
+import { movementAmountHint } from "@/lib/finances/movement-hint";
 import type { FinanceMovement, FinanceRecord } from "@/lib/finances/summary";
 
 export type FinanceRecordEditor = { id?: string };
@@ -505,7 +507,7 @@ export function FinanceRecordForm({
                   <small>Optional – PDF, image or text</small>
                   <input
                     type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf"
+                    accept={uploadAcceptAttribute}
                     onChange={(e) => {
                       const picked = e.target.files?.[0] ?? null;
                       if (!picked) {
@@ -681,6 +683,8 @@ export function FinanceMovementDialog({
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** What is in the amount box, so the balance can update while it is typed. */
+  const [typed, setTyped] = useState("");
   const kind = movementKindFor(record.kind);
   const live = movements.filter((m) => !m.deletedAt);
   const active = live.filter((m) => !m.voidedAt);
@@ -688,6 +692,20 @@ export function FinanceMovementDialog({
   const name = (email: string | null) => (email ? email.split("@")[0] : "");
   const remaining =
     record.amountPence === null ? null : record.amountPence - total;
+  /**
+   * The live balance beside the amount. It counts only movements of this kind,
+   * which is what the server counts, and it is advice: the server still checks
+   * the same rule on save, because this figure can be thirty seconds old.
+   */
+  const hint = movementAmountHint({
+    kind,
+    typed,
+    recordedPence: record.amountPence,
+    alreadyPence: active
+      .filter((m) => m.kind === kind)
+      .reduce((sum, m) => sum + m.amountPence, 0),
+    fundedBy: record.fundedBy,
+  });
 
   useEffect(() => {
     // Remember what was focused before the dialog opened, so closing it
@@ -702,6 +720,13 @@ export function FinanceMovementDialog({
 
   async function add(form: FormData) {
     if (!kind) return;
+    // The button is already switched off when the amount cannot be recorded;
+    // this is the belt to its braces, so an implicit submission cannot slip
+    // past the figure on screen.
+    if (hint?.blocks) {
+      setError(hint.sentence);
+      return;
+    }
     setBusy(true);
     setError("");
     const get = (key: string) => String(form.get(key) ?? "");
@@ -714,6 +739,10 @@ export function FinanceMovementDialog({
         detail: get("detail"),
       });
       if (result.ok) {
+        // The amount is cleared so the next part payment starts from an empty
+        // box and the balance beside it reads against nothing. Date and note
+        // stay: part payments are usually entered one after another.
+        setTyped("");
         onChanged(
           kind === "reimbursement"
             ? "Reimbursement recorded. It settles money already owed – no second expense was created."
@@ -812,6 +841,9 @@ export function FinanceMovementDialog({
                   inputMode="decimal"
                   required
                   placeholder="0.00"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  aria-describedby={hint ? "movement-balance" : undefined}
                 />
               </label>
               <label>
@@ -827,6 +859,16 @@ export function FinanceMovementDialog({
                 <input name="detail" maxLength={500} placeholder="Optional" />
               </label>
             </div>
+            {hint && (
+              <p
+                id="movement-balance"
+                className="form-help"
+                aria-live="polite"
+                role={hint.blocks ? "alert" : undefined}
+              >
+                {hint.sentence}
+              </p>
+            )}
             {kind === "reimbursement" && (
               <p className="form-help">
                 Part payments are fine. A reimbursement only settles money{" "}
@@ -835,7 +877,7 @@ export function FinanceMovementDialog({
               </p>
             )}
             <div className="row-actions">
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || !!hint?.blocks}>
                 <Plus size={15} />
                 Record
               </Button>
