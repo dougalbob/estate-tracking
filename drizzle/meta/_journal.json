@@ -64,6 +64,13 @@
       "when": 1789799029792,
       "tag": "0008_task_type_outcome_and_scheduled",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789854557850,
+      "tag": "0009_document_date",
+      "breakpoints": true
     }
   ]
 }

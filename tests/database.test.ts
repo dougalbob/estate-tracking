@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from "node:fs";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { organisations, tasks } from "../src/lib/db/schema";
+import { documents, organisations, tasks } from "../src/lib/db/schema";
 import { taskStatuses } from "../src/lib/records/validation";
 test("migration can be reapplied and organisation defaults persist", () => {
   const sqlite = new Database(":memory:");
@@ -113,6 +113,62 @@ test("renaming Waiting to Scheduled carries stored rows with it", () => {
     // The new optional columns arrive empty rather than filled in.
     assert.equal(rows.find((r) => r.id === "old-waiting-task")?.kind, null);
     assert.equal(rows.find((r) => r.id === "old-waiting-task")?.outcome, null);
+  } finally {
+    sqlite.close();
+    rmSync(before, { recursive: true, force: true });
+  }
+});
+
+/**
+ * v0.2.17 added one optional column to documents, `document_date`. Nothing is
+ * backfilled and nothing else about a document moves, so this replays history:
+ * migrate up to 0008, write a document row exactly as v0.2.16 would have left
+ * it, then let 0009 run. The row must come out the other side untouched, with
+ * the new column empty.
+ */
+test("the new document date column leaves existing documents untouched", () => {
+  const before = migrationsUpTo("0008_task_type_outcome_and_scheduled");
+  const sqlite = new Database(":memory:");
+  const db = drizzle(sqlite);
+  try {
+    migrate(db, { migrationsFolder: before });
+    // The column really is absent at this point.
+    const columns = sqlite.prepare("PRAGMA table_info(documents)").all() as {
+      name: string;
+    }[];
+    assert.ok(!columns.some((c) => c.name === "document_date"));
+    const now = Date.now();
+    sqlite
+      .prepare(
+        "INSERT INTO documents (id, friendly_name, original_name, storage_name," +
+          " mime_type, size, category, version, created_by, created_at," +
+          " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?)",
+      )
+      .run(
+        "old-document",
+        "Death certificate",
+        "certificate.pdf",
+        "stored-certificate.pdf",
+        "application/pdf",
+        4321,
+        "certificate",
+        "alex@example.invalid",
+        now,
+        now,
+      );
+
+    migrate(db, { migrationsFolder: "./drizzle" });
+
+    const row = db.select().from(documents).get();
+    assert.equal(row?.id, "old-document");
+    assert.equal(row?.friendlyName, "Death certificate");
+    assert.equal(row?.originalName, "certificate.pdf");
+    assert.equal(row?.mimeType, "application/pdf");
+    assert.equal(row?.size, 4321);
+    assert.equal(row?.category, "certificate");
+    assert.equal(row?.version, 2);
+    // Blank means "the date it was added", so nothing needs filling in.
+    assert.equal(row?.documentDate, null);
   } finally {
     sqlite.close();
     rmSync(before, { recursive: true, force: true });

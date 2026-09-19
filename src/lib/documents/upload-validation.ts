@@ -34,6 +34,8 @@ export type PreparedUpload = {
   mime: string;
   friendlyName: string;
   category: string | null;
+  /** The date printed on the document, if one was typed in. Blank means "added". */
+  documentDate: string | null;
   links: UploadLinks;
   /** Whether the upload should be linked to something as it is stored. */
   hasLink: boolean;
@@ -129,12 +131,18 @@ export function prepareUpload(
       textOrNull(formData, "friendlyName") ||
       file.name.replace(/\.[^/.]+$/, ""),
     category: textOrNull(formData, "category"),
+    documentDate: textOrNull(formData, "documentDate"),
   });
   if (!parsed.success)
     return {
       ok: false,
       rejection: {
-        error: parsed.error.issues.map((issue) => issue.message).join("; "),
+        // One sentence per distinct problem: a schema with two rules for the
+        // same field reports them twice, and "Enter a valid date; Enter a valid
+        // date" helps nobody.
+        error: [
+          ...new Set(parsed.error.issues.map((issue) => issue.message)),
+        ].join("; "),
         code: "validation",
         status: 400,
       },
@@ -146,6 +154,7 @@ export function prepareUpload(
       mime: file.type || "application/octet-stream",
       friendlyName: parsed.data.friendlyName!,
       category: parsed.data.category ?? null,
+      documentDate: parsed.data.documentDate ?? null,
       links,
       hasLink: Object.values(links).some((value) => value !== null),
     },

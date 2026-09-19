@@ -174,7 +174,7 @@ export async function uploadDocument(formData: FormData) {
       code: prepared.rejection.code,
     };
   }
-  const { file, mime, friendlyName, category, links, hasLink } =
+  const { file, mime, friendlyName, category, documentDate, links, hasLink } =
     prepared.upload;
 
   const docsPath = ensureDocumentsPath();
@@ -227,6 +227,7 @@ export async function uploadDocument(formData: FormData) {
         mimeType: mime,
         size: file.size,
         category,
+        documentDate,
       },
       user.email,
     );

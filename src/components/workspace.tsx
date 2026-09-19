@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment, type ReactNode } from "react";
 import {
   ArrowUpRight,
   BookOpen,
@@ -71,6 +71,8 @@ import {
   type FinanceRecordEditor,
 } from "./finance-forms";
 import { ProjectChecklist } from "./checklist";
+import { InteractionCard } from "./interaction-card";
+import { journalEntries } from "@/lib/records/journal";
 import { CalendarPage } from "./calendar";
 import {
   formatSize,
@@ -162,6 +164,15 @@ const formatDate = (value: string | Date) =>
     timeZone: "UTC",
   }).format(new Date(value));
 /**
+ * The date printed on a document, spelled out in full ("3 September 1987")
+ * because it is often decades old and worth reading properly at a glance.
+ */
+const formatDocumentDate = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "long",
+    timeZone: "UTC",
+  }).format(new Date(value));
+/**
  * One icon per interaction kind for the Event log rows. The icon is never
  * the only cue: every row also carries the kind as a text badge.
  */
@@ -176,15 +187,6 @@ const taskKindIcons = {
   research: Search,
   review: ClipboardCheck,
 };
-const eventKindIcons = {
-  call: Phone,
-  email: Mail,
-  letter: FileText,
-  web_form: Globe,
-  note: StickyNote,
-} as const;
-const eventKindIcon = (kind: string) =>
-  eventKindIcons[kind as keyof typeof eventKindIcons] ?? StickyNote;
 /**
  * How many documents are attached. Deliberately a chip rather than a few words
  * in a long line of metadata: a receipt attached to a payment is easy to miss,
@@ -333,8 +335,20 @@ export function Workspace({
 }) {
   const [view, setView] = useState("overview"),
     [selected, setSelected] = useState<string | null>(null),
-    [editor, setEditor] = useState<Editor | null>(null),
+    [editor, setEditorState] = useState<Editor | null>(null),
+    [editorKey, setEditorKey] = useState(0),
     [history, setHistory] = useState<{ id: string; kind: string } | null>(null);
+  /**
+   * Opening a form is always a fresh form. The fields are uncontrolled and some
+   * of the answers live in state, so a form handed a different record used to
+   * carry the last one's contact, follow-ups and version into the new one - a
+   * task's "+ New contact…" still selected on the note opened by Create
+   * interaction, for instance. The key is what makes that impossible.
+   */
+  function setEditor(next: Editor | null) {
+    setEditorKey((key) => key + 1);
+    setEditorState(next);
+  }
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("open"),
     [owner, setOwner] = useState("all"),
@@ -1214,120 +1228,159 @@ export function Workspace({
       </div>
     );
   }
-  function noteCard(note: Snapshot["interactions"][number]) {
-    const docs = getLinkedDocuments({ interactionId: note.id });
-    /**
-     * The icon the Event log row carries for this kind, from the same map and in
-     * the same box, so a call looks like a call in both lists. The kind in words
-     * stays in the line under the title: the icon is never the only cue.
-     */
-    const KindIcon = eventKindIcon(note.kind);
-    return (
-      <article className="panel note-card" key={note.id}>
-        <div className="section-heading">
-          <div className="note-head">
-            <span className="task-icon">
-              <KindIcon size={18} />
-            </span>
-            <div>
-              <h2>{note.title}</h2>
-              <p>
-                <span className="badge">{label(note.kind)}</span>
-                {" · "}
-                {formatTime(note.occurredAt)} · {names(note.createdBy)} ·{" "}
-                {orgName(note.organisationId)}
-              </p>
-            </div>
-          </div>
-          <div className="row-actions">
-            <button
-              className="subtle-button"
-              onClick={() => edit("interaction", note.id)}
-            >
-              <Pencil size={14} />
-              Edit
-            </button>
-            <button
-              className="subtle-button"
-              onClick={() => handleDelete("interaction", note.id, note.version)}
-            >
-              <Trash2 size={14} />
-              Bin
-            </button>
-          </div>
-        </div>
-        <p className="note-detail">{note.detail}</p>
-        {docs.length > 0 && (
-          <div className="doc-list" style={{ padding: "0 24px 12px" }}>
-            {docs.map((d) => (
-              <div key={d.id} className="doc-inline">
-                <FileText size={14} />
-                <span>{d.friendlyName}</span>
-                <button
-                  type="button"
-                  onClick={() => setViewingDoc(d)}
-                  className="subtle-button"
-                  title="View in app – close button returns you here"
-                >
-                  <Eye size={12} /> View
-                </button>
-                <button
-                  type="button"
-                  onClick={() => downloadDocument(d.id, d.originalName)}
-                  className="subtle-button"
-                  title="Download a copy"
-                >
-                  <Download size={12} /> Download
-                </button>
-                <span className="badge">
-                  {d.category ? label(d.category) : "No category"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="note-meta">
+  /**
+   * A document as a journal entry. Decluttered on purpose: the name, the
+   * category, and the date it belongs on — and nothing that names another
+   * record by title, because a document row on the Documents tab lists its
+   * links and one of those names can be an interaction's title. No interaction
+   * title is shown anywhere in the journal.
+   */
+  const journalDocumentRow = (doc: Snapshot["documents"][number]) => (
+    <div className="task-row" key={doc.id}>
+      <span className="task-icon">
+        <FileText size={18} />
+      </span>
+      <div className="task-copy">
+        <button
+          className="record-title"
+          onClick={() => edit("document", doc.id)}
+        >
+          {doc.friendlyName}
+        </button>
+        <p>
+          <span className="badge">
+            {doc.category ? label(doc.category) : "No category"}
+          </span>
+          {" · "}
           <small>
-            Recorded {formatTime(note.createdAt)}
-            {note.version > 1 ? " · Edited" : ""}
+            {doc.documentDate
+              ? `Dated ${formatDocumentDate(doc.documentDate)} · Uploaded on ${formatDate(doc.createdAt)}`
+              : `Uploaded on ${formatDate(doc.createdAt)} by ${names(doc.createdBy)}`}
           </small>
-          <div className="row-actions">
-            {historyButton("interaction", note.id)}
-            <button
-              className="subtle-button"
-              onClick={() => setDocUpload({ interactionId: note.id })}
-            >
-              <FileText size={14} />
-              Attach document
-            </button>
-            <button
-              className="subtle-button"
-              onClick={() => setLinkPicker({ interactionId: note.id })}
-            >
-              <Link2 size={14} />
-              Link existing
-            </button>
-          </div>
-        </div>
-        {data.tasks.filter((t) => t.interactionId === note.id).map(taskRow)}
-        <div className="panel-footer">
+        </p>
+      </div>
+      <div className="row-actions">
+        <button
+          type="button"
+          onClick={() => setViewingDoc(doc)}
+          className="subtle-button"
+          title="View in app – close button returns you here"
+        >
+          <Eye size={14} />
+          View
+        </button>
+        <button
+          type="button"
+          onClick={() => downloadDocument(doc.id, doc.originalName)}
+          className="subtle-button"
+          title="Download a copy"
+        >
+          <Download size={14} />
+          Download
+        </button>
+        <button
+          className="subtle-button"
+          aria-label={`Edit document ${doc.friendlyName}`}
+          onClick={() => edit("document", doc.id)}
+        >
+          <Pencil size={14} />
+          Edit
+        </button>
+        {historyButton("document", doc.id)}
+        <button
+          className="subtle-button"
+          aria-label={`Delete document ${doc.friendlyName}`}
+          onClick={() => handleDelete("document", doc.id, doc.version)}
+        >
+          <Trash2 size={14} />
+          Bin
+        </button>
+      </div>
+    </div>
+  );
+
+  /**
+   * One interaction, rendered by the shared card so the project journal, the
+   * Event log, a contact's interaction history and Unfiled notes read
+   * identically and cannot drift apart. The detail leads and the title is never
+   * shown — see interaction-card.tsx for why.
+   */
+  const interactionCard = (
+    note: Snapshot["interactions"][number],
+    options: {
+      embedded?: boolean;
+      children?: ReactNode;
+      footer?: ReactNode;
+      panelFooter?: ReactNode;
+    } = {},
+  ) => (
+    <InteractionCard
+      key={note.id}
+      note={note}
+      docs={getLinkedDocuments({ interactionId: note.id })}
+      contact={liveOrganisation(note.organisationId)}
+      organisationName={orgName(note.organisationId)}
+      projectName={note.projectId ? projectName(note.projectId) : null}
+      displayName={names}
+      onOpen={() => edit("interaction", note.id)}
+      onOpenContact={(id) => setContactQuickView(id)}
+      onHistory={() => setHistory({ kind: "interaction", id: note.id })}
+      onDelete={() => handleDelete("interaction", note.id, note.version)}
+      onViewDocument={(doc) => setViewingDoc(doc)}
+      onDownloadDocument={(doc) => downloadDocument(doc.id, doc.originalName)}
+      embedded={options.embedded}
+      footer={options.footer}
+      panelFooter={options.panelFooter}
+    >
+      {options.children}
+    </InteractionCard>
+  );
+
+  /**
+   * A note as it appears on the contact screen and in Unfiled notes: the same
+   * card, with the note's follow-up tasks under it and the two ways to attach
+   * paperwork to it. The journal shows the card alone, because a note's tasks
+   * are beats of their own there.
+   */
+  const noteSurfaceCard = (note: Snapshot["interactions"][number]) =>
+    interactionCard(note, {
+      footer: (
+        <>
           <button
-            className="text-link"
-            onClick={() =>
-              setEditor({
-                kind: "task",
-                organisationId: note.organisationId ?? undefined,
-                interactionId: note.id,
-              })
-            }
+            className="subtle-button"
+            onClick={() => setDocUpload({ interactionId: note.id })}
           >
-            <Plus size={14} />
-            Add follow-up
+            <FileText size={14} />
+            Attach document
           </button>
-        </div>
-      </article>
-    );
-  }
+          <button
+            className="subtle-button"
+            onClick={() => setLinkPicker({ interactionId: note.id })}
+          >
+            <Link2 size={14} />
+            Link existing
+          </button>
+        </>
+      ),
+      children: data.tasks
+        .filter((t) => t.interactionId === note.id)
+        .map(taskRow),
+      panelFooter: (
+        <button
+          className="text-link"
+          onClick={() =>
+            setEditor({
+              kind: "task",
+              organisationId: note.organisationId ?? undefined,
+              interactionId: note.id,
+            })
+          }
+        >
+          <Plus size={14} />
+          Add follow-up
+        </button>
+      ),
+    });
 
   function documentRow(doc: Snapshot["documents"][number]) {
     // Each directly linked live contact becomes its own tappable item; a note
@@ -1382,6 +1435,9 @@ export function Workspace({
           </p>
           <p>
             <small>
+              {doc.documentDate
+                ? `Dated ${formatDocumentDate(doc.documentDate)} · `
+                : ""}
               Uploaded on {formatDate(doc.createdAt)} by {names(doc.createdBy)}
             </small>
           </p>
@@ -1425,73 +1481,6 @@ export function Workspace({
           <button
             className="subtle-button"
             onClick={() => handleDelete("document", doc.id, doc.version)}
-          >
-            <Trash2 size={14} />
-            Bin
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function eventRow(event: Snapshot["interactions"][number]) {
-    const contact = liveOrganisation(event.organisationId);
-    const KindIcon = eventKindIcon(event.kind);
-    return (
-      <div className="task-row" key={event.id}>
-        <span className="task-icon">
-          <KindIcon size={18} />
-        </span>
-        <div className="task-copy">
-          <button
-            className="record-title"
-            onClick={() => edit("interaction", event.id)}
-          >
-            {event.title}
-          </button>
-          <p>
-            <span className="badge">{label(event.kind)}</span>
-            {" · "}
-            {contact ? (
-              <button
-                type="button"
-                className="task-org"
-                aria-label={`Contact details for ${contact.name}`}
-                title={`Contact details for ${contact.name}`}
-                onClick={() => setContactQuickView(contact.id)}
-              >
-                <Users size={11} aria-hidden />
-                {contact.name}
-              </button>
-            ) : (
-              orgName(event.organisationId)
-            )}
-            {" · "}
-            {event.projectId
-              ? (projectName(event.projectId) ?? "Linked project")
-              : "No project"}
-          </p>
-          <p>
-            <small>
-              {formatTime(event.occurredAt)} · Recorded by{" "}
-              {names(event.createdBy)}
-            </small>
-          </p>
-        </div>
-        <div className="row-actions">
-          <button
-            className="subtle-button"
-            aria-label={`Edit event ${event.title}`}
-            onClick={() => edit("interaction", event.id)}
-          >
-            <Pencil size={14} />
-            Edit
-          </button>
-          {historyButton("interaction", event.id)}
-          <button
-            className="subtle-button"
-            aria-label={`Delete event ${event.title}`}
-            onClick={() => handleDelete("interaction", event.id, event.version)}
           >
             <Trash2 size={14} />
             Bin
@@ -1817,7 +1806,13 @@ export function Workspace({
                           <p>
                             <strong>{names(r.actor)}</strong> {r.action}{" "}
                             {String(
-                              r.after.name ??
+                              // An interaction is named by its detail, exactly
+                              // as its card is: the title describes the plan
+                              // that was written before the work happened.
+                              (r.entity === "interaction"
+                                ? r.after.detail
+                                : null) ??
+                                r.after.name ??
                                 r.after.title ??
                                 r.after.friendlyName ??
                                 r.entity,
@@ -2187,7 +2182,7 @@ export function Workspace({
               </div>
               {data.interactions
                 .filter((n) => n.organisationId === organisation.id)
-                .map(noteCard)}
+                .map(noteSurfaceCard)}
               {!data.interactions.some(
                 (n) => n.organisationId === organisation.id,
               ) && (
@@ -2373,7 +2368,9 @@ export function Workspace({
           )}
           {view === "notes" && (
             <>
-              {data.interactions.filter((n) => !n.organisationId).map(noteCard)}
+              {data.interactions
+                .filter((n) => !n.organisationId)
+                .map(noteSurfaceCard)}
               {!data.interactions.some((n) => !n.organisationId) && (
                 <section className="panel empty-state">
                   <h2>A place for thoughts before they’re organised</h2>
@@ -2448,6 +2445,21 @@ export function Workspace({
                 const visibleTasks = isHideDone
                   ? allTasks.filter((t) => t.status !== "done")
                   : allTasks;
+                // The one case where an empty journal needs explaining rather
+                // than simply stating: everything on it is a done task, and
+                // Hide Done is what took them away.
+                const allDoneHidden =
+                  allTasks.length > 0 &&
+                  isHideDone &&
+                  visibleTasks.length === 0;
+                const journal = journalEntries({
+                  projectId: p.id,
+                  interactions: data.interactions,
+                  documents: data.documents,
+                  documentLinks: data.documentLinks,
+                  tasks: data.tasks,
+                  hideDone: isHideDone,
+                });
                 // The count under the title follows the panel's own Hide Done
                 // filter and says "outstanding", so a smaller number is read
                 // as filtered rather than as tasks gone missing. The Show
@@ -2596,6 +2608,16 @@ export function Workspace({
                             onError={setError}
                           />
                         )}
+                        {/*
+                          The journal: this project's interactions, documents
+                          and tasks in one list, most recent first. Every entry
+                          is a recorded fact and opens the record it names, so
+                          the panel tells the story of the project rather than
+                          only listing what is left to do. Hide Done governs the
+                          journal's task entries and stays exactly what it was -
+                          done tasks only, per panel, with the count on the
+                          button.
+                        */}
                         <div style={{ borderTop: "1px solid var(--border)" }}>
                           {allTasks.length > 0 && (
                             <div
@@ -2636,20 +2658,26 @@ export function Workspace({
                               </Button>
                             </div>
                           )}
-                          {visibleTasks.map(taskRow)}
-                          {allTasks.length === 0 && (
+                          {journal.map((entry) =>
+                            entry.kind === "interaction"
+                              ? interactionCard(entry.record, {
+                                  embedded: true,
+                                })
+                              : entry.kind === "document"
+                                ? journalDocumentRow(entry.record)
+                                : taskRow(entry.record),
+                          )}
+                          {journal.length === 0 && allDoneHidden && (
                             <p className="empty-state">
-                              No tasks assigned to this project yet.
+                              Every task in this project is done, so the list is
+                              empty while done tasks are hidden.
                             </p>
                           )}
-                          {allTasks.length > 0 &&
-                            visibleTasks.length === 0 &&
-                            isHideDone && (
-                              <p className="empty-state">
-                                Every task in this project is done, so the list
-                                is empty while done tasks are hidden.
-                              </p>
-                            )}
+                          {journal.length === 0 && !allDoneHidden && (
+                            <p className="empty-state">
+                              Nothing has happened in this project yet.
+                            </p>
+                          )}
                         </div>
                       </>
                     )}
@@ -2880,9 +2908,9 @@ export function Workspace({
                   the same way next time.
                 </p>
               )}
-              <section className="panel">
-                {filteredEvents.map(eventRow)}
-                {!filteredEvents.length && (
+              {filteredEvents.map((event) => interactionCard(event))}
+              {!filteredEvents.length && (
+                <section className="panel">
                   <div className="empty-state">
                     <ScrollText size={26} />
                     <h2>
@@ -2901,8 +2929,8 @@ export function Workspace({
                       </Button>
                     )}
                   </div>
-                )}
-              </section>
+                </section>
+              )}
             </>
           )}
           {view === "bin" && (
@@ -3377,6 +3405,7 @@ export function Workspace({
       </div>
       {editor && (
         <RecordForm
+          key={editorKey}
           editor={editor}
           data={data}
           users={users}
@@ -3828,6 +3857,10 @@ function DocumentUploadDialog({
     initial.file ? initial.file.name.replace(/\.[^/.]+$/, "") : "",
   );
   const [category, setCategory] = useState("");
+  // The date the paper itself is dated. Optional, and blank simply means "the
+  // date it was added", which is what every document stored before v0.2.17
+  // means and what the journal sorts by when nothing is typed here.
+  const [documentDate, setDocumentDate] = useState("");
   const [linkKind, setLinkKind] = useState<
     "none" | "organisation" | "interaction" | "task" | "project" | "finance"
   >(
@@ -3921,6 +3954,7 @@ function DocumentUploadDialog({
         friendlyName || file.name.replace(/\.[^/.]+$/, ""),
       );
       if (category) fd.set("category", category);
+      if (documentDate) fd.set("documentDate", documentDate);
       if (linkKind === "organisation" && linkId)
         fd.set("organisationId", linkId);
       if (linkKind === "interaction" && linkId) fd.set("interactionId", linkId);
@@ -4029,9 +4063,21 @@ function DocumentUploadDialog({
               ))}
             </select>
           </label>
+          <label>
+            Date on the document{" "}
+            <small>Optional – leave blank for the date it was added</small>
+            <input
+              type="date"
+              value={documentDate}
+              onChange={(e) => setDocumentDate(e.target.value)}
+            />
+          </label>
           <p className="form-help">
-            Files stay on your own server, and the original file name is kept so
-            a downloaded copy looks the same as the one you uploaded.
+            A document dated years ago, such as a house deed, keeps its own
+            place in a project&apos;s story. Leave this blank and it sits where
+            it entered the story. Files stay on your own server, and the
+            original file name is kept so a downloaded copy looks the same as
+            the one you uploaded.
           </p>
           <fieldset className="follow-up">
             <legend>Link to (optional – you can link later too)</legend>

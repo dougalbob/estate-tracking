@@ -526,6 +526,7 @@ export function recordStore(
             ...before,
             friendlyName: values.friendlyName,
             category: values.category,
+            documentDate: values.documentDate,
             version: before.version + 1,
             updatedAt: now,
           };
@@ -685,6 +686,8 @@ export function recordStore(
         mimeType: string;
         size: number;
         category: string | null;
+        /** The date the document is dated, or null for "the date it was added". */
+        documentDate?: string | null;
       },
       actor: string,
     ) {
@@ -700,6 +703,7 @@ export function recordStore(
           mimeType: upload.mimeType,
           size: upload.size,
           category: upload.category,
+          documentDate: upload.documentDate ?? null,
           version: 1,
           createdBy: actor,
           createdAt: now,

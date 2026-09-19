@@ -5,9 +5,11 @@
  * The demo needs documents so the Documents tab is not empty and the contact
  * names on its rows can be seen: one document linked to a single contact,
  * one linked to two contacts, and one linked only through a note, so a row
- * with no tappable contact can be seen too. Each document gets a small
- * generated PNG in the demo documents folder, and its recorded size matches
- * the bytes actually written.
+ * with no tappable contact can be seen too. A fourth is linked to the Probate
+ * project and dated 1987, so a document with a date of its own — and its place
+ * at the bottom of that project's journal — can be seen as well. Each document
+ * gets a small generated PNG in the demo documents folder, and its recorded
+ * size matches the bytes actually written.
  *
  * Run scripts/seed-demo-contacts.ts first: this seed links to the fictional
  * contacts that one creates. Like the other demo seeds it is idempotent and
@@ -141,7 +143,13 @@ type DemoDocument = {
   originalName: string;
   category: string;
   colour: [number, number, number];
-  links: { organisationId?: string; interactionId?: string }[];
+  /** The date printed on the document, when it is meant to have one. */
+  documentDate?: string;
+  links: {
+    organisationId?: string;
+    interactionId?: string;
+    projectId?: string;
+  }[];
 };
 const documents: DemoDocument[] = [
   {
@@ -168,6 +176,17 @@ const documents: DemoDocument[] = [
     colour: [97, 68, 35],
     links: [{ interactionId: noteId }],
   },
+  // A document with a date of its own, decades older than the day it was
+  // added: it sits at the bottom of the Probate project's journal, where a
+  // document dated by the day it was filed would sit at the top.
+  {
+    friendlyName: "House deed (fictional)",
+    originalName: "house-deed.png",
+    category: "property",
+    colour: [123, 94, 143],
+    documentDate: "1987-09-03",
+    links: [{ projectId: "probate" }],
+  },
 ];
 
 mkdirSync(documentsDir, { recursive: true });
@@ -188,6 +207,7 @@ for (const spec of documents) {
       mimeType: "image/png",
       size: bytes.length,
       category: spec.category,
+      documentDate: spec.documentDate ?? null,
     },
     users[0],
   );
@@ -195,6 +215,7 @@ for (const spec of documents) {
     const input: Record<string, unknown> = { documentId };
     if (target.organisationId) input.organisationId = target.organisationId;
     if (target.interactionId) input.interactionId = target.interactionId;
+    if (target.projectId) input.projectId = target.projectId;
     store.linkDocument(input, users[0]);
   }
   created++;
