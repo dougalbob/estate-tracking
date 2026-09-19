@@ -82,6 +82,15 @@ const requiredDate = z
     "Enter a valid date",
   );
 const date = requiredDate.nullable();
+/**
+ * An optional calendar day: a real day when one is typed in, and null when the
+ * field is blank, null or missing altogether — so a document saved before the
+ * field existed validates exactly like one saved with it blank.
+ */
+const optionalDate = z
+  .union([requiredDate, z.literal(""), z.null()])
+  .transform((v) => v || null)
+  .default(null);
 const common = {
   id: z.string().min(1).optional(),
   version: z.number().int().positive().optional(),
@@ -201,6 +210,12 @@ export const documentInput = z.object({
     .min(1, "A friendly name is required")
     .max(200),
   category: z.enum(documentCategories).nullable().default(null),
+  /**
+   * The date the document is dated, if the paper carries one. Optional and
+   * blank for "the date it was added", which is what every document stored
+   * before v0.2.17 means and what the journal falls back to.
+   */
+  documentDate: optionalDate,
   // originalName, storageName, mimeType, size are set server-side from upload
 });
 export const documentLinkInput = z.object({

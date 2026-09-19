@@ -196,3 +196,38 @@ test("the sentences say what to do next, and name no server", () => {
       );
   }
 });
+
+test("an upload carries the date printed on the document, and blank means none", () => {
+  const file = new File(["x"], "deed.pdf", { type: "application/pdf" });
+  const dated = prepareUpload(
+    formDataWith(file, {
+      friendlyName: "House deed",
+      documentDate: "1987-09-03",
+    }),
+  );
+  assert.equal(dated.ok, true);
+  if (dated.ok) assert.equal(dated.upload.documentDate, "1987-09-03");
+  // No field at all, and a field submitted empty, both mean "the date it was
+  // added" rather than a date nobody chose.
+  for (const fields of [
+    { friendlyName: "House deed" },
+    { friendlyName: "House deed", documentDate: "" },
+  ] as Record<string, string>[]) {
+    const plain = prepareUpload(formDataWith(file, fields));
+    assert.equal(plain.ok, true);
+    if (plain.ok) assert.equal(plain.upload.documentDate, null);
+  }
+  // A date that is not a day is refused in the one plain sentence every date
+  // field uses; the upload writes nothing.
+  const refused = prepareUpload(
+    formDataWith(file, {
+      friendlyName: "House deed",
+      documentDate: "3/9/1987",
+    }),
+  );
+  assert.equal(refused.ok, false);
+  if (!refused.ok) {
+    assert.equal(refused.rejection.error, "Enter a valid date");
+    assert.equal(refused.rejection.status, 400);
+  }
+});

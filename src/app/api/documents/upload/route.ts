@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         { status: prepared.rejection.status },
       );
     }
-    const { file, mime, friendlyName, category, links, hasLink } =
+    const { file, mime, friendlyName, category, documentDate, links, hasLink } =
       prepared.upload;
 
     const docsPath = ensureDocumentsPath();
@@ -120,6 +120,7 @@ export async function POST(request: Request) {
           mimeType: mime,
           size: file.size,
           category,
+          documentDate,
         },
         user.email,
       );

@@ -7,6 +7,7 @@ import * as schema from "../src/lib/db/schema";
 import { recordStore, RecordError } from "../src/lib/records/store";
 import {
   attentionDate,
+  documentInput,
   everyoneAssignee,
   londonToday,
   organisationInput,
@@ -1206,6 +1207,111 @@ test("a task can be given to everyone, and an unknown person is still refused", 
         user,
       );
     }
+  } finally {
+    sqlite.close();
+  }
+});
+
+// v0.2.17: the date the document itself is dated. Optional, and blank means
+// "the date it was added" — the field only ever adds a choice, so a document
+// stored before this release reads and behaves exactly as it did.
+test("the date on a document accepts a real day and refuses anything else", () => {
+  const base = { friendlyName: "House deed", category: "property" };
+  const good = documentInput.safeParse({ ...base, documentDate: "1987-09-03" });
+  assert.equal(good.success, true);
+  if (good.success) assert.equal(good.data.documentDate, "1987-09-03");
+  // Blank, null and nothing at all all mean "the date it was added". The last
+  // one is a document stored before v0.2.17, whose payload has no key at all.
+  for (const blank of ["", null, undefined]) {
+    const parsed = documentInput.safeParse({ ...base, documentDate: blank });
+    assert.equal(parsed.success, true);
+    if (parsed.success) assert.equal(parsed.data.documentDate, null);
+  }
+  const legacy = documentInput.safeParse(base);
+  assert.equal(legacy.success, true);
+  if (legacy.success) assert.equal(legacy.data.documentDate, null);
+  for (const bad of [
+    "3 September 1987",
+    "1987-9-3",
+    "1987-13-01",
+    "2026-02-30",
+  ]) {
+    const refused = documentInput.safeParse({ ...base, documentDate: bad });
+    assert.equal(refused.success, false, `${bad} must be refused`);
+    if (!refused.success)
+      assert.equal(refused.error.issues[0].message, "Enter a valid date");
+  }
+});
+
+test("the date on a document: saved, changed and cleared with history", () => {
+  const { sqlite, store } = setup();
+  try {
+    const upload = {
+      friendlyName: "House deed",
+      originalName: "deed.pdf",
+      storageName: "deed-storage.pdf",
+      mimeType: "application/pdf",
+      size: 12,
+      category: "property",
+    };
+    const find = (id: string) =>
+      store.snapshot().documents.find((d) => d.id === id);
+    // Uploaded with the date printed on it.
+    const dated = store.createDocumentFromUpload(
+      { ...upload, documentDate: "1987-09-03" },
+      users[0],
+    );
+    assert.equal(find(dated)?.documentDate, "1987-09-03");
+    // Uploaded without one: null, and nothing else about the document changes.
+    const undated = store.createDocumentFromUpload(upload, users[0]);
+    assert.equal(find(undated)?.documentDate, null);
+    assert.equal(find(undated)?.friendlyName, "House deed");
+    // Changed from Edit, then cleared again — each step in the history.
+    store.saveDocument(
+      { id: dated, version: 1, ...upload, documentDate: "1987-10-01" },
+      users[1],
+    );
+    assert.equal(find(dated)?.documentDate, "1987-10-01");
+    store.saveDocument(
+      { id: dated, version: 2, ...upload, documentDate: "" },
+      users[1],
+    );
+    assert.equal(find(dated)?.documentDate, null);
+    // A date that is not a day is refused before anything is written, so the
+    // record and its version are untouched.
+    assert.throws(() =>
+      store.saveDocument(
+        { id: dated, version: 3, ...upload, documentDate: "not a date" },
+        users[0],
+      ),
+    );
+    assert.equal(find(dated)?.version, 3);
+    // The document date is part of the readable history, like every other
+    // field. Found by content rather than by position: the history is
+    // newest-first and saves within the same millisecond would make the order
+    // unstable.
+    const revisions = store
+      .snapshot()
+      .revisions.filter((r) => r.entity === "document" && r.entityId === dated);
+    // The upload, the change and the clear: three revisions, none of them from
+    // the refused save.
+    assert.equal(revisions.length, 3);
+    const updated = revisions.filter((r) => r.action === "updated");
+    assert.equal(updated.length, 2);
+    assert.ok(
+      updated.some(
+        (r) =>
+          r.before?.documentDate === "1987-09-03" &&
+          r.after.documentDate === "1987-10-01",
+      ),
+    );
+    assert.ok(
+      updated.some(
+        (r) =>
+          r.before?.documentDate === "1987-10-01" &&
+          r.after.documentDate == null,
+      ),
+    );
   } finally {
     sqlite.close();
   }

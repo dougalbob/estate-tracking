@@ -849,13 +849,40 @@ label.checkbox-label {
 .note-head > div {
   min-width: 0;
 }
-/* The title used to sit under a kind chip; the icon box now leads the row, so
-   the title starts level with the top of the icon rather than below it. */
+/* The detail leads the card and is the tap target that opens the record, so it
+   sits in the heading column beside the kind icon rather than under a title.
+   Line breaks typed into a detail are kept as typed. */
 .note-detail {
-  padding: 0 24px 24px;
+  display: block;
+  width: 100%;
+  padding: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--foreground);
+}
+.note-head p {
+  font-size: 11px;
+  margin-top: 5px;
+}
+/* A card with no title: the line under the detail carries the kind in words,
+   the contact (tappable), the project, the time and who recorded it. */
+.note-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+}
+.note-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px 18px;
+}
+/* A card inside a project panel — one journal entry rather than a panel of its
+   own. The project panel already draws the surrounding border. */
+.note-card.embedded {
+  margin: 0;
+  border-top: 1px solid var(--border);
 }
 .note-meta {
   display: flex;

@@ -111,6 +111,15 @@ export const documents = sqliteTable("documents", {
   mimeType: text("mime_type").notNull(),
   size: integer("size").notNull(),
   category: text("category"),
+  /**
+   * The date the document itself is dated — registration, issue, statement
+   * period-end, execution. Optional, and blank means "the date it was added":
+   * a house deed from 1987 can be dated 1987 and sink to the bottom of a
+   * project's story, or be left blank and sit where it entered that story.
+   * It belongs to the document rather than to any one link, because a deed
+   * linked to two projects is still the same document.
+   */
+  documentDate: text("document_date"),
   version: integer("version").notNull().default(1),
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

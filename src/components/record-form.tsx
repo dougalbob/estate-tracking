@@ -417,6 +417,7 @@ export function RecordForm({
         ...base,
         friendlyName: get("friendlyName"),
         category: nullable("category"),
+        documentDate: nullable("documentDate"),
       };
     else
       input = {
@@ -736,10 +737,22 @@ export function RecordForm({
                   ))}
                 </select>
               </label>
+              <label>
+                Date on the document{" "}
+                <small>Optional – leave blank for the date it was added</small>
+                <input
+                  type="date"
+                  name="documentDate"
+                  defaultValue={value("documentDate")}
+                />
+              </label>
               <p className="form-help">
-                The file itself isn&apos;t changed here – only name and
-                category. Links can be added below. Null is fine – not every
-                document needs every link.
+                The date printed on the paper – registration, issue, a statement
+                period-end. A document dated years ago keeps its own place in a
+                project&apos;s story; blank means it sits where it was added.
+                The file itself isn&apos;t changed here – only its name,
+                category and date. Links can be added below. Null is fine – not
+                every document needs every link.
               </p>
 
               {localDocLinks.length > 0 && (
