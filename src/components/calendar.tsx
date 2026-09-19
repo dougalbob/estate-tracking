@@ -17,6 +17,7 @@ import {
   groupByDueDate,
   monthGrid,
   monthLabel,
+  moveDeltaFor,
   projectTones,
   toneClass,
   weekGrid,
@@ -363,8 +364,26 @@ export function CalendarPage({
                           draggable={!busy}
                           title={`${task.title} — ${project ?? "No project"}, ${label(
                             task.status,
-                          )}, ${who}. Open the task, or drag it to another day.`}
+                          )}, ${who}. Open the task, or move it by dragging it to another day or with the arrow keys.`}
+                          aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
                           onClick={() => onOpenTask(task.id)}
+                          onKeyDown={(event) => {
+                            // A keyboard route for the drag: the four arrow
+                            // keys move the focused task by a day or a week.
+                            // Modifier combinations are left alone so browser
+                            // and screen-reader shortcuts keep working.
+                            if (
+                              event.ctrlKey ||
+                              event.metaKey ||
+                              event.altKey ||
+                              event.shiftKey
+                            )
+                              return;
+                            const delta = moveDeltaFor(event.key);
+                            if (delta === null || busy || !task.dueDate) return;
+                            event.preventDefault();
+                            void moveTo(task, addDays(task.dueDate, delta));
+                          }}
                           onDragStart={(event) => {
                             event.dataTransfer.setData("text/plain", task.id);
                             event.dataTransfer.effectAllowed = "move";

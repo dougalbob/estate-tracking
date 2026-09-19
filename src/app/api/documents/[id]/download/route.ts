@@ -57,16 +57,17 @@ export async function GET(
     // Read file into buffer to avoid Node stream -> Web stream conversion issues that caused "ReadableStream is already closed"
     const buffer = await readFile(path);
 
-    const safeMime =
-      doc.mimeType.startsWith("image/") || doc.mimeType === "application/pdf"
-        ? doc.mimeType
-        : "application/octet-stream";
+    // An SVG can carry scripts and is served from this app's own origin, so
+    // it is never offered inline — a document stored before this rule (or by
+    // any other route) downloads as a file instead of opening as a page.
+    // Images and PDFs are the two kinds the in-app viewer embeds safely.
+    const safeInline =
+      (doc.mimeType.startsWith("image/") && doc.mimeType !== "image/svg+xml") ||
+      doc.mimeType === "application/pdf";
+    const safeMime = safeInline ? doc.mimeType : "application/octet-stream";
 
     const dispositionType =
-      forceDownload ||
-      !(safeMime.startsWith("image/") || safeMime === "application/pdf")
-        ? "attachment"
-        : "inline";
+      forceDownload || !safeInline ? "attachment" : "inline";
 
     const safeOriginal = doc.originalName
       .replace(/"/g, '\\"')

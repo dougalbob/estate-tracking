@@ -47,13 +47,15 @@ export async function postDocumentUpload(
       error?: string;
       warning?: string;
     };
-    if (!response.ok)
+    if (!response.ok) {
+      // The plain sentence is what the user sees; the status stays in the
+      // browser console for anyone following the README troubleshooting steps.
+      console.warn(`[upload] HTTP ${response.status}`, body.error ?? "");
       return {
         ok: false,
-        error:
-          body.error ||
-          `Upload failed (HTTP ${response.status}). Check docker logs estate-organiser and free space (df -h /mnt/user/appdata/estate-organiser).`,
+        error: body.error || "The upload did not complete. Please try again.",
       };
+    }
     return { ok: true, id: body.id, warning: body.warning };
   } catch (fetchErr) {
     console.warn(
@@ -65,21 +67,28 @@ export async function postDocumentUpload(
   }
 }
 
-/** Turn any thrown upload error into the guidance the user needs. */
+/**
+ * Turn any thrown upload error into the guidance the user needs. The wording
+ * stays calm and offers a next step; the technical detail goes to the browser
+ * console, and the README's troubleshooting section explains what to check on
+ * the server (container logs, free disk space, Cloudflare Tunnel) if an upload
+ * keeps failing.
+ */
 export function uploadErrorMessage(err: unknown) {
   const message =
     err instanceof Error ? err.message : String(err ?? "Unknown error");
+  console.warn("[upload] failed:", message);
   if (
     message.includes("413") ||
     message.toLowerCase().includes("body exceeded") ||
     message.toLowerCase().includes("too large")
   )
-    return `Upload too large for server (413). Server limit is ${formatSize(maxDocumentSizeBytes)}. Check next.config.ts bodySizeLimit (now 25mb) and try a smaller file. Original: ${message}`;
+    return `That file is too large to upload. The limit is ${formatSize(maxDocumentSizeBytes)}.`;
   if (
     message.includes("502") ||
     message.includes("504") ||
     message.toLowerCase().includes("failed to fetch")
   )
-    return `Upload failed – network/tunnel error (502/504 or fetch failure). Check container logs (docker logs estate-organiser), Cloudflare Tunnel status, and try again. Original: ${message}`;
-  return `Unable to upload – ${message}. Check container logs (docker logs estate-organiser) and free space (df -h /mnt/user/appdata/estate-organiser).`;
+    return "The connection was interrupted. Check your internet connection and try again.";
+  return "The upload did not complete. Please try again.";
 }

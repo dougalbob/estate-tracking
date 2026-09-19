@@ -1,41 +1,19 @@
-import { allowedMimeTypes } from "../records/validation";
+import { isAllowedUploadFile } from "../records/validation";
 import { fileTooLarge } from "./size";
 
 /**
- * Which extensions the app already accepts, kept beside the MIME list so
- * both are checked. Matches the manifest's accept and the server's
- * allowedMimeTypes / extension fallback. Added here explicitly rather than
- * deriving from MIME types, so a future MIME addition cannot silently
- * drop an extension the phone relies on.
- */
-const allowedExtensions = [
-  ".pdf",
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".tiff",
-  ".heic",
-  ".heif",
-  ".txt",
-] as const;
-
-/**
- * Whether this one file is of a type the app stores.
- * Checks MIME (lower-cased) or file-name extension (lower-cased).
- * A missing MIME with a good extension still passes, because some
- * Android apps do not set the MIME reliably — the manifest therefore
- * lists both, and so does this check.
+ * Whether this one file is of a type the app stores. The rule itself lives in
+ * `src/lib/records/validation.ts` beside the MIME and extension lists, so the
+ * share helper, both upload paths and the file picker's `accept` all answer
+ * this question the same way. A missing MIME with a good extension still
+ * passes, because some Android apps do not set the MIME reliably — the
+ * manifest therefore lists both, and so does the rule.
  */
 export function isAllowedSharedFile(file: {
   name: string;
   type: string;
 }): boolean {
-  const mime = (file.type || "").toLowerCase();
-  const lowerName = (file.name || "").toLowerCase();
-  const allowedByMime = (allowedMimeTypes as readonly string[]).includes(mime);
-  const allowedByExt = allowedExtensions.some((ext) => lowerName.endsWith(ext));
-  return allowedByMime || allowedByExt;
+  return isAllowedUploadFile(file);
 }
 
 /**

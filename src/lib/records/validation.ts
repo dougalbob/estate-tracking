@@ -378,4 +378,40 @@ export const allowedMimeTypes = [
   "image/heif",
   "text/plain",
 ] as const;
+/**
+ * The extensions that go with `allowedMimeTypes`, listed beside them because
+ * some Android apps omit the MIME when they share or pick a file, and the
+ * manifest's `share_target` `accept` lists both for the same reason. This is
+ * the one list the share helper, both upload paths and the file picker's
+ * `accept` all read, so they cannot drift apart again (a HEIC share was once
+ * accepted and then refused at upload because two hand-copied lists differed).
+ */
+export const allowedFileExtensions = [
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".tiff",
+  ".heic",
+  ".heif",
+  ".txt",
+] as const;
+/**
+ * Whether a file is of a type the app stores, by MIME (lower-cased) or by
+ * file-name extension (lower-cased). An SVG image is refused outright however
+ * it arrives: an SVG can carry scripts, and the app serves documents from its
+ * own origin, so an "image" that is really a program has no business being
+ * stored here. Everything else follows the two lists above.
+ */
+export function isAllowedUploadFile(file: {
+  name: string;
+  type: string;
+}): boolean {
+  const mime = (file.type || "").toLowerCase();
+  if (mime === "image/svg+xml") return false;
+  if ((allowedMimeTypes as readonly string[]).includes(mime)) return true;
+  const lowerName = (file.name || "").toLowerCase();
+  return allowedFileExtensions.some((ext) => lowerName.endsWith(ext));
+}
 export const maxDocumentSizeBytes = 20 * 1024 * 1024; // 20 MB

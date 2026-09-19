@@ -1452,6 +1452,27 @@ summary {
 .checklist-body {
   padding-bottom: 16px;
 }
+/* A borderless fieldset so the checklist's checkboxes are a named group for
+   a screen reader, without changing how the panel looks. */
+.checklist-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+/* For text that is read out but deliberately not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .checklist-items {
   display: flex;
   flex-direction: column;

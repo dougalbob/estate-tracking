@@ -466,6 +466,85 @@ test("permanent deletion requires bin first, retains revision history, does not 
   }
 });
 
+test("permanently deleting an organisation unlinks its financial records instead of failing", () => {
+  const { sqlite, store } = setup();
+  try {
+    const orgId = store.saveOrganisation(org, users[0]);
+    const expenseId = store.saveFinanceRecord(
+      {
+        kind: "expense",
+        title: "Paid for certified copies",
+        detail: "",
+        category: "administration",
+        amount: "25",
+        occurredOn: "2026-09-10",
+        fundedBy: users[0],
+        beneficiary: null,
+        organisationId: orgId,
+        projectId: null,
+      },
+      users[0],
+    );
+
+    // Before the fix this threw a raw FOREIGN KEY constraint failure (the
+    // permanent-delete branch forgot finance_records.organisation_id) and the
+    // action turned it into a misleading "check your access" error.
+    store.deleteRecord("organisation", orgId, 1, users[0], false);
+    store.deleteRecord("organisation", orgId, 2, users[0], true);
+
+    const snap = store.snapshot();
+    assert.equal(snap.organisations.length, 0);
+    const expense = snap.financeRecords.find((r) => r.id === expenseId);
+    assert.ok(expense, "the financial record survives the organisation");
+    assert.equal(
+      expense.organisationId,
+      null,
+      "the financial record is unlinked, not deleted",
+    );
+    assert.equal(expense.amountPence, 2500, "its figures are untouched");
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("permanently deleting a project unlinks its financial records instead of failing", () => {
+  const { sqlite, store } = setup();
+  try {
+    const projId = store.saveProject({ name: "House Clearance" }, users[0]);
+    const liabilityId = store.saveFinanceRecord(
+      {
+        kind: "liability",
+        title: "Gardener's outstanding invoice",
+        detail: "",
+        category: "unpaid_bill",
+        amount: "120",
+        occurredOn: "2026-09-11",
+        fundedBy: null,
+        beneficiary: null,
+        organisationId: null,
+        projectId: projId,
+      },
+      users[1],
+    );
+
+    store.deleteRecord("project", projId, 1, users[0], false);
+    store.deleteRecord("project", projId, 2, users[0], true);
+
+    const snap = store.snapshot();
+    assert.equal(snap.projects.length, 3, "starter projects remain");
+    const liability = snap.financeRecords.find((r) => r.id === liabilityId);
+    assert.ok(liability, "the financial record survives the project");
+    assert.equal(
+      liability.projectId,
+      null,
+      "the financial record is unlinked, not deleted",
+    );
+    assert.equal(liability.amountPence, 12000, "its figures are untouched");
+  } finally {
+    sqlite.close();
+  }
+});
+
 test("project deletion does not delete tasks or organisation links, only unlinks", () => {
   const { sqlite, store } = setup();
   try {

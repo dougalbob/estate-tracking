@@ -90,6 +90,8 @@ import {
   documentCategories,
   financeKinds,
   movementKindFor,
+  allowedMimeTypes,
+  allowedFileExtensions,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
@@ -215,13 +217,6 @@ async function downloadDocument(id: string, originalName?: string) {
       return true;
     }
   })();
-  console.log(
-    "[download] attempting",
-    url,
-    originalName,
-    inIframe ? "in iframe" : "top",
-  );
-
   // 1) Anchor with download attr – must be synchronous, works if sandbox allows downloads
   try {
     const a = document.createElement("a");
@@ -272,7 +267,6 @@ async function downloadDocument(id: string, originalName?: string) {
         a.remove();
       } catch {}
     }, 3000);
-    console.log("[download] blob method succeeded");
     return;
   } catch (e) {
     console.warn("[download] blob method failed", e);
@@ -283,23 +277,17 @@ async function downloadDocument(id: string, originalName?: string) {
     try {
       const win = window.open(url, "_blank", "noopener,noreferrer");
       if (win) {
-        console.log("[download] window.open succeeded");
         return;
       }
       console.warn("[download] window.open returned null");
     } catch (e) {
       console.warn("[download] window.open threw", e);
     }
-  } else {
-    console.log(
-      "[download] in iframe – skipping window.open (needs allow-popups, blocked in Arena preview)",
-    );
   }
 
   // 5) Last resort: navigate current frame to download URL – attachment header triggers download without leaving app in most browsers
   // This does NOT need allow-popups, only same-origin navigation which is allowed in sandbox
   try {
-    console.log("[download] fallback to location.href");
     window.location.href = url;
   } catch (e) {
     console.warn("[download] location.href failed", e);
@@ -848,7 +836,7 @@ export function Workspace({
         !window.confirm(
           kind === "document"
             ? "Permanently delete this document and its file? This cannot be undone. The edit history will remain, but the file will be removed."
-            : "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks and notes will be kept but unlinked.",
+            : "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks, notes and financial records will be kept but unlinked.",
         )
       )
         return;
@@ -1235,7 +1223,7 @@ export function Workspace({
                   type="button"
                   onClick={() => downloadDocument(d.id, d.originalName)}
                   className="subtle-button"
-                  title="Download a copy – shows save dialog"
+                  title="Download a copy"
                 >
                   <Download size={12} /> Download
                 </button>
@@ -1360,7 +1348,7 @@ export function Workspace({
             type="button"
             onClick={() => downloadDocument(doc.id, doc.originalName)}
             className="subtle-button"
-            title="Download a copy – shows save dialog (tries multiple methods)"
+            title="Download a copy"
           >
             <Download size={14} />
             Download
@@ -1370,7 +1358,7 @@ export function Workspace({
             download={doc.originalName}
             rel="noopener noreferrer"
             className="subtle-button"
-            title="Direct link – right-click Save link as if button fails (no popup needed)"
+            title="Direct link – right-click and choose Save link as… if Download does not work"
           >
             Direct
           </a>
@@ -2221,13 +2209,17 @@ export function Workspace({
                     value={owner}
                     onChange={(e) => setOwner(e.target.value)}
                   >
-                    <option value="all">Everyone</option>
-                    <option value="">Unassigned</option>
+                    <option value="all">All assignees</option>
                     {users.map((u) => (
                       <option key={u} value={u}>
                         {names(u)}
                       </option>
                     ))}
+                    {/* "Everyone" means the shared assignment, as it does
+                        everywhere else in the app — not "no filter", which
+                        is what "All assignees" above says. */}
+                    <option value={everyoneAssignee}>Everyone (shared)</option>
+                    <option value="">Unassigned</option>
                   </select>
                 </label>
                 {(() => {
@@ -2757,7 +2749,7 @@ export function Workspace({
                     value={eventRecorder}
                     onChange={(e) => setEventRecorder(e.target.value)}
                   >
-                    <option value="all">Everyone</option>
+                    <option value="all">All recorders</option>
                     {users.map((u) => (
                       <option key={u} value={u}>
                         {names(u)}
@@ -3495,7 +3487,7 @@ function DocumentLinkRow({
           type="button"
           onClick={() => downloadDocument(doc.id, doc.originalName)}
           className="subtle-button"
-          title="Download a copy – shows save dialog"
+          title="Download a copy"
         >
           <Download size={12} /> Download
         </button>
@@ -3539,7 +3531,14 @@ function DocumentViewerDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   const isImage = doc.mimeType.startsWith("image/");
   const isPdf = doc.mimeType === "application/pdf";
@@ -3636,28 +3635,16 @@ function DocumentViewerDialog({
         }}
       >
         <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
-          If download doesn&apos;t start, use direct link (right-click → Save
-          as). In Arena preview, popups are blocked (allow-popups not set) so
-          window.open fails – this is preview-only, production will work
-          normally:{" "}
+          If the download does not start, use the{" "}
           <a
             href={`/api/documents/${doc.id}/download?download=1`}
             download={doc.originalName}
-            // No target=_blank to avoid needing allow-popups in sandboxed preview
             rel="noopener noreferrer"
             style={{ textDecoration: "underline" }}
-            onClick={(e) => {
-              console.log("[download] direct anchor clicked");
-              // Don't prevent default – let native download happen, especially for right-click Save as
-            }}
           >
-            {doc.originalName}
-          </a>
-        </p>
-        <p className="form-help" style={{ margin: 0, fontSize: "11px" }}>
-          URL: <code>{`/api/documents/${doc.id}/download?download=1`}</code> –
-          production is not sandboxed, so save dialog works. Preview iframe
-          needs allow-downloads, not allow-popups.
+            direct link
+          </a>{" "}
+          – or right-click it and choose Save link as… to save a copy.
         </p>
       </div>
       <div className="form-actions" style={{ justifyContent: "space-between" }}>
@@ -3670,8 +3657,7 @@ function DocumentViewerDialog({
             variant="outline"
             onClick={() => viewDocument(doc.id)}
           >
-            <Eye size={14} /> Open in new tab (may be blocked in preview – use
-            in-app view)
+            <Eye size={14} /> Open in new tab
           </Button>
           <Button
             type="button"
@@ -3693,7 +3679,7 @@ function DocumentViewerDialog({
               fontSize: "14px",
             }}
           >
-            <Download size={14} /> Direct link (no popup)
+            <Download size={14} /> Direct link
           </a>
         </div>
       </div>
@@ -3746,7 +3732,14 @@ function DocumentUploadDialog({
   const [file, setFile] = useState<File | null>(initial.file ?? null);
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   // When a share arrives the dialog opens with the file already chosen. The
@@ -3861,7 +3854,7 @@ function DocumentUploadDialog({
             File <small>PDF, image, or text – max 20 MB</small>
             <input
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf"
+              accept={[...allowedMimeTypes, ...allowedFileExtensions].join(",")}
               required={!file}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
@@ -3915,12 +3908,8 @@ function DocumentUploadDialog({
             </select>
           </label>
           <p className="form-help">
-            In production files go to{" "}
-            <code>/mnt/user/appdata/estate-organiser/documents</code> (container
-            path <code>/data/documents</code>). Demo mode uses{" "}
-            <code>./data/demo-documents</code>. Storage names are generated
-            safely – original name is kept for download. View opens in-app with
-            a close button; Download shows a save dialog.
+            Files stay on your own server, and the original file name is kept so
+            a downloaded copy looks the same as the one you uploaded.
           </p>
           <fieldset className="follow-up">
             <legend>Link to (optional – you can link later too)</legend>
@@ -3970,7 +3959,7 @@ function DocumentUploadDialog({
                   required
                 >
                   <option value="">Choose note…</option>
-                  {data.interactions.slice(0, 100).map((n) => (
+                  {data.interactions.map((n) => (
                     <option key={n.id} value={n.id}>
                       {n.title} – {n.detail.slice(0, 40)}
                     </option>
@@ -3987,7 +3976,7 @@ function DocumentUploadDialog({
                   required
                 >
                   <option value="">Choose task…</option>
-                  {data.tasks.slice(0, 100).map((t) => (
+                  {data.tasks.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.title}
                     </option>
@@ -4031,8 +4020,7 @@ function DocumentUploadDialog({
             )}
             <p className="form-help">
               Pick exactly one place here – after upload you can link the same
-              file to many records from the Documents list. This fixes the
-              earlier issue where picking multiple caused the link to fail.
+              file to many records from the Documents list.
             </p>
           </fieldset>
         </fieldset>
@@ -4095,7 +4083,14 @@ function DocumentLinkPicker({
   );
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -4216,7 +4211,7 @@ function DocumentLinkPicker({
                 required
               >
                 <option value="">Pick note…</option>
-                {data.interactions.slice(0, 100).map((n) => (
+                {data.interactions.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.title}
                   </option>
@@ -4233,7 +4228,7 @@ function DocumentLinkPicker({
                 required
               >
                 <option value="">Pick task…</option>
-                {data.tasks.slice(0, 100).map((t) => (
+                {data.tasks.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.title}
                   </option>
@@ -4275,14 +4270,28 @@ function DocumentLinkPicker({
               </select>
             </label>
           )}
-          {linkId && (
+          {linkId && docId && (
             <p className="form-help">
-              Will link document to{" "}
-              {linkKind === "finance" ? "financial record" : linkKind}:{" "}
-              {linkKind === "finance"
-                ? (data.financeRecords.find((r) => r.id === linkId)?.title ??
-                  linkId)
-                : linkId}
+              Will link{" "}
+              {data.documents.find((d) => d.id === docId)?.friendlyName ??
+                "this document"}{" "}
+              to{" "}
+              <strong>
+                {linkKind === "organisation"
+                  ? (data.organisations.find((o) => o.id === linkId)?.name ??
+                    "…")
+                  : linkKind === "interaction"
+                    ? (data.interactions.find((n) => n.id === linkId)?.title ??
+                      "…")
+                    : linkKind === "task"
+                      ? (data.tasks.find((t) => t.id === linkId)?.title ?? "…")
+                      : linkKind === "project"
+                        ? (data.projects.find((p) => p.id === linkId)?.name ??
+                          "…")
+                        : (data.financeRecords.find((r) => r.id === linkId)
+                            ?.title ?? "…")}
+              </strong>
+              .
             </p>
           )}
         </fieldset>
@@ -4478,7 +4487,14 @@ function ContactQuickViewDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   return (
@@ -4547,7 +4563,14 @@ function TaskLinkPicker({
     [query, setQuery] = useState(""),
     [taskId, setTaskId] = useState("");
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   const noteOrganisationId = (noteId: string | null) =>
     data.interactions.find((n) => n.id === noteId)?.organisationId ?? null;

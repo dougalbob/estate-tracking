@@ -20,6 +20,7 @@ import {
   matchesCalendarFilters,
   monthGrid,
   monthLabel,
+  moveDeltaFor,
   projectTones,
   startOfWeek,
   toneClass,
@@ -612,4 +613,25 @@ test("only the two of you can move a task", () => {
   } finally {
     sqlite.close();
   }
+});
+
+test("the four arrow keys each move a task by their distance, and nothing else does", () => {
+  // The keyboard move is the drag's equal: a day sideways, a week up or down.
+  assert.equal(moveDeltaFor("ArrowLeft"), -1);
+  assert.equal(moveDeltaFor("ArrowRight"), 1);
+  assert.equal(moveDeltaFor("ArrowUp"), -7);
+  assert.equal(moveDeltaFor("ArrowDown"), 7);
+  // Any other key — including the keys a screen reader or the browser itself
+  // uses — leaves the task where it is.
+  assert.equal(moveDeltaFor("Enter"), null);
+  assert.equal(moveDeltaFor("Tab"), null);
+  assert.equal(moveDeltaFor("Home"), null);
+  assert.equal(moveDeltaFor(""), null);
+  // And the distances compose with addDays across a month end, as the grid
+  // will apply them.
+  assert.equal(
+    addDays("2026-09-30", moveDeltaFor("ArrowRight")!),
+    "2026-10-01",
+  );
+  assert.equal(addDays("2026-10-01", moveDeltaFor("ArrowUp")!), "2026-09-24");
 });
