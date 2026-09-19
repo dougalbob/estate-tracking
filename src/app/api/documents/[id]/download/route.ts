@@ -62,8 +62,7 @@ export async function GET(
     // any other route) downloads as a file instead of opening as a page.
     // Images and PDFs are the two kinds the in-app viewer embeds safely.
     const safeInline =
-      (doc.mimeType.startsWith("image/") &&
-        doc.mimeType !== "image/svg+xml") ||
+      (doc.mimeType.startsWith("image/") && doc.mimeType !== "image/svg+xml") ||
       doc.mimeType === "application/pdf";
     const safeMime = safeInline ? doc.mimeType : "application/octet-stream";
 

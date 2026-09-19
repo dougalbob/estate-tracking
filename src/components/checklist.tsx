@@ -121,63 +121,71 @@ export function ProjectChecklist({
           These are organisational prompts – not legal or financial advice, and
           not a complete list of everything that applies.
         </p>
-        <div className="checklist-items">
-          {items.map((item) => {
-            const already = alreadyInProject(item);
-            return (
-              <div
-                className={`checklist-item${already ? " already-added" : ""}`}
-                key={item.id}
-              >
-                <label className="checklist-tick">
-                  <input
-                    type="checkbox"
-                    disabled={already || busy}
-                    checked={selected.includes(item.id)}
-                    onChange={(e) =>
-                      setSelected((current) =>
-                        e.target.checked
-                          ? [...current, item.id]
-                          : current.filter((id) => id !== item.id),
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{item.title}</strong>
-                    {already && <span className="badge">Already added</span>}
-                  </span>
-                </label>
-                <p className="checklist-detail">{item.detail}</p>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    className="subtle-button"
-                    disabled={busy}
-                    onClick={() =>
-                      setEditing({
-                        id: item.id,
-                        title: item.title,
-                        detail: item.detail,
-                      })
-                    }
-                  >
-                    <Pencil size={13} />
-                    Edit wording
-                  </button>
-                  <button
-                    type="button"
-                    className="subtle-button"
-                    disabled={busy}
-                    onClick={() => removeItem(item)}
-                  >
-                    <Trash2 size={13} />
-                    Remove
-                  </button>
+        {/* A fieldset names the group of checkboxes for a screen reader, the
+            same way the calendar's filter groups do. The legend is hidden from
+            sight because the summary above already says what this is. */}
+        <fieldset className="checklist-fieldset">
+          <legend className="visually-hidden">
+            Suggestions to add as tasks
+          </legend>
+          <div className="checklist-items">
+            {items.map((item) => {
+              const already = alreadyInProject(item);
+              return (
+                <div
+                  className={`checklist-item${already ? " already-added" : ""}`}
+                  key={item.id}
+                >
+                  <label className="checklist-tick">
+                    <input
+                      type="checkbox"
+                      disabled={already || busy}
+                      checked={selected.includes(item.id)}
+                      onChange={(e) =>
+                        setSelected((current) =>
+                          e.target.checked
+                            ? [...current, item.id]
+                            : current.filter((id) => id !== item.id),
+                        )
+                      }
+                    />
+                    <span>
+                      <strong>{item.title}</strong>
+                      {already && <span className="badge">Already added</span>}
+                    </span>
+                  </label>
+                  <p className="checklist-detail">{item.detail}</p>
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="subtle-button"
+                      disabled={busy}
+                      onClick={() =>
+                        setEditing({
+                          id: item.id,
+                          title: item.title,
+                          detail: item.detail,
+                        })
+                      }
+                    >
+                      <Pencil size={13} />
+                      Edit wording
+                    </button>
+                    <button
+                      type="button"
+                      className="subtle-button"
+                      disabled={busy}
+                      onClick={() => removeItem(item)}
+                    >
+                      <Trash2 size={13} />
+                      Remove
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </fieldset>
         <div className="row-actions checklist-actions">
           <Button
             type="button"
@@ -251,7 +259,12 @@ function TemplateItemForm({
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    // Return focus to the button that opened the form when it closes.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   async function submit(form: FormData) {

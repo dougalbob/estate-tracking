@@ -87,7 +87,10 @@ test("an SVG is refused however it arrives", () => {
     isAllowedSharedFile(file({ name: "drawing.svg", type: "image/svg+xml" })),
     false,
   );
-  assert.equal(isAllowedSharedFile(file({ name: "drawing.svg", type: "" })), false);
+  assert.equal(
+    isAllowedSharedFile(file({ name: "drawing.svg", type: "" })),
+    false,
+  );
   assert.equal(
     isAllowedSharedFile(file({ name: "photo.png", type: "image/svg+xml" })),
     false,

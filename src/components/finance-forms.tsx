@@ -124,7 +124,14 @@ export function FinanceRecordForm({
   const [receiptBusy, setReceiptBusy] = useState(false);
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   function close() {
     if (!dirty || window.confirm("Discard the changes in this form?"))
@@ -683,7 +690,14 @@ export function FinanceMovementDialog({
     record.amountPence === null ? null : record.amountPence - total;
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   async function add(form: FormData) {
@@ -978,7 +992,14 @@ export function FinanceVoidDialog({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   return (
     <dialog

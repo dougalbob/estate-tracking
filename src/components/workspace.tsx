@@ -2223,13 +2223,17 @@ export function Workspace({
                     value={owner}
                     onChange={(e) => setOwner(e.target.value)}
                   >
-                    <option value="all">Everyone</option>
-                    <option value="">Unassigned</option>
+                    <option value="all">All assignees</option>
                     {users.map((u) => (
                       <option key={u} value={u}>
                         {names(u)}
                       </option>
                     ))}
+                    {/* "Everyone" means the shared assignment, as it does
+                        everywhere else in the app — not "no filter", which
+                        is what "All assignees" above says. */}
+                    <option value={everyoneAssignee}>Everyone (shared)</option>
+                    <option value="">Unassigned</option>
                   </select>
                 </label>
                 {(() => {
@@ -2759,7 +2763,7 @@ export function Workspace({
                     value={eventRecorder}
                     onChange={(e) => setEventRecorder(e.target.value)}
                   >
-                    <option value="all">Everyone</option>
+                    <option value="all">All recorders</option>
                     {users.map((u) => (
                       <option key={u} value={u}>
                         {names(u)}
@@ -3541,7 +3545,14 @@ function DocumentViewerDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   const isImage = doc.mimeType.startsWith("image/");
   const isPdf = doc.mimeType === "application/pdf";
@@ -3748,7 +3759,14 @@ function DocumentUploadDialog({
   const [file, setFile] = useState<File | null>(initial.file ?? null);
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   // When a share arrives the dialog opens with the file already chosen. The
@@ -3972,7 +3990,7 @@ function DocumentUploadDialog({
                   required
                 >
                   <option value="">Choose note…</option>
-                  {data.interactions.slice(0, 100).map((n) => (
+                  {data.interactions.map((n) => (
                     <option key={n.id} value={n.id}>
                       {n.title} – {n.detail.slice(0, 40)}
                     </option>
@@ -3989,7 +4007,7 @@ function DocumentUploadDialog({
                   required
                 >
                   <option value="">Choose task…</option>
-                  {data.tasks.slice(0, 100).map((t) => (
+                  {data.tasks.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.title}
                     </option>
@@ -4097,7 +4115,14 @@ function DocumentLinkPicker({
   );
 
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -4218,7 +4243,7 @@ function DocumentLinkPicker({
                 required
               >
                 <option value="">Pick note…</option>
-                {data.interactions.slice(0, 100).map((n) => (
+                {data.interactions.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.title}
                   </option>
@@ -4235,7 +4260,7 @@ function DocumentLinkPicker({
                 required
               >
                 <option value="">Pick task…</option>
-                {data.tasks.slice(0, 100).map((t) => (
+                {data.tasks.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.title}
                   </option>
@@ -4480,7 +4505,14 @@ function ContactQuickViewDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
 
   return (
@@ -4549,7 +4581,14 @@ function TaskLinkPicker({
     [query, setQuery] = useState(""),
     [taskId, setTaskId] = useState("");
   useEffect(() => {
+    // Remember what was focused before the dialog opened, so closing it
+    // returns the keyboard user to the button that opened it rather than
+    // dropping them at the top of the page.
+    const previous = document.activeElement;
     dialog.current?.showModal();
+    return () => {
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, []);
   const noteOrganisationId = (noteId: string | null) =>
     data.interactions.find((n) => n.id === noteId)?.organisationId ?? null;
