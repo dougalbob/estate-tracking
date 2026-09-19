@@ -109,6 +109,28 @@ export function addDays(iso: string, days: number) {
   return toIsoDate(new Date(toDate(iso).getTime() + days * 86_400_000));
 }
 
+/**
+ * How many days a keyboard move shifts a task by, or null when the key is not
+ * one of the four move keys. Left and right move by a day; up and down move by
+ * a week, the same distance as dragging a chip to the row above or below. The
+ * calendar is the only place this is used, and it is a rule rather than an
+ * event handler so it can be tested on its own like the rest of this file.
+ */
+export function moveDeltaFor(key: string): number | null {
+  switch (key) {
+    case "ArrowLeft":
+      return -1;
+    case "ArrowRight":
+      return 1;
+    case "ArrowUp":
+      return -7;
+    case "ArrowDown":
+      return 7;
+    default:
+      return null;
+  }
+}
+
 /** The first day of the month an anchor date falls in. */
 export const startOfMonth = (iso: string) => `${iso.slice(0, 7)}-01`;
 
