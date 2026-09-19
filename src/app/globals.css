@@ -11,6 +11,16 @@
   --accent: #e4eee6;
   --focus: #376fbe;
   --notice: #edf1e8;
+  /* Calendar project colours: six calm tones, one per project, shared out in
+     src/lib/records/calendar.ts. A task with no project takes the last one and
+     a dashed edge, so "not assigned yet" reads without relying on the colour. */
+  --calendar-1: #7b5e8f;
+  --calendar-2: #3a6ea5;
+  --calendar-3: #a3762c;
+  --calendar-4: #2c6655;
+  --calendar-5: #a4565f;
+  --calendar-6: #5b6b7a;
+  --calendar-none: #7f8f85;
   --radius: 14px;
   --font-sans: Arial, Helvetica, sans-serif;
   --space: 8px;
@@ -1498,5 +1508,282 @@ summary {
   }
   .checklist-detail {
     margin-left: 0;
+  }
+}
+
+/* Calendar – every task with a due date, by month or by week (v0.2.12).
+   Colour is a second cue and never the only one: a chip carries the project
+   name, the person and (in the week view) the status in words, and a day cell
+   counts its tasks and says "Today". The text stays --foreground on a pale tint
+   of the project colour, so how well a task reads does not depend on which
+   project it belongs to. */
+.calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.calendar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.calendar-title {
+  font-size: 16px;
+  margin: 0 4px;
+  min-width: 190px;
+  text-align: center;
+}
+.calendar-views {
+  display: flex;
+  gap: 8px;
+}
+.calendar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.calendar-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.calendar-filter-group legend {
+  padding: 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.calendar-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.calendar-check input {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+}
+/* Shown only when the grid would otherwise look empty by mistake. */
+.calendar-summary {
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.calendar-grid {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border);
+  overflow: hidden;
+}
+.calendar-week-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+}
+.calendar-week-row + .calendar-week-row {
+  margin-top: 1px;
+}
+.calendar-weekday {
+  padding: 8px 10px;
+  background: var(--sidebar);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.calendar-day {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 106px;
+  padding: 7px;
+  background: var(--surface);
+}
+.calendar-grid.week .calendar-day {
+  min-height: 210px;
+}
+.calendar-day.outside {
+  background: var(--background);
+}
+.calendar-day.outside .calendar-day-number {
+  color: var(--muted);
+}
+.calendar-day.today {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.calendar-day.drop-target {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.calendar-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+}
+.calendar-day-number {
+  font-size: 12px;
+  font-weight: 600;
+}
+.calendar-day-weekday {
+  font-size: 11px;
+  color: var(--muted);
+}
+.calendar-day-count {
+  font-size: 10px;
+  color: var(--muted);
+}
+.calendar-day-head .badge {
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+/* A busy day scrolls inside its own cell rather than stretching the month, and
+   the padding leaves room for the focus outline of the task in view. */
+.calendar-day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 150px;
+  padding: 3px;
+  margin: -3px;
+  overflow: auto;
+}
+.calendar-grid.week .calendar-day-list {
+  max-height: none;
+  overflow: visible;
+}
+.calendar-task {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone, var(--muted));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tone, var(--muted)) 11%, var(--surface));
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.calendar-task:hover {
+  background: color-mix(in srgb, var(--tone, var(--muted)) 20%, var(--surface));
+}
+.calendar-task:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+.calendar-task.dragging {
+  opacity: 0.5;
+}
+.calendar-task-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.calendar-task-meta {
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-task.tone-0 {
+  --tone: var(--calendar-none);
+  border-left-style: dashed;
+}
+.calendar-task.tone-1 {
+  --tone: var(--calendar-1);
+}
+.calendar-task.tone-2 {
+  --tone: var(--calendar-2);
+}
+.calendar-task.tone-3 {
+  --tone: var(--calendar-3);
+}
+.calendar-task.tone-4 {
+  --tone: var(--calendar-4);
+}
+.calendar-task.tone-5 {
+  --tone: var(--calendar-5);
+}
+.calendar-task.tone-6 {
+  --tone: var(--calendar-6);
+}
+@media (max-width: 1150px) {
+  .calendar-title {
+    min-width: 150px;
+  }
+  .calendar-day {
+    min-height: 92px;
+  }
+}
+@media (max-width: 700px) {
+  .calendar-controls {
+    gap: 10px;
+  }
+  .calendar-nav {
+    width: 100%;
+  }
+  .calendar-title {
+    order: -1;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+  }
+  .calendar-nav .button,
+  .calendar-views {
+    flex: 1;
+  }
+  .calendar-views .button {
+    flex: 1;
+  }
+  .calendar-filter-group {
+    flex: 1 1 100%;
+  }
+  .calendar-day {
+    min-height: 86px;
+    padding: 5px;
+  }
+  .calendar-day-list {
+    max-height: 112px;
+  }
+  .calendar-task-title {
+    -webkit-line-clamp: 1;
+  }
+  /* A week on a phone reads better as one day per row, and each row already
+     names its own day, so the weekday heading row has nothing left to add. */
+  .calendar-grid.week .calendar-week-row {
+    grid-template-columns: 1fr;
+  }
+  .calendar-grid.week .calendar-head-row {
+    display: none;
+  }
+  .calendar-grid.week .calendar-day {
+    min-height: 0;
   }
 }

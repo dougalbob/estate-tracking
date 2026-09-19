@@ -115,6 +115,41 @@ export async function linkTaskToOrganisation(input: unknown) {
 }
 
 /**
+ * Moving a task to another day from the calendar. Only the due date is sent: the
+ * rest of the task is left alone on the server, so a drag cannot quietly change
+ * anything else about it.
+ */
+export async function rescheduleTask(input: unknown) {
+  try {
+    const user = await currentUser();
+    const users = user.demo
+      ? ["alex@example.invalid", "jamie@example.invalid"]
+      : authConfiguration(process.env).users;
+    const store = recordStore(database(), users);
+    const id = store.setTaskDueDate(input, user.email);
+    revalidatePath("/");
+    return { ok: true as const, id };
+  } catch (error) {
+    if (error instanceof RecordError)
+      return { ok: false as const, error: error.message, code: error.code };
+    if (error instanceof ZodError)
+      return {
+        ok: false as const,
+        error: error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join("; "),
+        code: "validation",
+      };
+    return {
+      ok: false as const,
+      error:
+        "Unable to move that task. Check your access and try again. Nothing has been changed.",
+      code: "unavailable",
+    };
+  }
+}
+
+/**
  * Create a contact and the task or note that needs it in one save (Item 2).
  * Both are written in a single database transaction, so a failure cannot leave
  * a contact behind on its own with no record explaining where it came from.
