@@ -158,6 +158,17 @@ export const taskDueDateInput = z.object({
   dueDate: requiredDate,
   version: z.number().int().positive(),
 });
+/**
+ * The kinds an event can be. Listed once because the save rule, the filter
+ * dropdown and the filters remembered between visits all have to agree on them.
+ */
+export const interactionKinds = [
+  "call",
+  "email",
+  "letter",
+  "web_form",
+  "note",
+] as const;
 export const interactionInput = z
   .object({
     ...common,
@@ -167,7 +178,7 @@ export const interactionInput = z
     projectId: optionalText.default(null),
     title: z.string().trim().max(300),
     detail: z.string().trim().min(1, "Add some detail to your note").max(20000),
-    kind: z.enum(["call", "email", "letter", "web_form", "note"]),
+    kind: z.enum(interactionKinds),
     occurredAt: z.iso.datetime(),
     followUps: z
       .array(taskInput.omit({ id: true, version: true }))
@@ -414,4 +425,14 @@ export function isAllowedUploadFile(file: {
   const lowerName = (file.name || "").toLowerCase();
   return allowedFileExtensions.some((ext) => lowerName.endsWith(ext));
 }
+/**
+ * The `accept` attribute for every file picker in the app, built from the two
+ * lists above rather than typed out beside the input. A hand-copied list is how
+ * one picker came to offer SVGs the server refuses and to hide HEIC files it
+ * accepts, so this is the one string every picker uses.
+ */
+export const uploadAcceptAttribute = [
+  ...allowedMimeTypes,
+  ...allowedFileExtensions,
+].join(",");
 export const maxDocumentSizeBytes = 20 * 1024 * 1024; // 20 MB
