@@ -12,7 +12,7 @@ import {
   fullPath,
 } from "@/lib/documents/storage";
 import {
-  allowedMimeTypes,
+  isAllowedUploadFile,
   maxDocumentSizeBytes,
   documentInput,
 } from "@/lib/records/validation";
@@ -84,25 +84,16 @@ export async function POST(request: Request) {
     }
 
     const mime = file.type || "application/octet-stream";
-    if (
-      !(allowedMimeTypes as readonly string[]).includes(mime) &&
-      !mime.startsWith("image/")
-    ) {
-      const lower = file.name.toLowerCase();
-      if (!(
-        lower.endsWith(".pdf") ||
-        lower.endsWith(".png") ||
-        lower.endsWith(".jpg") ||
-        lower.endsWith(".jpeg") ||
-        lower.endsWith(".webp") ||
-        lower.endsWith(".tiff") ||
-        lower.endsWith(".txt")
-      )) {
-        return Response.json(
-          { error: "Unsupported file type – use PDF, image, or text" },
-          { status: 400 },
-        );
-      }
+    // The same shared rule the upload action and the share helper use, so the
+    // three paths can never disagree about which types the app stores.
+    if (!isAllowedUploadFile(file)) {
+      console.warn(
+        `[upload:api] rejected type: ${file.name} (${mime}) by ${user.email}`,
+      );
+      return Response.json(
+        { error: "Unsupported file type – use PDF, image, or text" },
+        { status: 400 },
+      );
     }
 
     const parsedMeta = documentInput.safeParse({

@@ -90,6 +90,8 @@ import {
   documentCategories,
   financeKinds,
   movementKindFor,
+  allowedMimeTypes,
+  allowedFileExtensions,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
@@ -848,7 +850,7 @@ export function Workspace({
         !window.confirm(
           kind === "document"
             ? "Permanently delete this document and its file? This cannot be undone. The edit history will remain, but the file will be removed."
-            : "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks and notes will be kept but unlinked.",
+            : "Permanently delete this record? This cannot be undone. The edit history will remain, but the record itself will be removed. Linked tasks, notes and financial records will be kept but unlinked.",
         )
       )
         return;
@@ -3861,7 +3863,7 @@ function DocumentUploadDialog({
             File <small>PDF, image, or text – max 20 MB</small>
             <input
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.txt,image/*,application/pdf"
+              accept={[...allowedMimeTypes, ...allowedFileExtensions].join(",")}
               required={!file}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;

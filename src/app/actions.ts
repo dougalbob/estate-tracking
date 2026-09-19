@@ -15,7 +15,7 @@ import {
   fullPath,
 } from "@/lib/documents/storage";
 import {
-  allowedMimeTypes,
+  isAllowedUploadFile,
   maxDocumentSizeBytes,
   documentInput,
   documentLinkInput,
@@ -373,28 +373,20 @@ export async function uploadDocument(formData: FormData) {
         code: "validation",
       };
     }
-    // Validate mime – allowlist, but also fallback to extension check for images that may be reported as octet-stream
     const mime = file.type || "application/octet-stream";
-    if (
-      !(allowedMimeTypes as readonly string[]).includes(mime) &&
-      !mime.startsWith("image/")
-    ) {
-      const lower = file.name.toLowerCase();
-      if (!(
-        lower.endsWith(".pdf") ||
-        lower.endsWith(".png") ||
-        lower.endsWith(".jpg") ||
-        lower.endsWith(".jpeg") ||
-        lower.endsWith(".webp") ||
-        lower.endsWith(".tiff") ||
-        lower.endsWith(".txt")
-      )) {
-        return {
-          ok: false as const,
-          error: "Unsupported file type – use PDF, image, or text",
-          code: "validation",
-        };
-      }
+    // One shared rule (beside the MIME and extension lists it reads) decides
+    // whether a file is of a type the app stores. The share helper, the file
+    // picker's accept attribute and this route all use it, so a HEIC shared
+    // from an app that omits the MIME is accepted here exactly as it was there.
+    if (!isAllowedUploadFile(file)) {
+      console.warn(
+        `[upload] rejected type: ${file.name} (${mime}) by ${user.email}`,
+      );
+      return {
+        ok: false as const,
+        error: "Unsupported file type – use PDF, image, or text",
+        code: "validation",
+      };
     }
 
     const parsedMeta = documentInput.safeParse({

@@ -58,6 +58,49 @@ test("the image types the app stores are accepted, a Word file is not", () => {
   assert.equal(preferredSharedFile([docx]), null);
 });
 
+test("a HEIC with no MIME is accepted by its extension", () => {
+  // The share-target and the manifest both accept HEIC/HEIF, and some Android
+  // apps hand the file over with a generic or missing MIME. The upload paths
+  // used to refuse exactly this case because their hand-copied extension list
+  // omitted .heic — the one list now decides for all of them.
+  assert.equal(
+    isAllowedSharedFile(file({ name: "IMG_0001.heic", type: "" })),
+    true,
+  );
+  assert.equal(
+    isAllowedSharedFile(
+      file({ name: "IMG_0001.heic", type: "application/octet-stream" }),
+    ),
+    true,
+  );
+  assert.equal(
+    isAllowedSharedFile(file({ name: "photo.heif", type: "" })),
+    true,
+  );
+});
+
+test("an SVG is refused however it arrives", () => {
+  // An SVG can carry scripts and documents are served from the app's own
+  // origin, so it is not stored — by MIME, by extension, and even when the
+  // name claims a stored extension while the MIME says SVG.
+  assert.equal(
+    isAllowedSharedFile(file({ name: "drawing.svg", type: "image/svg+xml" })),
+    false,
+  );
+  assert.equal(isAllowedSharedFile(file({ name: "drawing.svg", type: "" })), false);
+  assert.equal(
+    isAllowedSharedFile(file({ name: "photo.png", type: "image/svg+xml" })),
+    false,
+  );
+  assert.equal(
+    preferredSharedFile([
+      file({ name: "drawing.svg", type: "image/svg+xml" }),
+      file({ name: "scan.pdf", type: "application/pdf" }),
+    ])?.name,
+    "scan.pdf",
+  );
+});
+
 test("preferredSharedFile takes the first acceptable and mentions ignored", () => {
   const pdf1 = file({ name: "first.pdf", type: "application/pdf" });
   const pdf2 = file({ name: "second.pdf", type: "application/pdf" });

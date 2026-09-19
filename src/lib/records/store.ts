@@ -888,6 +888,15 @@ export function recordStore(
               .set({ organisationId: null })
               .where(eq(tasks.organisationId, id))
               .run();
+            // A financial record's organisation link is cleared too, exactly
+            // like a task's or a note's: the record stays, the link does not.
+            // Without this the delete below is refused by the foreign key
+            // (finance_records.organisation_id has no ON DELETE rule), which
+            // used to surface as a misleading "check your access" error.
+            db.update(financeRecords)
+              .set({ organisationId: null })
+              .where(eq(financeRecords.organisationId, id))
+              .run();
             db.delete(organisationProjects)
               .where(eq(organisationProjects.organisationId, id))
               .run();
@@ -1055,6 +1064,13 @@ export function recordStore(
             db.update(interactions)
               .set({ projectId: null })
               .where(eq(interactions.projectId, id))
+              .run();
+            // Same rule as tasks and interactions above: a financial record
+            // keeps its figures and loses its link, rather than blocking the
+            // delete with a foreign-key failure nobody can act on.
+            db.update(financeRecords)
+              .set({ projectId: null })
+              .where(eq(financeRecords.projectId, id))
               .run();
             db.delete(organisationProjects)
               .where(eq(organisationProjects.projectId, id))
