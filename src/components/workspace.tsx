@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
   FolderOpen,
   Home,
   Leaf,
@@ -104,6 +106,7 @@ import {
 import { formatPence } from "@/lib/finances/money";
 import { financeSummary } from "@/lib/finances/summary";
 import { canCopy, copyText, telHref } from "@/lib/contacts/contact-links";
+import { byContactName } from "@/lib/contacts/sort";
 import { documentLinkItems } from "@/lib/contacts/document-links";
 
 /** Records that can sit in the recoverable bin. */
@@ -1631,6 +1634,14 @@ export function Workspace({
     (o) => o.status === "resolved",
   ).length;
 
+  // Read as a sparse map: a project with no entry is expanded, so the count
+  // of collapsed panels is everything else. With no projects both counts are
+  // 0 and both global buttons sit greyed out, which needs no special case.
+  const expandedProjectCount = data.projects.filter(
+    (p) => !collapsedProjects[p.id],
+  ).length;
+  const collapsedProjectCount = data.projects.length - expandedProjectCount;
+
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -1968,8 +1979,7 @@ export function Workspace({
                       ? matches.filter((o) => o.status !== "resolved")
                       : matches
                   ).sort((a, b) => {
-                    if (contactSort === "name")
-                      return a.name.localeCompare(b.name);
+                    if (contactSort === "name") return byContactName(a, b);
                     if (contactSort === "newest")
                       return b.createdAt.getTime() - a.createdAt.getTime();
                     return 0;
@@ -2382,10 +2392,38 @@ export function Workspace({
             <>
               <div className="list-toolbar">
                 <h2>Manage your projects</h2>
-                <Button onClick={() => edit("project")}>
-                  <Plus size={16} />
-                  Add project
-                </Button>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <Button
+                    variant="outline"
+                    disabled={expandedProjectCount === 0}
+                    aria-label="Collapse all project panels"
+                    title="Collapse all project panels"
+                    onClick={() =>
+                      setCollapsedProjects(
+                        Object.fromEntries(
+                          data.projects.map((p) => [p.id, true]),
+                        ),
+                      )
+                    }
+                  >
+                    <ChevronsDownUp size={16} aria-hidden />
+                    Collapse all
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={collapsedProjectCount === 0}
+                    aria-label="Expand all project panels"
+                    title="Expand all project panels"
+                    onClick={() => setCollapsedProjects({})}
+                  >
+                    <ChevronsUpDown size={16} aria-hidden />
+                    Expand all
+                  </Button>
+                  <Button onClick={() => edit("project")}>
+                    <Plus size={16} />
+                    Add project
+                  </Button>
+                </div>
               </div>
               <p className="form-help" style={{ marginBottom: "16px" }}>
                 Projects group tasks and organisations. Organisations can belong
@@ -2410,6 +2448,17 @@ export function Workspace({
                 const visibleTasks = isHideDone
                   ? allTasks.filter((t) => t.status !== "done")
                   : allTasks;
+                // The count under the title follows the panel's own Hide Done
+                // filter and says "outstanding", so a smaller number is read
+                // as filtered rather than as tasks gone missing. The Show
+                // Done (n) button still carries how many are hidden, and a
+                // project with no tasks at all keeps the plain "0 tasks".
+                const taskSummary =
+                  allTasks.length === 0
+                    ? "0 tasks"
+                    : isHideDone
+                      ? `${visibleTasks.length} outstanding task${visibleTasks.length === 1 ? "" : "s"}`
+                      : `${allTasks.length} task${allTasks.length === 1 ? "" : "s"}`;
                 return (
                   <section className="panel project-panel spaced" key={p.id}>
                     <div className="section-heading">
@@ -2449,8 +2498,8 @@ export function Workspace({
                         <div>
                           <h2>{p.name}</h2>
                           <p>
-                            {allTasks.length} tasks · {linkedOrgs.length}{" "}
-                            organisations · {docs.length} docs
+                            {taskSummary} · {linkedOrgs.length} organisations ·{" "}
+                            {docs.length} docs
                           </p>
                         </div>
                       </div>
@@ -2762,7 +2811,7 @@ export function Workspace({
                   >
                     <option value="all">All organisations</option>
                     <option value="none">No organisation</option>
-                    {data.organisations.map((o) => (
+                    {[...data.organisations].sort(byContactName).map((o) => (
                       <option key={o.id} value={o.id}>
                         {o.name}
                       </option>
@@ -4015,7 +4064,7 @@ function DocumentUploadDialog({
                   required
                 >
                   <option value="">Choose organisation…</option>
-                  {data.organisations.map((o) => (
+                  {[...data.organisations].sort(byContactName).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
                     </option>
@@ -4267,7 +4316,7 @@ function DocumentLinkPicker({
                 required
               >
                 <option value="">Pick organisation…</option>
-                {data.organisations.map((o) => (
+                {[...data.organisations].sort(byContactName).map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
                   </option>
