@@ -1,4 +1,6 @@
 import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
   appendFile,
   cp,
@@ -56,6 +58,8 @@ const REQUIRED_TABLES = [
   "finance_movements",
   "task_templates",
   "revisions",
+  "households",
+  "gatherings",
 ];
 
 export type BackupMetadata = {
@@ -537,6 +541,16 @@ async function validateDatabase(path: string) {
   }
 }
 
+function applyMigrations(dbPath: string) {
+  const sqlite = new Database(dbPath);
+  try {
+    sqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(sqlite), { migrationsFolder: "./drizzle" });
+  } finally {
+    sqlite.close();
+  }
+}
+
 async function renameIfPresent(from: string, to: string) {
   if (!existsSync(from)) return false;
   await rename(from, to);
@@ -562,6 +576,7 @@ export async function restoreEncryptedBackup(
   try {
     await decryptPayload(inputPath, archivePath, password);
     staged = await parseArchive(archivePath, root);
+    applyMigrations(staged.databasePath);
     await validateDatabase(staged.databasePath);
     await mkdir(dirname(targetDatabase), { recursive: true });
     await mkdir(dirname(targetDocuments), { recursive: true });

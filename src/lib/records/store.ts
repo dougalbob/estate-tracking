@@ -6,6 +6,7 @@ import { RecordError, assertActor, versionConflict } from "./errors";
 import { auditEntry } from "./audit";
 import { financeStore } from "../finances/store";
 import { checklistStore } from "./checklist-store";
+import { guestStore } from "../guests/store";
 import { templateSeeds } from "./template-seeds";
 import {
   organisationInput,
@@ -30,6 +31,8 @@ const {
   financeRecords,
   financeMovements,
   taskTemplates,
+  households,
+  gatherings,
 } = schema;
 export { RecordError };
 export function recordStore(
@@ -38,6 +41,7 @@ export function recordStore(
 ) {
   const finances = financeStore(db, users);
   const checklist = checklistStore(db, users);
+  const guests = guestStore(db, users);
   function actorCheck(actor: string) {
     assertActor(users, actor);
   }
@@ -484,6 +488,7 @@ export function recordStore(
   return {
     ...finances,
     ...checklist,
+    ...guests,
     seedTemplates() {
       checklist.seedTemplates(templateSeeds);
     },
@@ -548,6 +553,21 @@ export function recordStore(
           .select()
           .from(financeMovements)
           .where(isNotNull(financeMovements.deletedAt))
+          .all(),
+        households: db
+          .select()
+          .from(households)
+          .where(isNull(households.deletedAt))
+          .all(),
+        deletedHouseholds: db
+          .select()
+          .from(households)
+          .where(isNotNull(households.deletedAt))
+          .all(),
+        gatherings: db
+          .select()
+          .from(gatherings)
+          .where(isNull(gatherings.deletedAt))
           .all(),
         deletedOrganisations: db
           .select()

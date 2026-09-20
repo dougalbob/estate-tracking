@@ -31,5 +31,6 @@ export default async function Page() {
   const store = recordStore(database(), users);
   store.seedProjects();
   store.seedTemplates();
+  store.seedGatherings();
   return <Workspace user={user} users={users} data={store.snapshot()} />;
 }

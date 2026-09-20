@@ -282,6 +282,68 @@ export const deleteInput = z.object({
   ...common,
   permanent: z.boolean().optional().default(false),
 });
+export const rsvpStates = [
+  "not_asked",
+  "awaiting_reply",
+  "coming",
+  "not_coming",
+  "not_sure",
+] as const;
+export type RsvpState = (typeof rsvpStates)[number];
+export const rsvpLabels: Record<RsvpState, string> = {
+  not_asked: "Not asked",
+  awaiting_reply: "Awaiting reply",
+  coming: "Coming",
+  not_coming: "Not coming",
+  not_sure: "Not sure",
+};
+export const householdInput = z.object({
+  ...common,
+  name: z.string().trim().min(1, "A household name is required").max(300),
+  partySize: z
+    .preprocess(
+      (val) => {
+        if (val === "" || val === null || val === undefined) return 1;
+        if (typeof val === "string") return Number(val);
+        return val;
+      },
+      z
+        .number()
+        .int("Enter a whole number for party size")
+        .min(1, "Party size must be at least 1")
+        .max(200, "Party size is too large"),
+    )
+    .default(1),
+  phone: optionalText.default(null),
+  email: optionalText.default(null),
+  relationship: optionalText.default(null),
+  ringing: optionalText.default(null),
+  contactedAt: z.string().datetime().nullable().default(null),
+  contactedBy: optionalText.default(null),
+  funeral: z.enum(rsvpStates).default("not_asked"),
+  wake: z.enum(rsvpStates).default("not_asked"),
+  notes: optionalText.default(null),
+});
+export type HouseholdInput = z.input<typeof householdInput>;
+
+export const householdContactedInput = z.object({
+  id: z.string().min(1),
+  contacted: z.boolean(),
+  version: z.number().int().positive(),
+});
+export type HouseholdContactedInput = z.input<typeof householdContactedInput>;
+
+export const gatheringInput = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1, "A gathering name is required").max(200),
+  date: optionalText.default(null),
+  time: optionalText.default(null),
+  place: optionalText.default(null),
+  notes: optionalText.default(null),
+  version: z.number().int().positive().optional(),
+});
+export type GatheringInput = z.input<typeof gatheringInput>;
+
 export const financeKinds = [
   "asset",
   "liability",

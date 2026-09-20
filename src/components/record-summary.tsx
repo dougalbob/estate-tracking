@@ -1,10 +1,16 @@
 import type { Snapshot } from "@/lib/records/store";
-import { everyoneAssignee, label } from "@/lib/records/validation";
+import {
+  everyoneAssignee,
+  label,
+  rsvpLabels,
+  type RsvpState,
+} from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
 const captions: Record<string, string> = {
   name: "Organisation",
   mainContact: "Main contact",
   phoneNumbers: "Phone numbers",
+  phone: "Phone",
   email: "Email",
   reference: "Account / reference",
   mapUrl: "Map link",
@@ -18,6 +24,16 @@ const captions: Record<string, string> = {
   outcome: "Outcome",
   kind: "Type",
   status: "Status",
+  partySize: "Party size",
+  relationship: "Relationship",
+  ringing: "Ringing",
+  contactedAt: "Contacted at",
+  contactedBy: "Contacted by",
+  funeral: "Funeral RSVP",
+  wake: "Wake RSVP",
+  place: "Place",
+  time: "Time",
+  date: "Date",
   organisationId: "Organisation",
   interactionId: "Source interaction",
   /** v0.2.18: the task an interaction was created from, by its title handle. */
@@ -94,14 +110,22 @@ export function RecordSummary({
         data.deletedFinanceRecords.find((r) => r.id === value)?.title ??
         "Linked financial record"
       );
-    if (key === "fundedBy" || key === "beneficiary" || key === "createdBy")
+    if (
+      key === "fundedBy" ||
+      key === "beneficiary" ||
+      key === "createdBy" ||
+      key === "contactedBy" ||
+      key === "ringing"
+    )
       return String(value).split("@")[0];
-    if (key === "voidedAt")
+    if (key === "voidedAt" || key === "contactedAt")
       return new Intl.DateTimeFormat("en-GB", {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: "Europe/London",
       }).format(new Date(String(value)));
+    if (key === "funeral" || key === "wake")
+      return rsvpLabels[value as RsvpState] ?? label(String(value));
     if (key === "occurredOn")
       return new Intl.DateTimeFormat("en-GB", {
         dateStyle: "medium",
