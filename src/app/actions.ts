@@ -21,7 +21,8 @@ import { demoUsers, withStore } from "@/lib/records/with-store";
 import { documentLinkInput, financeVoidInput } from "@/lib/records/validation";
 
 type Kind = "organisation" | "interaction" | "task" | "project" | "document";
-type BinKind = Kind | "finance_record" | "finance_movement" | "template_item";
+type BinKind =
+  Kind | "finance_record" | "finance_movement" | "template_item" | "household";
 
 /**
  * Every action below is one line of intent wrapped in `withStore`, which owns
@@ -274,6 +275,36 @@ export async function unlinkDocument(linkId: string) {
   });
 }
 
+export async function saveHousehold(input: unknown) {
+  return withStore(
+    "Unable to save household. Check your access and try again.",
+    async ({ store, actor }) => {
+      const id = store.saveHousehold(input, actor);
+      return { id };
+    },
+  );
+}
+
+export async function setHouseholdContacted(input: unknown) {
+  return withStore(
+    "Unable to update contact status. Check your access and try again.",
+    async ({ store, actor }) => {
+      const id = store.setHouseholdContacted(input, actor);
+      return { id };
+    },
+  );
+}
+
+export async function saveGathering(input: unknown) {
+  return withStore(
+    "Unable to save gathering details. Check your access and try again.",
+    async ({ store, actor }) => {
+      const id = store.saveGathering(input, actor);
+      return { id };
+    },
+  );
+}
+
 export async function deleteRecord(
   kind: BinKind,
   id: string,
@@ -295,6 +326,10 @@ export async function deleteRecord(
           actor,
           permanent,
         );
+        return {};
+      }
+      if (kind === "household") {
+        store.deleteHousehold(id, version, actor, permanent);
         return {};
       }
       const result = store.deleteRecord(kind, id, version, actor, permanent);
@@ -339,6 +374,10 @@ export async function restoreRecord(
           version,
           actor,
         );
+        return {};
+      }
+      if (kind === "household") {
+        store.restoreHousehold(id, version, actor);
         return {};
       }
       // A document whose file is gone cannot be restored into a row that points

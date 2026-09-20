@@ -50,6 +50,7 @@ import {
   PoundSterling,
   ListChecks,
   MessageSquare,
+  UsersRound,
 } from "lucide-react";
 import {
   switchDemoUser,
@@ -75,6 +76,7 @@ import { ProjectChecklist } from "./checklist";
 import { InteractionCard } from "./interaction-card";
 import { journalEntries } from "@/lib/records/journal";
 import { CalendarPage } from "./calendar";
+import { GuestList } from "./guest-list";
 import {
   formatSize,
   fileTooLarge,
@@ -121,7 +123,8 @@ type BinKind =
   | "document"
   | "finance_record"
   | "finance_movement"
-  | "template_item";
+  | "template_item"
+  | "household";
 
 const sections = [
   {
@@ -151,6 +154,13 @@ const financeSection = {
   title: "Estate finances",
   icon: Wallet,
   description: "Assets, liabilities, and the money moving in and out.",
+};
+
+const guestSection = {
+  id: "guests",
+  title: "Family & friends",
+  icon: UsersRound,
+  description: "Funeral and wake guest list and phone call sheet.",
 };
 
 const formatTime = (value: string | Date | number) =>
@@ -1527,21 +1537,23 @@ export function Workspace({
           ? "All tasks"
           : view === "calendar"
             ? "Calendar"
-            : view === "notes"
-              ? "Unfiled notes"
-              : view === "projects"
-                ? "Your projects"
-                : view === "documents"
-                  ? "Documents"
-                  : view === "events"
-                    ? "Event log"
-                    : view === "bin"
-                      ? "Recoverable bin"
-                      : view === "finances"
-                        ? "Estate finances"
-                        : view === "backup"
-                          ? "Backup & restore"
-                          : "Documents";
+            : view === "guests"
+              ? "Family & friends"
+              : view === "notes"
+                ? "Unfiled notes"
+                : view === "projects"
+                  ? "Your projects"
+                  : view === "documents"
+                    ? "Documents"
+                    : view === "events"
+                      ? "Event log"
+                      : view === "bin"
+                        ? "Recoverable bin"
+                        : view === "finances"
+                          ? "Estate finances"
+                          : view === "backup"
+                            ? "Backup & restore"
+                            : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
@@ -1550,7 +1562,8 @@ export function Workspace({
     data.deletedDocuments.length +
     data.deletedFinanceRecords.length +
     data.deletedFinanceMovements.length +
-    data.deletedTaskTemplates.length;
+    data.deletedTaskTemplates.length +
+    data.deletedHouseholds.length;
 
   const financeRecords = [...data.financeRecords]
     .filter((record) => {
@@ -1679,6 +1692,7 @@ export function Workspace({
           {[
             { id: "overview", title: "Overview", icon: Home },
             ...sections,
+            { id: "guests", title: "Family & friends", icon: UsersRound },
             { id: "events", title: "Event log", icon: ScrollText },
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
@@ -1746,26 +1760,28 @@ export function Workspace({
             <div>
               <p className="eyebrow">A LITTLE CLARITY, ONE STEP AT A TIME</p>
               <h1>{title}</h1>
-              <p>
-                {view === "overview"
-                  ? "See what needs attention and pick up where you left off."
-                  : view === "bin"
-                    ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
-                    : view === "documents"
-                      ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
-                      : view === "calendar"
-                        ? "Every task with a due date, by month or by week, colour coded by project. Tick the statuses and the people you want to see, and open a task by clicking it."
-                        : view === "events"
-                          ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
-                          : view === "finances"
-                            ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
-                            : view === "backup"
-                              ? "Create an encrypted recovery copy, or validate one before restoring it."
-                              : "Everything you need, shared between the two of you."}
-              </p>
+              {view !== "guests" && (
+                <p>
+                  {view === "overview"
+                    ? "See what needs attention and pick up where you left off."
+                    : view === "bin"
+                      ? "Deleted items stay here until you restore or permanently delete them. No automatic purge. Linked notes and tasks are not deleted when you bin an organisation. Documents stay until you permanently delete them."
+                      : view === "documents"
+                        ? "Store a file once and link it to many organisations, notes, tasks, or projects. View opens in-app with a close button; Download shows a save dialog."
+                        : view === "calendar"
+                          ? "Every task with a due date, by month or by week, colour coded by project. Tick the statuses and the people you want to see, and open a task by clicking it."
+                          : view === "events"
+                            ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
+                            : view === "finances"
+                              ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
+                              : view === "backup"
+                                ? "Create an encrypted recovery copy, or validate one before restoring it."
+                                : "Everything you need, shared between the two of you."}
+                </p>
+              )}
             </div>
             <div className="row-actions">
-              {view !== "documents" && (
+              {view !== "documents" && view !== "guests" && (
                 <Button onClick={() => edit("interaction")}>
                   <Plus size={18} />
                   Quick note
@@ -1863,7 +1879,7 @@ export function Workspace({
                 </section>
               </div>
               <div className="shortcut-grid">
-                {[...sections, financeSection].map((s) => (
+                {[...sections, guestSection, financeSection].map((s) => (
                   <button
                     className="panel shortcut"
                     key={s.id}
@@ -1878,7 +1894,9 @@ export function Workspace({
                     <span className="coming">
                       {s.id === "documents"
                         ? `${data.documents.length} documents · Open list`
-                        : "Open " + s.title.toLowerCase()}
+                        : s.id === "guests"
+                          ? `${data.households.length} households · Open list`
+                          : "Open " + s.title.toLowerCase()}
                     </span>
                   </button>
                 ))}
@@ -2448,6 +2466,20 @@ export function Workspace({
               projectName={projectName}
               onOpenTask={(id) => edit("task", id)}
               onAddTask={() => edit("task")}
+              onMessage={setMessage}
+              onError={setError}
+            />
+          )}
+          {view === "guests" && (
+            <GuestList
+              households={data.households}
+              gatherings={data.gatherings}
+              user={user}
+              users={users}
+              onOpenHistory={(id) => setHistory({ kind: "household", id })}
+              onDelete={(id, version) =>
+                handleDelete("household", id, version, false)
+              }
               onMessage={setMessage}
               onError={setError}
             />
@@ -3087,6 +3119,12 @@ export function Workspace({
                   label: "Checklist suggestions",
                   permanent: true,
                 },
+                {
+                  kind: "household" as const,
+                  items: data.deletedHouseholds,
+                  label: "Family & friends",
+                  permanent: true,
+                },
               ].map((group) => (
                 <section className="panel spaced" key={group.kind}>
                   <div className="section-heading">
@@ -3110,6 +3148,8 @@ export function Workspace({
                           <PoundSterling size={16} />
                         ) : group.kind === "template_item" ? (
                           <ListChecks size={16} />
+                        ) : group.kind === "household" ? (
+                          <UsersRound size={16} />
                         ) : (
                           <BookOpen size={16} />
                         )}
@@ -3124,12 +3164,22 @@ export function Workspace({
                           {group.kind === "finance_movement"
                             ? (item.detail ??
                               `Recorded against ${financeRecordName(item.recordId)}`)
-                            : item.detail
-                              ? item.detail.slice(0, 120)
-                              : item.reference ||
-                                item.mainContact ||
-                                item.originalName ||
-                                ""}
+                            : group.kind === "household"
+                              ? [
+                                  item.partySize > 1
+                                    ? `Party of ${item.partySize}`
+                                    : null,
+                                  item.relationship,
+                                  item.phone,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")
+                              : item.detail
+                                ? item.detail.slice(0, 120)
+                                : item.reference ||
+                                  item.mainContact ||
+                                  item.originalName ||
+                                  ""}
                         </p>
                         <p>
                           <small>

@@ -78,6 +78,13 @@
       "when": 1789860605578,
       "tag": "0010_interaction_source_task",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1789891296306,
+      "tag": "0011_guest_list",
+      "breakpoints": true
     }
   ]
 }

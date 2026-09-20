@@ -519,6 +519,10 @@ small {
   .main-content {
     padding-top: 40px;
   }
+  .guest-grid td.cell-notes,
+  .guest-grid th.col-notes {
+    width: auto;
+  }
 }
 @media (max-width: 1150px) {
   .sidebar {
@@ -1834,4 +1838,353 @@ summary {
   .calendar-grid.week .calendar-day {
     min-height: 0;
   }
+}
+
+/* ==========================================================================
+   Family & Friends: Dense spreadsheet grid (PC) & Call sheet (Phone)
+   Deliberate exception to the visual rules: dense table for maximum screen space.
+   ========================================================================== */
+
+.guest-page {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gathering-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.gathering-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gathering-item strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.gathering-input {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.gathering-input:focus {
+  border-color: var(--focus);
+  background: #ffffff;
+  outline: none;
+}
+
+.guest-summary-strip {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 2px 0;
+  white-space: normal;
+}
+
+.guest-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.guest-select,
+.guest-search {
+  height: 30px;
+  padding: 2px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.guest-search {
+  width: 240px;
+}
+
+.guest-grid-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.guest-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: 13px;
+}
+
+.guest-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--notice);
+  color: var(--foreground);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.guest-grid td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: middle;
+  background: var(--surface);
+}
+
+.guest-grid tr:hover td {
+  background: #fbfcf9;
+}
+
+.guest-grid tr.new-row td {
+  background: #fcfdfa;
+}
+
+.guest-cell-input {
+  width: 100%;
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.guest-cell-input:hover {
+  border-color: #cbd5e1;
+}
+
+.guest-cell-input:focus {
+  background: #ffffff;
+  border-color: var(--focus);
+  outline: none;
+}
+
+.guest-cell-select {
+  width: 100%;
+  height: 26px;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guest-cell-select:hover {
+  border-color: #cbd5e1;
+}
+
+.guest-cell-select:focus {
+  background: #ffffff;
+  border-color: var(--focus);
+  outline: none;
+}
+
+.guest-contacted-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.guest-row-menu-btn {
+  background: transparent;
+  border: 0;
+  padding: 3px;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guest-row-menu-btn:hover {
+  background: var(--notice);
+  color: var(--foreground);
+}
+
+.guest-row-status {
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.guest-row-saved {
+  color: #15803d;
+  font-weight: 500;
+}
+
+.guest-row-error {
+  color: #b91c1c;
+}
+
+/* Call Sheet (Phone <= 700px) */
+.call-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.call-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.call-filter-tab {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 20px;
+  color: var(--foreground);
+}
+
+.call-filter-tab.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.call-sheet-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.call-sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.call-sheet-row:last-child {
+  border-bottom: 0;
+}
+
+.call-info-btn {
+  background: transparent;
+  border: 0;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.call-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  display: block;
+  word-break: break-word;
+}
+
+.call-subtext {
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.call-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.call-dial-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  min-height: 44px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.call-dial-link:active {
+  opacity: 0.85;
+}
+
+.call-no-dial {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 10px 8px;
+}
+
+.call-contacted-checkbox {
+  width: 28px;
+  height: 28px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.call-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 1000;
+}
+
+.call-modal-sheet {
+  background: var(--surface);
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15);
 }

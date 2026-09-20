@@ -247,3 +247,46 @@ export const revisions = sqliteTable("revisions", {
     .$type<Record<string, unknown>>()
     .notNull(),
 });
+
+/**
+ * A family or household to notify, invite, and track for funeral & wake.
+ * Distinct from Contacts (which are organisations/institutions): these are
+ * people being told, organized one row per household.
+ */
+export const households = sqliteTable("households", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  partySize: integer("party_size").notNull().default(1),
+  phone: text("phone"),
+  email: text("email"),
+  relationship: text("relationship"),
+  ringing: text("ringing"),
+  contactedAt: text("contacted_at"),
+  contactedBy: text("contacted_by"),
+  funeral: text("funeral").notNull().default("not_asked"),
+  wake: text("wake").notNull().default("not_asked"),
+  notes: text("notes"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
+
+/**
+ * The gatherings being held (funeral, wake), recording date, time, place,
+ * and notes. Seeded with two rows: 'funeral' and 'wake'.
+ */
+export const gatherings = sqliteTable("gatherings", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  date: text("date"),
+  time: text("time"),
+  place: text("place"),
+  notes: text("notes"),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
