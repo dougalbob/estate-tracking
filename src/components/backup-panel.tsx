@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArchiveRestore, Download, ShieldCheck, Upload } from "lucide-react";
+import { APP_VERSION } from "@/lib/version";
 import { minimumBackupPasswordLength } from "@/lib/backup/constants";
 import { Button } from "./ui/button";
 
@@ -32,13 +33,37 @@ export function BackupPanel() {
           body?.error || `Backup failed (HTTP ${response.status})`,
         );
       }
+      // A blob URL loses the response headers, so carry the server filename
+      // through to the download attribute instead of overriding it.
+      const disposition = response.headers.get("Content-Disposition");
+      let filename = "";
+      if (disposition) {
+        const match = /filename="([^"]+)"/.exec(disposition);
+        if (match) filename = match[1];
+      }
+      if (!filename) {
+        const now = new Date();
+        const datePart = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Europe/London",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(now);
+        const timePart = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/London",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+          .format(now)
+          .replace(":", "");
+        filename = `estate-backup-v${APP_VERSION}-${datePart}-${timePart}.estate-backup`;
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `estate-organiser-backup-${new Date()
-        .toISOString()
-        .slice(0, 10)}.estate-backup`;
+      anchor.download = filename;
       anchor.style.display = "none";
       document.body.appendChild(anchor);
       anchor.click();
