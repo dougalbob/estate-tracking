@@ -22,6 +22,7 @@ import {
   restoreEncryptedBackup,
 } from "../src/lib/backup/backup";
 import { minimumBackupPasswordLength } from "../src/lib/backup/constants";
+import { APP_VERSION } from "../src/lib/version";
 
 test("encrypted backup includes a consistent database and documents and restores cleanly", async () => {
   const root = await mkdtemp(join(tmpdir(), "estate-backup-test-"));
@@ -65,6 +66,7 @@ test("encrypted backup includes a consistent database and documents and restores
       metadata.documentBytes,
       "fictional certificate".length + imageBytes.length,
     );
+    assert.equal(metadata.appVersion, APP_VERSION);
     assert.ok((await stat(backupPath)).size > metadata.databaseBytes);
     assert.deepEqual(
       await inspectEncryptedBackup(backupPath, password),
@@ -80,6 +82,7 @@ test("encrypted backup includes a consistent database and documents and restores
       documentsRoot: restoredDocuments,
     });
     assert.deepEqual(restored, metadata);
+    assert.equal(restored.appVersion, APP_VERSION);
     const restoredSqlite = new Database(restoredDatabase, { readonly: true });
     try {
       const row = restoredSqlite
@@ -118,6 +121,33 @@ test("backup passwords have an explicit minimum and backups reject too-short pas
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("backup filename includes version and London time", () => {
+  // Mirrors logic in src/app/api/backup/download/route.ts – ensures version
+  // appears and timestamp uses Europe/London 24h HHmm without colon, sortable.
+  const now = new Date("2026-09-20T13:30:00Z"); // 14:30 BST
+  const datePart = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(now)
+    .replace(":", "");
+  const filename = `estate-backup-v${APP_VERSION}-${datePart}-${timePart}.estate-backup`;
+  assert.match(
+    filename,
+    /^estate-backup-v\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}-\d{4}\.estate-backup$/,
+  );
+  assert.equal(datePart, "2026-09-20");
+  assert.equal(timePart, "1430");
 });
 
 // Regression test for EXDEV on Unraid (and any other deployment where
