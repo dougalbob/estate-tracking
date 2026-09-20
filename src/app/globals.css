@@ -194,6 +194,13 @@ small {
 .sidebar-bottom small {
   font-size: 10px;
 }
+.sidebar-version {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 12px 12px 0;
+  letter-spacing: 0.02em;
+}
 .workspace {
   flex: 1;
   min-width: 0;
@@ -572,6 +579,12 @@ small {
   .sidebar-label,
   .sidebar-bottom {
     display: none;
+  }
+  .sidebar-version {
+    display: block;
+    padding: 12px 0 0;
+    font-size: 11px;
+    color: var(--muted);
   }
   .sidebar nav {
     display: flex;

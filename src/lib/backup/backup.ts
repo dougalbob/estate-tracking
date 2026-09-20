@@ -29,6 +29,7 @@ import {
   scryptSync,
 } from "node:crypto";
 import { documentsPath } from "@/lib/documents/storage";
+import { APP_VERSION } from "@/lib/version";
 import {
   minimumBackupPasswordLength,
   validateBackupPassword,
@@ -65,6 +66,7 @@ const REQUIRED_TABLES = [
 export type BackupMetadata = {
   formatVersion: number;
   createdAt: string;
+  appVersion: string;
   databaseBytes: number;
   documentFiles: number;
   documentBytes: number;
@@ -271,6 +273,7 @@ export async function createEncryptedBackup(
     const metadata: BackupMetadata = {
       formatVersion: FORMAT_VERSION,
       createdAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
       databaseBytes: databaseDetails.size,
       documentFiles: documents.length,
       documentBytes: documents.reduce((total, file) => total + file.size, 0),

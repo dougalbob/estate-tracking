@@ -113,6 +113,7 @@ import { financeSummary } from "@/lib/finances/summary";
 import { canCopy, copyText, telHref } from "@/lib/contacts/contact-links";
 import { byContactName } from "@/lib/contacts/sort";
 import { documentLinkItems } from "@/lib/contacts/document-links";
+import { APP_VERSION_DISPLAY } from "@/lib/version";
 
 /** Records that can sit in the recoverable bin. */
 type BinKind =
@@ -1723,6 +1724,12 @@ export function Workspace({
             <br />
             <small>Built to take things one step at a time.</small>
           </span>
+        </div>
+        <div
+          className="sidebar-version"
+          aria-label={`Version ${APP_VERSION_DISPLAY}`}
+        >
+          {APP_VERSION_DISPLAY}
         </div>
       </aside>
       <div className="workspace">

@@ -1,6 +1,7 @@
 import { currentUser } from "@/lib/auth/current-user";
 import { createEncryptedBackup } from "@/lib/backup/backup";
 import { validateBackupPassword } from "@/lib/backup/constants";
+import { APP_VERSION } from "@/lib/version";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -47,7 +48,23 @@ export async function POST(request: Request) {
     };
     stream.once("close", cleanup);
     stream.once("error", cleanup);
-    const filename = `estate-organiser-backup-${metadata.createdAt.slice(0, 10)}.estate-backup`;
+    const now = new Date();
+    const datePart = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/London",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const timePart = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .format(now)
+      .replace(":", "");
+    const version = metadata.appVersion || APP_VERSION;
+    const filename = `estate-backup-v${version}-${datePart}-${timePart}.estate-backup`;
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       headers: {
         "Content-Type": "application/octet-stream",
