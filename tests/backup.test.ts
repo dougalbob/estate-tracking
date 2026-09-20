@@ -150,6 +150,24 @@ test("backup filename includes version and London time", () => {
   assert.equal(timePart, "1430");
 });
 
+test("backup panel preserves the server filename with a versioned London fallback", async () => {
+  const panel = await readFile("src/components/backup-panel.tsx", "utf8");
+  assert.match(panel, /import \{ APP_VERSION \} from "@\/lib\/version"/);
+  assert.ok(panel.includes('response.headers.get("Content-Disposition")'));
+  assert.ok(panel.includes("if (match) filename = match[1]"));
+  assert.ok(panel.includes("if (!filename)"));
+  assert.ok(panel.includes('timeZone: "Europe/London"'));
+  assert.ok(panel.includes("hour12: false"));
+  assert.ok(
+    panel.includes(
+      "estate-backup-v${APP_VERSION}-${datePart}-${timePart}.estate-backup",
+    ),
+  );
+  assert.ok(panel.includes("anchor.download = filename"));
+  assert.ok(!panel.includes("estate-organiser-backup-"));
+  assert.ok(!panel.includes("toISOString"));
+});
+
 // Regression test for EXDEV on Unraid (and any other deployment where
 // tmpdir() is a different mount from the data directory). The restore
 // decrypts into tmpdir(), then copies staged content into a sibling
