@@ -2831,3 +2831,122 @@ summary {
     margin-top: 0;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* The Probate page                                                    */
+/*                                                                     */
+/* Its own facts, the two allowances, and the probate project's panel  */
+/* underneath. The figures always read as typed facts with a sentence  */
+/* beside them — never as a dashboard, and never as a tax calculation.  */
+/* ------------------------------------------------------------------ */
+.probate-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.probate-facts .money-row {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.probate-facts dt {
+  flex: 1 1 45%;
+  min-width: 0;
+}
+.probate-facts dd {
+  flex: 0 1 auto;
+  text-align: right;
+}
+.probate-deadline-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 42ch;
+}
+.probate-passed {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.probate-missing {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+.probate-allowance-list {
+  margin-bottom: 6px;
+}
+.probate-allowance-list dt,
+.probate-allowance-list dd {
+  font-variant-numeric: tabular-nums;
+}
+.probate-allowance-list dt small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 62ch;
+}
+.probate-amount {
+  font-size: 16px;
+}
+.probate-total {
+  font-size: 20px;
+}
+.probate-unconfirmed {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--notice);
+}
+.probate-unconfirmed ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.probate-notes {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.probate-checked {
+  margin-top: 16px;
+}
+.probate-checked a {
+  color: var(--primary);
+}
+.probate-project-heading {
+  margin-top: 6px;
+}
+.probate-preview {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: var(--notice);
+}
+.probate-preview .money-row dd {
+  font-size: 15px;
+}
+.probate-dialog {
+  width: min(780px, calc(100vw - 30px));
+}
+@media (max-width: 900px) {
+  .probate-grid {
+    grid-template-columns: 1fr;
+  }
+  .probate-facts dd {
+    text-align: left;
+  }
+  .probate-allowance-list dd,
+  .probate-amount,
+  .probate-total {
+    font-size: 15px;
+  }
+}
