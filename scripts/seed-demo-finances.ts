@@ -134,6 +134,80 @@ if (existing) {
     },
     users[0],
   );
+  // Enough assets and debts to show every state the register can draw: an
+  // account not yet collected, something part realised, something with no
+  // value at all, and a debt nobody has paid a penny of.
+  store.saveFinanceRecord(
+    {
+      kind: "asset",
+      title: "Nationwide savings account (fictional)",
+      detail:
+        "Balance at the date of death; the money is still to be collected.",
+      category: "bank_account",
+      amount: "8250.40",
+      occurredOn: "2026-09-01",
+      fundedBy: null,
+      beneficiary: null,
+      organisationId: null,
+      projectId: "probate",
+    },
+    users[0],
+  );
+  store.saveFinanceRecord(
+    {
+      kind: "asset",
+      title: "Premium bonds (fictional)",
+      detail: "No valuation yet — NS&I to confirm the holding.",
+      category: "investment",
+      amount: "",
+      occurredOn: null,
+      fundedBy: null,
+      beneficiary: null,
+      organisationId: null,
+      projectId: "probate",
+    },
+    users[0],
+  );
+  const jewellery = store.saveFinanceRecord(
+    {
+      kind: "asset",
+      title: "Jewellery and watches (fictional)",
+      detail: "Partly sold; the rest is still with the family.",
+      category: "household_items",
+      amount: "1200",
+      occurredOn: "2026-09-04",
+      fundedBy: null,
+      beneficiary: null,
+      organisationId: null,
+      projectId: null,
+    },
+    users[1],
+  );
+  store.saveFinanceMovement(
+    {
+      recordId: jewellery,
+      kind: "proceeds",
+      amount: "500",
+      occurredOn: "2026-09-12",
+      detail: "Fictional part sale to a dealer",
+    },
+    users[0],
+  );
+  store.saveFinanceRecord(
+    {
+      kind: "liability",
+      title: "Credit card balance (fictional)",
+      detail: "Nothing paid yet — the statement is in Documents.",
+      category: "credit_card",
+      amount: "850.75",
+      occurredOn: "2026-09-01",
+      fundedBy: null,
+      beneficiary: null,
+      organisationId: null,
+      projectId: "probate",
+    },
+    users[1],
+  );
   console.log("Demo finance rows created.");
 }
 sqlite.close();

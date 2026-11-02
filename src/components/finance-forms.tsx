@@ -39,7 +39,15 @@ import { movementAmountHint } from "@/lib/finances/movement-hint";
 import type { FinanceMovement, FinanceRecord } from "@/lib/finances/summary";
 import { byContactName } from "@/lib/contacts/sort";
 
-export type FinanceRecordEditor = { id?: string };
+/**
+ * `kind` is only a starting point for a new record: the register opens the form
+ * from a tab (Assets, Debts, Cash, Distributions) and the kind that tab is about
+ * is the sensible default. Editing an existing record always keeps its own kind.
+ */
+export type FinanceRecordEditor = {
+  id?: string;
+  kind?: FinanceRecord["kind"];
+};
 
 const kindTitle: Record<string, string> = {
   asset: "asset",
@@ -92,7 +100,7 @@ export function FinanceRecordForm({
     ? data.financeRecords.find((r) => r.id === editor.id)
     : undefined;
   const [kind, setKind] = useState<FinanceRecord["kind"]>(
-    record?.kind ?? "asset",
+    record?.kind ?? editor.kind ?? "asset",
   );
   const [version, setVersion] = useState(record?.version);
   const [busy, setBusy] = useState(false);
