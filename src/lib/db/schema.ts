@@ -304,3 +304,82 @@ export const gatherings = sqliteTable("gatherings", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 });
+
+/**
+ * The probate facts the rest of the app has nowhere else to keep: the person who
+ * died, the grant, and the figures behind the two Inheritance Tax allowances,
+ * including a share carried over from a late spouse or civil partner.
+ *
+ * One row, with the fixed id `estate`: this app serves one estate. The figures
+ * recorded here are facts the users confirmed — an allowance *calculation* is
+ * never stored as though it were one. The arithmetic lives in
+ * `src/lib/probate/allowances.ts` and is derived on every read.
+ *
+ * Deliberately not linked to the `probate` project by a foreign key: the project
+ * is the filing cabinet for notes, tasks and documents, and the page finds it by
+ * its seeded id. Binning the project must never take the estate's facts with it.
+ */
+export const probateRecords = sqliteTable("probate_records", {
+  id: text("id").primaryKey(),
+  /** The person whose estate this is. Optional: the app can be used unnamed. */
+  deceasedName: text("deceased_name"),
+  dateOfDeath: text("date_of_death"),
+  grantType: text("grant_type", {
+    enum: ["probate", "letters_of_administration", "not_needed", "not_known"],
+  })
+    .notNull()
+    .default("not_known"),
+  grantAppliedOn: text("grant_applied_on"),
+  grantIssuedOn: text("grant_issued_on"),
+  registry: text("registry"),
+  grantReference: text("grant_reference"),
+  /** A late spouse or civil partner, whose unused bands may be brought across. */
+  lateSpouseName: text("late_spouse_name"),
+  lateSpouseDateOfDeath: text("late_spouse_date_of_death"),
+  /**
+   * The unused share of each band at the first death, in basis points
+   * (10000 = 100%). Basis points rather than a float: an IHT402 percentage can
+   * be fractional, and money is integer pence everywhere else for the same
+   * reason. Null means "not recorded yet", which is different from zero.
+   */
+  nrbUnusedBp: integer("nrb_unused_bp"),
+  rnrbUnusedBp: integer("rnrb_unused_bp"),
+  /** The figures the users confirmed, never derived from the live register. */
+  netEstateAtDeathPence: integer("net_estate_at_death_pence"),
+  qualifyingResidenceValuePence: integer("qualifying_residence_value_pence"),
+  residenceToDirectDescendants: text("residence_to_direct_descendants", {
+    enum: ["yes", "no", "not_known"],
+  })
+    .notNull()
+    .default("not_known"),
+  downsizingAddition: text("downsizing_addition", {
+    enum: ["yes", "no", "not_known"],
+  })
+    .notNull()
+    .default("not_known"),
+  /** What was filed, and when. A claim is not a fact until it has been sent. */
+  iht400Needed: text("iht400_needed", {
+    enum: ["yes", "no", "not_known"],
+  })
+    .notNull()
+    .default("not_known"),
+  iht400SentOn: text("iht400_sent_on"),
+  nrbClaimSentOn: text("nrb_claim_sent_on"),
+  rnrbClaimSentOn: text("rnrb_claim_sent_on"),
+  claimReference: text("claim_reference"),
+  claimedNrbPence: integer("claimed_nrb_pence"),
+  claimedRnrbPence: integer("claimed_rnrb_pence"),
+  /**
+   * The published figures in force when this record was last saved. Kept so the
+   * history shows what was claimed against, even after the app is updated with
+   * new thresholds.
+   */
+  rates: text("rates", { mode: "json" }).$type<
+    import("../probate/rates").ProbateRates
+  >(),
+  version: integer("version").notNull().default(1),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});

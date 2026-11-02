@@ -8,6 +8,7 @@ import {
   ChevronUp,
   ChevronsDownUp,
   ChevronsUpDown,
+  FileSignature,
   FolderOpen,
   Home,
   Leaf,
@@ -88,6 +89,9 @@ import {
   type EventFilters,
 } from "./event-filters";
 import { BackupPanel } from "./backup-panel";
+import { ProbatePage } from "./probate";
+import { ProbateForm } from "./probate-form";
+import { probateView, probateProjectId } from "@/lib/probate/view";
 import type { Snapshot } from "@/lib/records/store";
 import type { Identity } from "@/lib/auth/verify";
 import {
@@ -326,7 +330,8 @@ export function Workspace({
     [selected, setSelected] = useState<string | null>(null),
     [editor, setEditorState] = useState<Editor | null>(null),
     [editorKey, setEditorKey] = useState(0),
-    [history, setHistory] = useState<{ id: string; kind: string } | null>(null);
+    [history, setHistory] = useState<{ id: string; kind: string } | null>(null),
+    [probateEditor, setProbateEditor] = useState(false);
   /**
    * Opening a form is always a fresh form. The fields are uncontrolled and some
    * of the answers live in state, so a form handed a different record used to
@@ -1376,11 +1381,13 @@ export function Workspace({
                       ? "Event log"
                       : view === "bin"
                         ? "Recoverable bin"
-                        : view === "finances"
-                          ? "Estate finances"
-                          : view === "backup"
-                            ? "Backup & restore"
-                            : "Documents";
+                        : view === "probate"
+                          ? "Probate & estate administration"
+                          : view === "finances"
+                            ? "Estate finances"
+                            : view === "backup"
+                              ? "Backup & restore"
+                              : "Documents";
   const binCount =
     data.deletedOrganisations.length +
     data.deletedInteractions.length +
@@ -1474,6 +1481,246 @@ export function Workspace({
   ).length;
   const collapsedProjectCount = data.projects.length - expandedProjectCount;
 
+  /**
+   * One project panel, rendered in one place.
+   *
+   * The Probate page shows the Probate project as well as the Projects view,
+   * and two copies of this markup would drift apart within a month. It stays a
+   * function rather than a component because it leans on a dozen of this
+   * screen's closures - taskRow, interactionCard, edit, handleDelete, the
+   * document dialogs - and threading all of those through props would move the
+   * coupling rather than remove it.
+   */
+  function projectPanel(p: Snapshot["projects"][number]) {
+    const linkedOrgs = data.organisationProjects
+      .filter((op) => op.projectId === p.id)
+      .map((op) => data.organisations.find((o) => o.id === op.organisationId))
+      .filter(Boolean) as Snapshot["organisations"];
+    const docs = getLinkedDocuments({ projectId: p.id });
+    const allTasks = data.tasks.filter((t) => t.projectId === p.id);
+    const doneCount = allTasks.filter((t) => t.status === "done").length;
+    const isCollapsed = !!collapsedProjects[p.id];
+    const isHideDone = !projectShowDone[p.id];
+    const visibleTasks = isHideDone
+      ? allTasks.filter((t) => t.status !== "done")
+      : allTasks;
+    // The one case where an empty journal needs explaining rather
+    // than simply stating: everything on it is a done task, and
+    // Hide Done is what took them away.
+    const allDoneHidden =
+      allTasks.length > 0 && isHideDone && visibleTasks.length === 0;
+    const journal = journalEntries({
+      projectId: p.id,
+      interactions: data.interactions,
+      documents: data.documents,
+      documentLinks: data.documentLinks,
+      tasks: data.tasks,
+      hideDone: isHideDone,
+    });
+    // The count under the title follows the panel's own Hide Done
+    // filter and says "outstanding", so a smaller number is read
+    // as filtered rather than as tasks gone missing. The Show
+    // Done (n) button still carries how many are hidden, and a
+    // project with no tasks at all keeps the plain "0 tasks".
+    const taskSummary =
+      allTasks.length === 0
+        ? "0 tasks"
+        : isHideDone
+          ? `${visibleTasks.length} outstanding task${visibleTasks.length === 1 ? "" : "s"}`
+          : `${allTasks.length} task${allTasks.length === 1 ? "" : "s"}`;
+    return (
+      <section className="panel project-panel spaced" key={p.id}>
+        <div className="section-heading">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "8px",
+            }}
+          >
+            <button
+              className="subtle-button"
+              aria-label={
+                isCollapsed ? `Expand ${p.name}` : `Collapse ${p.name}`
+              }
+              title={isCollapsed ? `Expand ${p.name}` : `Collapse ${p.name}`}
+              aria-expanded={!isCollapsed}
+              onClick={() =>
+                setCollapsedProjects((prev) => ({
+                  ...prev,
+                  [p.id]: !prev[p.id],
+                }))
+              }
+            >
+              {isCollapsed ? (
+                <ChevronDown size={16} aria-hidden />
+              ) : (
+                <ChevronUp size={16} aria-hidden />
+              )}
+            </button>
+            <div>
+              <h2>{p.name}</h2>
+              <p>
+                {taskSummary} · {linkedOrgs.length} organisations ·{" "}
+                {docs.length} docs
+              </p>
+            </div>
+          </div>
+          <div className="row-actions">
+            <button
+              className="subtle-button"
+              onClick={() => edit("project", p.id)}
+            >
+              <Pencil size={14} />
+              Rename
+            </button>
+            {historyButton("project", p.id)}
+            <button
+              className="subtle-button"
+              onClick={() => handleDelete("project", p.id, p.version)}
+            >
+              <Trash2 size={14} />
+              Bin
+            </button>
+          </div>
+        </div>
+        {!isCollapsed && (
+          <>
+            {linkedOrgs.length > 0 && (
+              <div className="project-pills" style={{ padding: "0 24px 12px" }}>
+                {linkedOrgs.map((o) => (
+                  <span key={o.id}>{o.name}</span>
+                ))}
+              </div>
+            )}
+            <div
+              style={{
+                padding: "0 24px 12px",
+                borderTop: linkedOrgs.length ? "1px solid var(--border)" : "0",
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
+            >
+              {docs.map((d) => (
+                <span key={d.id} className="badge">
+                  <FileText size={10} /> {d.friendlyName}
+                  <button
+                    type="button"
+                    onClick={() => setViewingDoc(d)}
+                    className="subtle-button"
+                    style={{ marginLeft: "4px" }}
+                    title="View in app"
+                  >
+                    <Eye size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadDocument(d.id, d.originalName)}
+                    className="subtle-button"
+                    title="Download"
+                  >
+                    <Download size={10} />
+                  </button>
+                </span>
+              ))}
+              <button
+                className="subtle-button"
+                onClick={() => setDocUpload({ projectId: p.id })}
+              >
+                <FileText size={12} /> Attach doc
+              </button>
+              <button
+                className="subtle-button"
+                onClick={() => setLinkPicker({ projectId: p.id })}
+              >
+                <Link2 size={12} /> Link existing
+              </button>
+            </div>
+            {data.taskTemplates.some((i) => i.projectId === p.id) && (
+              <ProjectChecklist
+                projectId={p.id}
+                items={data.taskTemplates.filter((i) => i.projectId === p.id)}
+                tasks={allTasks}
+                onMessage={setMessage}
+                onError={setError}
+              />
+            )}
+            {/*
+              The journal: this project's interactions, documents
+              and tasks in one list, most recent first. Every entry
+              is a recorded fact and opens the record it names, so
+              the panel tells the story of the project rather than
+              only listing what is left to do. Hide Done governs the
+              journal's task entries and stays exactly what it was -
+              done tasks only, per panel, with the count on the
+              button.
+            */}
+            <div style={{ borderTop: "1px solid var(--border)" }}>
+              {allTasks.length > 0 && (
+                <div
+                  style={{
+                    padding: "8px 24px",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <Button
+                    variant={isHideDone ? "default" : "outline"}
+                    aria-pressed={isHideDone}
+                    title={
+                      isHideDone
+                        ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                        : "Hide done tasks from this project"
+                    }
+                    aria-label={
+                      isHideDone
+                        ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
+                        : "Hide done tasks from this project"
+                    }
+                    onClick={() =>
+                      setProjectShowDone((prev) => ({
+                        ...prev,
+                        [p.id]: !prev[p.id],
+                      }))
+                    }
+                  >
+                    {isHideDone ? (
+                      <Eye size={16} aria-hidden />
+                    ) : (
+                      <EyeOff size={16} aria-hidden />
+                    )}
+                    {isHideDone ? `Show Done (${doneCount})` : "Hide Done"}
+                  </Button>
+                </div>
+              )}
+              {journal.map((entry) =>
+                entry.kind === "interaction"
+                  ? interactionCard(entry.record, {
+                      embedded: true,
+                    })
+                  : entry.kind === "document"
+                    ? journalDocumentRow(entry.record)
+                    : taskRow(entry.record),
+              )}
+              {journal.length === 0 && allDoneHidden && (
+                <p className="empty-state">
+                  Every task in this project is done, so the list is empty while
+                  done tasks are hidden.
+                </p>
+              )}
+              {journal.length === 0 && !allDoneHidden && (
+                <p className="empty-state">
+                  Nothing has happened in this project yet.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </section>
+    );
+  }
+
   return (
     <div className="app-shell">
       <a className="skip" href="#main">
@@ -1499,6 +1746,7 @@ export function Workspace({
             { id: "notes", title: "Unfiled notes", icon: Phone },
             { id: "projects", title: "Projects", icon: BookOpen },
             { id: "calendar", title: "Calendar", icon: CalendarDays },
+            { id: "probate", title: "Probate", icon: FileSignature },
             { id: "finances", title: "Estate finances", icon: Wallet },
             { id: "backup", title: "Backup & restore", icon: ArchiveRestore },
             {
@@ -2356,262 +2604,7 @@ export function Workspace({
                 projects any time. Deleting a project does not delete its tasks
                 – it just unlinks them. Documents can be linked to projects too.
               </p>
-              {data.projects.map((p) => {
-                const linkedOrgs = data.organisationProjects
-                  .filter((op) => op.projectId === p.id)
-                  .map((op) =>
-                    data.organisations.find((o) => o.id === op.organisationId),
-                  )
-                  .filter(Boolean) as Snapshot["organisations"];
-                const docs = getLinkedDocuments({ projectId: p.id });
-                const allTasks = data.tasks.filter((t) => t.projectId === p.id);
-                const doneCount = allTasks.filter(
-                  (t) => t.status === "done",
-                ).length;
-                const isCollapsed = !!collapsedProjects[p.id];
-                const isHideDone = !projectShowDone[p.id];
-                const visibleTasks = isHideDone
-                  ? allTasks.filter((t) => t.status !== "done")
-                  : allTasks;
-                // The one case where an empty journal needs explaining rather
-                // than simply stating: everything on it is a done task, and
-                // Hide Done is what took them away.
-                const allDoneHidden =
-                  allTasks.length > 0 &&
-                  isHideDone &&
-                  visibleTasks.length === 0;
-                const journal = journalEntries({
-                  projectId: p.id,
-                  interactions: data.interactions,
-                  documents: data.documents,
-                  documentLinks: data.documentLinks,
-                  tasks: data.tasks,
-                  hideDone: isHideDone,
-                });
-                // The count under the title follows the panel's own Hide Done
-                // filter and says "outstanding", so a smaller number is read
-                // as filtered rather than as tasks gone missing. The Show
-                // Done (n) button still carries how many are hidden, and a
-                // project with no tasks at all keeps the plain "0 tasks".
-                const taskSummary =
-                  allTasks.length === 0
-                    ? "0 tasks"
-                    : isHideDone
-                      ? `${visibleTasks.length} outstanding task${visibleTasks.length === 1 ? "" : "s"}`
-                      : `${allTasks.length} task${allTasks.length === 1 ? "" : "s"}`;
-                return (
-                  <section className="panel project-panel spaced" key={p.id}>
-                    <div className="section-heading">
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: "8px",
-                        }}
-                      >
-                        <button
-                          className="subtle-button"
-                          aria-label={
-                            isCollapsed
-                              ? `Expand ${p.name}`
-                              : `Collapse ${p.name}`
-                          }
-                          title={
-                            isCollapsed
-                              ? `Expand ${p.name}`
-                              : `Collapse ${p.name}`
-                          }
-                          aria-expanded={!isCollapsed}
-                          onClick={() =>
-                            setCollapsedProjects((prev) => ({
-                              ...prev,
-                              [p.id]: !prev[p.id],
-                            }))
-                          }
-                        >
-                          {isCollapsed ? (
-                            <ChevronDown size={16} aria-hidden />
-                          ) : (
-                            <ChevronUp size={16} aria-hidden />
-                          )}
-                        </button>
-                        <div>
-                          <h2>{p.name}</h2>
-                          <p>
-                            {taskSummary} · {linkedOrgs.length} organisations ·{" "}
-                            {docs.length} docs
-                          </p>
-                        </div>
-                      </div>
-                      <div className="row-actions">
-                        <button
-                          className="subtle-button"
-                          onClick={() => edit("project", p.id)}
-                        >
-                          <Pencil size={14} />
-                          Rename
-                        </button>
-                        {historyButton("project", p.id)}
-                        <button
-                          className="subtle-button"
-                          onClick={() =>
-                            handleDelete("project", p.id, p.version)
-                          }
-                        >
-                          <Trash2 size={14} />
-                          Bin
-                        </button>
-                      </div>
-                    </div>
-                    {!isCollapsed && (
-                      <>
-                        {linkedOrgs.length > 0 && (
-                          <div
-                            className="project-pills"
-                            style={{ padding: "0 24px 12px" }}
-                          >
-                            {linkedOrgs.map((o) => (
-                              <span key={o.id}>{o.name}</span>
-                            ))}
-                          </div>
-                        )}
-                        <div
-                          style={{
-                            padding: "0 24px 12px",
-                            borderTop: linkedOrgs.length
-                              ? "1px solid var(--border)"
-                              : "0",
-                            display: "flex",
-                            gap: "8px",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {docs.map((d) => (
-                            <span key={d.id} className="badge">
-                              <FileText size={10} /> {d.friendlyName}
-                              <button
-                                type="button"
-                                onClick={() => setViewingDoc(d)}
-                                className="subtle-button"
-                                style={{ marginLeft: "4px" }}
-                                title="View in app"
-                              >
-                                <Eye size={10} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  downloadDocument(d.id, d.originalName)
-                                }
-                                className="subtle-button"
-                                title="Download"
-                              >
-                                <Download size={10} />
-                              </button>
-                            </span>
-                          ))}
-                          <button
-                            className="subtle-button"
-                            onClick={() => setDocUpload({ projectId: p.id })}
-                          >
-                            <FileText size={12} /> Attach doc
-                          </button>
-                          <button
-                            className="subtle-button"
-                            onClick={() => setLinkPicker({ projectId: p.id })}
-                          >
-                            <Link2 size={12} /> Link existing
-                          </button>
-                        </div>
-                        {data.taskTemplates.some(
-                          (i) => i.projectId === p.id,
-                        ) && (
-                          <ProjectChecklist
-                            projectId={p.id}
-                            items={data.taskTemplates.filter(
-                              (i) => i.projectId === p.id,
-                            )}
-                            tasks={allTasks}
-                            onMessage={setMessage}
-                            onError={setError}
-                          />
-                        )}
-                        {/*
-                          The journal: this project's interactions, documents
-                          and tasks in one list, most recent first. Every entry
-                          is a recorded fact and opens the record it names, so
-                          the panel tells the story of the project rather than
-                          only listing what is left to do. Hide Done governs the
-                          journal's task entries and stays exactly what it was -
-                          done tasks only, per panel, with the count on the
-                          button.
-                        */}
-                        <div style={{ borderTop: "1px solid var(--border)" }}>
-                          {allTasks.length > 0 && (
-                            <div
-                              style={{
-                                padding: "8px 24px",
-                                display: "flex",
-                                justifyContent: "flex-end",
-                              }}
-                            >
-                              <Button
-                                variant={isHideDone ? "default" : "outline"}
-                                aria-pressed={isHideDone}
-                                title={
-                                  isHideDone
-                                    ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
-                                    : "Hide done tasks from this project"
-                                }
-                                aria-label={
-                                  isHideDone
-                                    ? `${doneCount} done task${doneCount === 1 ? "" : "s"} hidden - activate to show them again`
-                                    : "Hide done tasks from this project"
-                                }
-                                onClick={() =>
-                                  setProjectShowDone((prev) => ({
-                                    ...prev,
-                                    [p.id]: !prev[p.id],
-                                  }))
-                                }
-                              >
-                                {isHideDone ? (
-                                  <Eye size={16} aria-hidden />
-                                ) : (
-                                  <EyeOff size={16} aria-hidden />
-                                )}
-                                {isHideDone
-                                  ? `Show Done (${doneCount})`
-                                  : "Hide Done"}
-                              </Button>
-                            </div>
-                          )}
-                          {journal.map((entry) =>
-                            entry.kind === "interaction"
-                              ? interactionCard(entry.record, {
-                                  embedded: true,
-                                })
-                              : entry.kind === "document"
-                                ? journalDocumentRow(entry.record)
-                                : taskRow(entry.record),
-                          )}
-                          {journal.length === 0 && allDoneHidden && (
-                            <p className="empty-state">
-                              Every task in this project is done, so the list is
-                              empty while done tasks are hidden.
-                            </p>
-                          )}
-                          {journal.length === 0 && !allDoneHidden && (
-                            <p className="empty-state">
-                              Nothing has happened in this project yet.
-                            </p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </section>
-                );
-              })}
+              {data.projects.map((p) => projectPanel(p))}
               {!data.projects.length && (
                 <section className="panel empty-state">
                   <BookOpen size={26} />
@@ -3042,6 +3035,30 @@ export function Workspace({
             </>
           )}
           {view === "backup" && <BackupPanel />}
+          {/*
+            The Probate page. Its own facts and allowances, then the Probate
+            project's panel - the same renderer the Projects view uses, so the
+            checklist, journal, notes and documents are one set of records seen
+            from a second direction rather than a second copy of them.
+          */}
+          {view === "probate" &&
+            (() => {
+              const probatePage = probateView(data);
+              return (
+                <ProbatePage
+                  view={probatePage}
+                  documentsInProject={
+                    getLinkedDocuments({ projectId: probateProjectId }).length
+                  }
+                  onEdit={() => setProbateEditor(true)}
+                  onHistory={(id) => setHistory({ kind: "probate_record", id })}
+                >
+                  {probatePage.project
+                    ? projectPanel(probatePage.project)
+                    : null}
+                </ProbatePage>
+              );
+            })()}
           {view === "finances" && (
             <>
               <div className="finance-grid">
@@ -3443,6 +3460,16 @@ export function Workspace({
             />
           ) : null;
         })()}
+      {probateEditor && (
+        <ProbateForm
+          record={data.probateRecord}
+          onClose={() => setProbateEditor(false)}
+          onSaved={(message) => {
+            setMessage(message);
+            setProbateEditor(false);
+          }}
+        />
+      )}
       {financeEditor && (
         <FinanceRecordForm
           editor={financeEditor}

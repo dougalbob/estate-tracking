@@ -6,6 +6,13 @@ import {
   type RsvpState,
 } from "@/lib/records/validation";
 import { formatPence } from "@/lib/finances/money";
+import { formatShare } from "@/lib/probate/allowances";
+import {
+  grantTypeLabels,
+  yesNoUnknownLabels,
+  type GrantType,
+  type YesNoUnknown,
+} from "@/lib/records/validation";
 const captions: Record<string, string> = {
   name: "Organisation",
   mainContact: "Main contact",
@@ -60,7 +67,39 @@ const captions: Record<string, string> = {
   voidReason: "Void reason",
   financeRecordId: "Financial record",
   recordId: "Financial record",
+  // The probate record. Its captions are spelled out, because the history is
+  // where someone checks what a claim was based on months later.
+  deceasedName: "Person who died",
+  dateOfDeath: "Date of death",
+  grantType: "Grant",
+  grantAppliedOn: "Grant applied for",
+  grantIssuedOn: "Grant issued",
+  registry: "Registry",
+  grantReference: "Grant reference",
+  lateSpouseName: "Late spouse or civil partner",
+  lateSpouseDateOfDeath: "Their date of death",
+  nrbUnusedBp: "Nil rate band unused",
+  rnrbUnusedBp: "Residence band unused",
+  netEstateAtDeathPence: "Net estate at the date of death",
+  qualifyingResidenceValuePence: "Home left to direct descendants",
+  residenceToDirectDescendants: "Home to direct descendants",
+  downsizingAddition: "Downsizing addition",
+  iht400Needed: "IHT400 needed",
+  iht400SentOn: "IHT400 sent",
+  nrbClaimSentOn: "Nil rate band claim sent",
+  rnrbClaimSentOn: "Residence band claim sent",
+  claimReference: "HMRC reference",
+  claimedNrbPence: "Nil rate band claimed",
+  claimedRnrbPence: "Residence band claimed",
+  rates: "Figures checked on",
 };
+
+/** A day that is only ever a day, with no time to shift it across midnight. */
+const dayText = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
 export function RecordSummary({
   record,
   data,

@@ -6,12 +6,12 @@
 
 |                                    |                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Live release                       | **v0.2.22** — the Estate finances page is now an asset register: four tabs over a sortable grid with a totals footer, a derived status per row, and a row that opens in place to its money movements, notes and documents. Adds notes filed against an asset (migration `0012`). Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check and a backup download remain to be done after publication |
-| Earlier releases                   | v0.2.0 – v0.2.21, published 16–20 September 2026; v0.2.22 published 2 November 2026                                                                                                                                                                                                                                                                                                                                      |
+| Live release                       | **v0.2.23** — a new **Probate** page: the date of death, the grant, the two Inheritance Tax allowances worked out from figures the users confirm (including a share carried over from a late spouse), the claim record, and the probate project's own panel below it. Adds the `probate_records` table (migration `0013`). v0.2.22 remains the last release whose Unraid update was confirmed |
+| Earlier releases                   | v0.2.0 – v0.2.21, published 16–20 September 2026; v0.2.22 and v0.2.23 published 2 November 2026                                                                                                                                                                                                                                                                                                                                      |
 | Data in use                        | **Real estate records and real documents, entered by both users.** The installation runs on Unraid behind Cloudflare Access                                                                                                                                                                                                                                                                                              |
 | Verified in production             | Sign-in for both users; document upload; **encrypted backup created and restored, with the records confirmed afterwards**; the app installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)                                                                                                     |
 | Verified by hand, not in a browser | The v0.2.5, v0.2.6, v0.2.7, v0.2.8, v0.2.9, v0.2.10, v0.2.11, v0.2.12, v0.2.13, v0.2.14, v0.2.15, v0.2.16, v0.2.17, v0.2.18, v0.2.19 and v0.2.20 changes were checked by rendering the real components to markup and by HTTP against the development server; the sandbox has no browser, so no click-through test has ever run in one                                                                                    |
-| Automated gates                    | 206 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit, and `npm audit --omit=dev` reports 0 findings                                                                                                                                                                                                                                                                 |
+| Automated gates                    | 218 unit/integration tests, TypeScript, Prettier and the production build all pass on the released commit, and `npm audit --omit=dev` reports 0 findings                                                                                                                                                                                                                                                                 |
 | Still outstanding                  | A full accessibility and security review, and four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                                                                                                                   |
 | How to read the rest of this file  | Dated checkpoints and the original proposal are kept as a written record. Where the text below says something is planned or unverified, this table is the current position                                                                                                                                                                                                                                               |
 
@@ -27,7 +27,7 @@ The goal is a polished release covering contacts, interactions, tasks, funeral a
 
 The app serves **one estate in England and exactly two equal users/beneficiaries**. Everything is shared. There is no public registration, additional role system, private-to-one-user data, or multi-estate support.
 
-It runs on an Unraid server, accessed through Cloudflare Zero Trust with Google authentication. It organises user-entered facts and confirmed deadlines; it does not provide legal advice, calculate tax, determine debt priority, calculate inheritance entitlement, or recommend safe distributions.
+It runs on an Unraid server, accessed through Cloudflare Zero Trust with Google authentication. It organises user-entered facts and confirmed deadlines; it does not provide legal advice, calculate an Inheritance Tax bill, decide whether an account or a claim is needed, determine debt priority, calculate inheritance entitlement, or recommend safe distributions. It can work out the allowance that figures you confirm would produce, and labels that as a worksheet to check with HMRC.
 
 ## Design and navigation
 
@@ -42,6 +42,7 @@ Every screen should reduce cognitive load rather than create pressure.
 - Home prioritises due tasks, follow-ups, and approaching confirmed deadlines, followed by the other user's recent activity.
 - Clear home-screen access to contacts, all tasks, and the document list.
 - The **Calendar** tab sits in the sidebar between Projects and Estate finances. It colour codes tasks by project, and the colour is never the only cue: each task names its project in words, a task with no project has its own neutral tone and a dashed edge, and each day counts its tasks.
+- The **Probate** tab sits in the sidebar between Calendar and Estate finances. It holds the facts the rest of the app has nowhere else to keep — the date of death, the grant, and the figures behind the two Inheritance Tax allowances — and, underneath them, the Probate project's own panel, rendered by the same code as Projects rather than a copy of it. A page that cannot save until every box is filled would be a page nobody fills in, so everything except the date is optional and an unrecorded figure reads **Not recorded yet** rather than a zero.
 - The **Family & friends** tab sits between Estate finances and Checklists. Desktop view is a dense, keyboard-driven spreadsheet grid for rapid data entry without dialogs; mobile view is a focused call sheet with tap-to-dial links and a Contacted tick for evening phone calls.
 - Global quick-note action available from every main screen.
 
@@ -188,6 +189,82 @@ The viewer's **Download** button tries several methods in order (a plain downloa
 3. If the document opens instead of saving, it is being viewed inline — images and PDFs do that by design; use Direct link or the Download button for a copy.
 
 Every refusal an upload can produce comes from one shared list of plain sentences — no file chosen, too large, unsupported type, a disk that is full, a file the server could not save — so a failure says what happened and what to try next. The technical detail for any of the above is in the browser's console and the container's `[upload]`/`[upload:api]` log lines described in the upload section.
+
+## Probate
+
+The legal story and the paperwork around it, kept apart from the estate's money. Its own tab in the
+sidebar, between Calendar and Estate finances.
+
+**Why it exists.** The app already had a Probate project — a checklist, a journal, notes, tasks and
+documents — but nowhere to record the facts everything else hangs from. There was no date of death
+anywhere in the database, so no probate deadline could be shown, and "values as at the date of death"
+was only ever prose in a checklist line. This page is those facts.
+
+Implemented behaviour:
+
+- **The death and the grant.** The person who died, the date of death, the kind of grant (probate,
+  letters of administration, no grant needed, or not known yet), the dates applied for and issued,
+  the registry and the reference. A late spouse or civil partner is recorded with their own date of
+  death. Everything is optional except the grant type, and anything missing reads **Not recorded yet**
+  — never a blank that could be mistaken for a zero.
+- **The dates that follow.** Two windows counted from the date of death: the Inheritance Tax account
+  (IHT400), at 12 months, and a claim to transfer a band, at 2 years — the forms put it as 24 months
+  after the end of the month of the death. Each carries a plain sentence saying what it is for, and a
+  quiet **Passed** badge once the date has gone by. Nothing counts down, and nothing turns red.
+- **The two allowances, worked out and nowhere stored.** The nil rate band (£325,000) and the
+  residence nil rate band (£175,000), each raised by the unused *percentage* carried across from a
+  late spouse — a percentage, not an amount, so a death in 2010 brings 100% of today's figure rather
+  than a 2010 one, capped in total at 100%. The residence band is then reduced by the £2 million
+  taper (£1 for every £2 over — the threshold is **not** doubled for a couple) and capped at the value
+  of the home, or share of it, left to direct descendants. A home worth less than the combined band
+  means the rest of the band is not available; it is not carried across to the savings. No qualifying
+  home and no downsizing addition means no residence band, and the page says so in a sentence rather
+  than showing a silent zero. The arithmetic lives in `src/lib/probate/allowances.ts` and is derived
+  on every read, so a figure on the page can never disagree with the facts behind it.
+- **It is an allowance, not a tax calculation.** There is no tax figure anywhere, no rate of tax, and
+  no decision that an account or a claim is needed; the result type has no field for one, so a future
+  screen cannot add one by accident without changing the type. The worksheet is labelled as a
+  worksheet and points at HMRC and the GOV.UK calculator. The probate checklist keeps its own rule —
+  no figures, no thresholds, no rate in the wording — and its unit test still enforces it; the figures
+  live on this page, not in the editable list, so the list cannot go stale when a threshold changes.
+- **The figures carry the date they were checked**, and cite the GOV.UK pages they came from. After a
+  year the page adds a quiet line saying they may have changed. One test asserts the figures and the
+  date, so an update that changes the numbers without changing the date fails.
+- **Not recorded is not zero.** Every line has three possible states — known, not applicable, and
+  still to be recorded — and the page lists what is still to confirm in plain sentences. When
+  something is missing the total is withheld and shown as **At least £X**, never as a confident number
+  built on blanks.
+- **The claim is recorded as it happened**: whether an IHT400 is needed, the dates sent, the amounts
+  claimed and the HMRC reference. A claim is not a fact until it has been sent, and "no claim needed"
+  is a recordable outcome so a finished estate reads as finished rather than as a page with a gap.
+- **The probate project, underneath.** The same panel as the Projects view — its organisations, its
+  documents, its starter checklist, Hide Done and its journal — rendered by one shared function rather
+  than a second copy of the markup. The Projects view was checked to render byte-identical markup
+  before and after that extraction. One set of notes, tasks and documents, reachable from both places.
+  Binning the project never touches the facts: the page says the project is in the bin and shows them
+  anyway.
+- **Corrections keep their history.** Saving sends the version the page was showing, so a stale edit is
+  refused with a plain sentence and the newer record refreshed rather than overwritten. Each save
+  writes a revision, which the existing History dialog reads; the before and after values show the
+  figures as they were, including the published rates in force at the time.
+- **The store refuses facts that would make the page lie**: a grant applied for or issued before the
+  death, an account or claim sent before the death, a late spouse who died after the person whose
+  estate this is, a transferred share with no earlier death to measure it from, and a grant issued
+  where no grant was needed.
+
+Deliberately not done: no tax bill, no rate of tax, no decision on whether an IHT400 or a claim is
+needed, no debt priority, no entitlement calculation, no automatic task for either deadline (the
+checklist offers, the user chooses), and no derivation of the estate value from the live asset
+register — those are today's values, and HMRC asks for the values at the date of death.
+
+For a fictional probate record in the demo database — a £250,000 house, which makes the residence cap
+visible rather than hiding it behind a round £1m:
+
+```bash
+DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-probate.ts
+```
+
+The script refuses to run against a database path that does not contain `demo`.
 
 ## Estate finances
 
@@ -427,6 +504,7 @@ DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-events.ts    # option
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-finances.ts   # optional
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-calendar.ts   # optional
 DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-guests.ts     # optional
+DATABASE_PATH=./data/demo.sqlite npx tsx scripts/seed-demo-probate.ts   # optional
 DEV_AUTH_ENABLED=true NEXT_TELEMETRY_DISABLED=1 npm run dev
 ```
 

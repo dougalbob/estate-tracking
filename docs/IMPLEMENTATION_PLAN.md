@@ -6,13 +6,13 @@ Read this before the dated sections below. They are kept as a record, and some o
 
 | Item                   | Position today                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Live release           | **v0.2.22** — the Estate finances page became an asset register (tabs, sortable grid, totals footer, derived status, inline drill-down) and notes can be filed against an asset (migration `0012`). Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check, a backup download and a restore remain to be done after publication |
+| Live release           | **v0.2.23** — a dedicated **Probate** page: the death and the grant, the two Inheritance Tax allowances worked out from confirmed figures (including a percentage carried over from a late spouse), the claim record, and the probate project's own panel below it (migration `0013`). Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check, a backup download and a restore remain to be done after publication |
 | Build source of truth  | `.github/workflows/publish.yml`, triggered by pushing a `v*` tag. Only a tag publishes an image                                                                                                                                                                                                                                                        |
 | Data in use            | **Real estate records and real documents.** The installation is live on Unraid behind Cloudflare Access, and both users work in it                                                                                                                                                                                                                     |
 | Verified in production | Both users signing in; document upload; **an encrypted backup created and restored, with the records confirmed afterwards**; the PWA installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)                                 |
-| Automated gates        | **206 unit/integration tests**, `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass on the released commit                                                                                                                                                                                               |
+| Automated gates        | **218 unit/integration tests**, `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass on the released commit                                                                                                                                                                                               |
 | Still outstanding      | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                                                     |
-| Version numbering      | **v0.2.22** is this release; the next release after it has no number or content yet. Nothing is planned beyond the carried-forward items at the end of this document. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                          |
+| Version numbering      | **v0.2.23** is this release; the next release after it has no number or content yet. Nothing is planned beyond the carried-forward items at the end of this document. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                          |
 
 ### Sandbox facts a new session must know
 
@@ -1084,6 +1084,77 @@ After the tag publishes the image, Force Update on Unraid and confirm:
 4. Adding a note to a real asset saves it, survives a page reload, and appears in the Event log; **Unfiled notes** does not list it.
 5. Create an encrypted backup and confirm the filename reads `estate-backup-v0.2.22-YYYY-MM-DD-HHmm.estate-backup`. Restoring it is worth doing once into the live installation's usual window, as every earlier release did.
 6. Migration `0012` runs at container start; if it does not, the page shows a clear error rather than pretending, because the snapshot selects the new column.
+
+## v0.2.23 checkpoint — a Probate page, and the two allowances (2 November 2026)
+
+Issue #31 asked for the nil rate band and the residence nil rate band to be recorded, including a
+share transferred from a late spouse, on a page of its own rather than among the estate's money. It
+was discussed before any code was written; the agreed design is in
+`docs/PROPOSAL_probate_page_and_allowances.md` (618 lines, including the GOV.UK research and the
+verbatim quotes it rests on). Four decisions settled the shape: a full tab that also carries the
+probate project's panel; a worksheet rather than a tax calculation; one release; and prompts that
+expect percentages to be confirmed from the 2010 papers.
+
+**What shipped.**
+
+- `probate_records` (migration `0013`), one row with the fixed id `estate`: the death, the grant, the
+  late spouse, the confirmed figures, the claim record, and the published rates stamped on the row when
+  it was saved. Percentages are stored as basis points, so a 37.5% transfer from an IHT402 is exact and
+  every stored number stays an integer.
+- `src/lib/probate/rates.ts` — £325,000, £175,000, £2,000,000 and the £1-per-£2 taper, with the date
+  they were checked (2 November 2026) and the GOV.UK pages they came from.
+- `src/lib/probate/allowances.ts` — pure arithmetic: band plus transferred share (capped at 100%),
+  taper, cap at the home passing to direct descendants, and an honest three-state line — known, not
+  applicable, or still to be recorded — for every figure. The result type has **no tax field**.
+- `src/lib/probate/store.ts`, `saveProbateRecord` in `src/app/actions.ts`, and revision history through
+  the existing dialog. The store refuses a grant before the death, a claim before the death, a late
+  spouse who died after the person whose estate this is, a transferred share with no earlier death to
+  measure it from, and a grant issued where the grant type says none was needed.
+- `src/components/probate.tsx` and `probate-form.tsx`; **12 tests** in `tests/probate.test.ts`; a demo
+  seed; the section in the README.
+- The project panel was extracted from `workspace.tsx` into `projectPanel(p)` so the Probate page and
+  the Projects view render one set of markup. Checked by rendering the Projects view before and after
+  the extraction against the demo database: the `<main>` element is byte-identical (162,146 bytes).
+- The probate checklist keeps its no-figures rule; `tests/checklist.test.ts` still passes unchanged.
+
+**Deliberate refusals, restated because they will be asked again.** No tax figure and no rate of tax;
+no decision whether an IHT400 or a claim is needed; no debt priority; no entitlement calculation; no
+automatic task from either window; and no deriving the estate value from the live register — that is
+today's money, and HMRC asks for the values at the date of death. The page says *on these figures the
+allowance would be*, with the checked-on date beside it.
+
+**What has not been done.** There is still no browser in the sandbox, so the page and its dialog were
+rendered to static markup and read as text, and `curl` against the development server returned 200
+with the Probate view present. No click-through has been performed. Deployment steps are at the end of
+this checkpoint.
+
+### Verification
+
+- `npm run format:check`, `npm run typecheck`, **218 unit/integration tests**,
+  `NEXT_TELEMETRY_DISABLED=1 npm run build` and `npm audit --omit=dev` all pass. The build retains its
+  four known filesystem-tracing warnings.
+- Worked figures, all in the tests: a £285,000 estate with a £250,000 house and 100% of both bands
+  carried over gives £650,000 + £250,000 = **£900,000**, because the residence band is capped at the
+  house. At £2.1m the combined residence band is £300,000; at £2.35m it is £175,000; at £2.7m it is nil.
+  A blank figure withholds the total and shows **At least £X**, never a confident number.
+
+### Deployment acceptance still required
+
+After the tag publishes the image, Force Update on Unraid and confirm:
+
+1. The sidebar reads **v0.2.23** on a PC and on a phone.
+2. **Probate** appears between Calendar and Estate finances and opens on the facts, or on **Nothing
+   recorded yet** for a database that has no record.
+3. Add the record with the real figures from the probate papers, and check the allowance against the
+   GOV.UK calculator before relying on it. The page states the date its figures were checked.
+4. The probate project's panel appears below the facts with its live checklist, notes, tasks and
+   documents — the same records as the Projects view.
+5. Save twice from one screen after a refresh in the other, and confirm the stale save is refused with
+   a sentence rather than overwriting; History shows both saves.
+6. Create an encrypted backup and confirm the filename reads
+   `estate-backup-v0.2.23-YYYY-MM-DD-HHmm.estate-backup`.
+7. Migration `0013` runs at container start; if it does not, the page shows a clear error rather than
+   pretending, because the snapshot selects the new table.
 
 ## Carried forward for a future session
 

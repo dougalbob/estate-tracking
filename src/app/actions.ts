@@ -123,6 +123,17 @@ export async function setFinanceVoid(input: unknown) {
   );
 }
 
+/**
+ * The probate record: the death, the grant, and the figures behind the two
+ * allowances. One row, one estate; editing is the only path once it exists.
+ */
+export async function saveProbateRecord(input: unknown) {
+  return withStore(
+    "Unable to save the probate record. Check your access and try again. Your draft has been kept.",
+    ({ store, actor }) => ({ id: store.saveProbateRecord(input, actor) }),
+  );
+}
+
 /** Turns selected checklist suggestions into ordinary, undated tasks. */
 export async function applyTemplate(input: unknown) {
   return withStore(

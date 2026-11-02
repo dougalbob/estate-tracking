@@ -526,3 +526,69 @@ export const uploadAcceptAttribute = [
   ...allowedFileExtensions,
 ].join(",");
 export const maxDocumentSizeBytes = 20 * 1024 * 1024; // 20 MB
+
+/** Which kind of grant was issued, or that none was needed. */
+export const grantTypes = [
+  "probate",
+  "letters_of_administration",
+  "not_needed",
+  "not_known",
+] as const;
+export const grantTypeLabels: Record<(typeof grantTypes)[number], string> = {
+  probate: "Grant of probate",
+  letters_of_administration: "Letters of administration",
+  not_needed: "No grant needed",
+  not_known: "Not known yet",
+};
+export const yesNoUnknown = ["yes", "no", "not_known"] as const;
+export const yesNoUnknownLabels: Record<(typeof yesNoUnknown)[number], string> =
+  {
+    yes: "Yes",
+    no: "No",
+    not_known: "Not known yet",
+  };
+/**
+ * A percentage typed as basis points on the wire (10000 = 100%), which keeps the
+ * stored value an integer like every amount of money. Blank means "not recorded",
+ * which is different from 0% and must never be read as it.
+ */
+const optionalShare = z
+  .union([z.number().int().min(0).max(10_000), z.literal(""), z.null()])
+  .transform((v) => (v === "" || v === null ? null : v))
+  .default(null);
+/**
+ * The probate facts. Everything is optional except the grant type: a page that
+ * cannot be saved until every box is filled would be a page nobody fills in.
+ * The cross-field rules that matter live in the store, where they can be written
+ * as whole sentences naming what is wrong.
+ */
+const probateText = optionalText.default(null);
+export const probateRecordInput = z.object({
+  ...common,
+  deceasedName: probateText,
+  dateOfDeath: optionalDate,
+  grantType: z.enum(grantTypes).default("not_known"),
+  grantAppliedOn: optionalDate,
+  grantIssuedOn: optionalDate,
+  registry: probateText,
+  grantReference: probateText,
+  lateSpouseName: probateText,
+  lateSpouseDateOfDeath: optionalDate,
+  nrbUnusedBp: optionalShare,
+  rnrbUnusedBp: optionalShare,
+  /** Pounds as typed by a person; blank means the figure is not recorded yet. */
+  netEstateAtDeath: z.string().trim().max(40).default(""),
+  qualifyingResidenceValue: z.string().trim().max(40).default(""),
+  residenceToDirectDescendants: z.enum(yesNoUnknown).default("not_known"),
+  downsizingAddition: z.enum(yesNoUnknown).default("not_known"),
+  iht400Needed: z.enum(yesNoUnknown).default("not_known"),
+  iht400SentOn: optionalDate,
+  nrbClaimSentOn: optionalDate,
+  rnrbClaimSentOn: optionalDate,
+  claimReference: probateText,
+  claimedNrb: z.string().trim().max(40).default(""),
+  claimedRnrb: z.string().trim().max(40).default(""),
+});
+export type ProbateRecordInput = z.input<typeof probateRecordInput>;
+export type GrantType = (typeof grantTypes)[number];
+export type YesNoUnknown = (typeof yesNoUnknown)[number];
