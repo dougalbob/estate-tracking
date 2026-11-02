@@ -58,6 +58,20 @@ export const interactions = sqliteTable("interactions", {
    * what happened, and the hop from the task row simply finds nothing.
    */
   sourceTaskId: text("source_task_id"),
+  /**
+   * The financial record this note is about, when it is about one: what the
+   * bank said when we asked for the balance, why the sale fell through, what
+   * the jeweller thought the rings were worth. Notes reuse this table rather
+   * than a `finance_notes` table of their own, so an asset's notes arrive with
+   * the author, the history, the documents and the follow-up tasks every other
+   * note already has.
+   *
+   * Deliberately not a foreign key, for the same reason `source_task_id` is
+   * not: a note records something that happened, and a financial record going
+   * to the bin must never take the note with it. Set when the note is created
+   * and never moved by an edit, exactly like the source-task stamp.
+   */
+  financeRecordId: text("finance_record_id"),
   version: integer("version").notNull().default(1),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),

@@ -193,6 +193,21 @@ if (existing) {
     },
     users[0],
   );
+  // A note filed against an asset, so the register's notes block is visible in
+  // the demo. Notes are ordinary interactions with a finance link.
+  store.saveInteraction(
+    {
+      organisationId: null,
+      title: "",
+      detail:
+        "Fictional: the agent said the roof will need doing before a sale, and suggested getting two quotes.",
+      kind: "note",
+      occurredAt: "2026-09-14T09:30:00.000Z",
+      financeRecordId: house,
+      followUps: [],
+    },
+    users[1],
+  );
   store.saveFinanceRecord(
     {
       kind: "liability",

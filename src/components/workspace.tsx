@@ -2295,9 +2295,11 @@ export function Workspace({
           {view === "notes" && (
             <>
               {data.interactions
-                .filter((n) => !n.organisationId)
+                .filter((n) => !n.organisationId && !n.financeRecordId)
                 .map(noteSurfaceCard)}
-              {!data.interactions.some((n) => !n.organisationId) && (
+              {!data.interactions.some(
+                (n) => !n.organisationId && !n.financeRecordId,
+              ) && (
                 <section className="panel empty-state">
                   <h2>A place for thoughts before they’re organised</h2>
                   <p>
@@ -3194,6 +3196,7 @@ export function Workspace({
                 movements={data.financeMovements}
                 documents={data.documents}
                 documentLinks={data.documentLinks}
+                notes={data.interactions}
                 nameFor={names}
                 orgName={orgName}
                 projectName={projectName}
@@ -3213,6 +3216,7 @@ export function Workspace({
                   handleDelete("finance_record", record.id, record.version)
                 }
                 onHistory={(id) => setHistory({ kind: "finance_record", id })}
+                onOpenNote={(id) => setEditor({ kind: "interaction", id })}
                 onViewDocument={setViewingDoc}
                 onUpload={(recordId) =>
                   setDocUpload({ financeRecordId: recordId })

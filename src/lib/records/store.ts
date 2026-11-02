@@ -284,6 +284,23 @@ export function recordStore(
         (!sourceTask || sourceTask.deletedAt)
       )
         throw new RecordError("The source task is no longer available");
+      // A note can be about a financial record. Checked rather than assumed, so
+      // a screen left open cannot file a note against something that has since
+      // gone to the bin.
+      if (
+        input.financeRecordId &&
+        !db
+          .select()
+          .from(financeRecords)
+          .where(
+            and(
+              eq(financeRecords.id, input.financeRecordId),
+              isNull(financeRecords.deletedAt),
+            ),
+          )
+          .get()
+      )
+        throw new RecordError("The financial record is no longer available");
       if (
         before &&
         before.organisationId !== input.organisationId &&
@@ -303,6 +320,7 @@ export function recordStore(
         version,
         followUps,
         sourceTaskId,
+        financeRecordId,
         ...values
       } = input;
       const id = suppliedId || randomUUID(),
@@ -312,6 +330,10 @@ export function recordStore(
         title: values.title || "Quick note",
         id,
         sourceTaskId: before ? before.sourceTaskId : sourceTaskId,
+        // Fixed when the note is created, exactly like the source task: an edit
+        // can neither set it nor move it, so correcting a typo cannot unfil
+        // a note from its asset.
+        financeRecordId: before ? before.financeRecordId : financeRecordId,
         version: (before?.version ?? 0) + 1,
         createdBy: before?.createdBy ?? actor,
         createdAt: before?.createdAt ?? now,

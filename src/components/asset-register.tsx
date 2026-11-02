@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ChevronDown,
@@ -15,9 +16,11 @@ import {
   Pencil,
   Plus,
   PoundSterling,
+  StickyNote,
   Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { saveRecord } from "@/app/actions";
 import type { Snapshot } from "@/lib/records/store";
 import type { FinanceRecord } from "@/lib/finances/summary";
 import { formatPence } from "@/lib/finances/money";
@@ -38,6 +41,14 @@ import {
   label,
   movementKindFor,
 } from "@/lib/records/validation";
+
+/** A note carries a time of day, so it is shown with one. */
+const formatDateTime = (value: string | Date) =>
+  new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Europe/London",
+  }).format(new Date(value));
 
 const formatDate = (value: string | Date) =>
   new Intl.DateTimeFormat("en-GB", {
@@ -118,6 +129,7 @@ export function AssetRegister({
   movements,
   documents,
   documentLinks,
+  notes,
   nameFor,
   orgName,
   projectName,
@@ -127,6 +139,7 @@ export function AssetRegister({
   onVoid,
   onBin,
   onHistory,
+  onOpenNote,
   onViewDocument,
   onUpload,
   onLinkExisting,
@@ -135,6 +148,8 @@ export function AssetRegister({
   movements: Snapshot["financeMovements"];
   documents: Snapshot["documents"];
   documentLinks: Snapshot["documentLinks"];
+  /** Every live note. Only the ones about a record are shown against it. */
+  notes: Snapshot["interactions"];
   nameFor: (email: string | null) => string;
   orgName: (id: string | null) => string;
   projectName: (id: string | null) => string | null;
@@ -144,6 +159,7 @@ export function AssetRegister({
   onVoid: (record: FinanceRecord) => void;
   onBin: (record: FinanceRecord) => void;
   onHistory: (id: string) => void;
+  onOpenNote: (id: string) => void;
   onViewDocument: (doc: Snapshot["documents"][number]) => void;
   onUpload: (recordId: string) => void;
   onLinkExisting: (recordId: string) => void;
@@ -157,6 +173,14 @@ export function AssetRegister({
     key: "value",
     direction: -1,
   });
+  // One draft per record, so a half-typed note survives opening another row.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [noteBusy, setNoteBusy] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<{
+    id: string;
+    text: string;
+  } | null>(null);
+  const router = useRouter();
 
   const tab = financeTab(tabId);
   const columns = registerColumns[tabId];
@@ -167,6 +191,16 @@ export function AssetRegister({
     () => registerRows(records, movements),
     [records, movements],
   );
+
+  /**
+   * The notes filed against one record, most recent first. A note keeps its
+   * link even after the record goes to the bin, so this stays honest about what
+   * was written while the record was live.
+   */
+  const notesFor = (recordId: string) =>
+    notes
+      .filter((note) => note.financeRecordId === recordId)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
 
   const documentsFor = (recordId: string) =>
     documentLinks
@@ -201,6 +235,7 @@ export function AssetRegister({
         row.record.organisationId ? orgName(row.record.organisationId) : "",
         row.record.projectId ? (projectName(row.record.projectId) ?? "") : "",
         row.record.voidReason ?? "",
+        ...notesFor(row.record.id).map((n) => n.detail),
         ...documentsFor(row.record.id).map((d) => d.doc.friendlyName),
         ...row.movements.map((m) => m.detail),
       ];
@@ -220,6 +255,7 @@ export function AssetRegister({
     movements,
     documents,
     documentLinks,
+    notes,
     orgName,
     projectName,
   ]);
@@ -283,7 +319,45 @@ export function AssetRegister({
   function detailPanel(row: RegisterRow) {
     const record = row.record;
     const docs = documentsFor(record.id);
+    const recordNotes = notesFor(record.id);
     const verb = movementVerb(record);
+
+    /**
+     * Saves a note against this record. It is an ordinary interaction: the
+     * author, the history, the documents and any follow-up tasks all come for
+     * free, and the note appears in the Event log like every other note. What
+     * it does not do is inherit the record's contact or project — filing a note
+     * against an asset is the only link the user asked for.
+     */
+    async function addNote() {
+      const detail = (drafts[record.id] ?? "").trim();
+      if (!detail) {
+        setNoteError({
+          id: record.id,
+          text: "Write the note first, then add it.",
+        });
+        return;
+      }
+      setNoteBusy(record.id);
+      setNoteError(null);
+      const result = await saveRecord("interaction", {
+        kind: "note",
+        title: "",
+        detail,
+        organisationId: null,
+        projectId: null,
+        occurredAt: new Date().toISOString(),
+        financeRecordId: record.id,
+        followUps: [],
+      });
+      setNoteBusy(null);
+      if (!result.ok) {
+        setNoteError({ id: record.id, text: result.error });
+        return;
+      }
+      setDrafts((current) => ({ ...current, [record.id]: "" }));
+      router.refresh();
+    }
     return (
       <div className="register-detail-body">
         <div className="register-detail-main">
@@ -338,6 +412,90 @@ export function AssetRegister({
                         : "No movements recorded for this kind of record."}
               </p>
             )}
+          </div>
+
+          <div className="register-block">
+            <div className="register-block-heading">
+              <h3>
+                Notes
+                {recordNotes.length > 0 && (
+                  <span className="doc-count">
+                    <StickyNote size={11} aria-hidden />
+                    {recordNotes.length}
+                  </span>
+                )}
+              </h3>
+            </div>
+            {recordNotes.length ? (
+              <ul className="register-note-list">
+                {recordNotes.map((note) => (
+                  <li key={note.id}>
+                    <div className="register-note-head">
+                      <span className="register-note-when">
+                        {formatDateTime(note.occurredAt)}
+                      </span>
+                      <span className="register-note-who">
+                        {nameFor(note.createdBy)}
+                      </span>
+                      <button
+                        className="subtle-button"
+                        onClick={() => onOpenNote(note.id)}
+                      >
+                        <Pencil size={13} />
+                        Edit
+                      </button>
+                    </div>
+                    {note.title && note.title !== "Quick note" && (
+                      <strong className="register-note-title">
+                        {note.title}
+                      </strong>
+                    )}
+                    <p className="register-note-text">{note.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="register-empty-line">
+                No notes yet. Anything you were told about this one — a balance,
+                a valuation, why a sale fell through — is worth a line here.
+              </p>
+            )}
+            <div className="register-note-compose">
+              <label>
+                <span className="sr-only">Add a note about {record.title}</span>
+                <textarea
+                  rows={2}
+                  placeholder="Add a note about this one…"
+                  value={drafts[record.id] ?? ""}
+                  onChange={(e) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [record.id]: e.target.value,
+                    }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                      void addNote();
+                  }}
+                />
+              </label>
+              <div className="register-note-actions">
+                <Button
+                  type="button"
+                  onClick={() => void addNote()}
+                  disabled={noteBusy === record.id}
+                >
+                  {noteBusy === record.id ? "Saving…" : "Add note"}
+                </Button>
+                <small>
+                  Ctrl or ⌘ and Enter also saves. Notes keep their author and
+                  their place in the history.
+                </small>
+              </div>
+              {noteError?.id === record.id && (
+                <p className="form-error">{noteError.text}</p>
+              )}
+            </div>
           </div>
 
           <div className="register-block">
@@ -416,7 +574,7 @@ export function AssetRegister({
           {record.detail && (
             <div className="register-block">
               <div className="register-block-heading">
-                <h3>Notes</h3>
+                <h3>Description</h3>
               </div>
               <p className="register-detail-text">{record.detail}</p>
             </div>
@@ -620,6 +778,9 @@ export function AssetRegister({
                 <th scope="col" className="register-col-docs">
                   Files
                 </th>
+                <th scope="col" className="register-col-notes">
+                  Notes
+                </th>
                 <th scope="col" className="register-col-actions">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -745,6 +906,24 @@ export function AssetRegister({
                           </span>
                         )}
                       </td>
+                      <td className="register-col-notes">
+                        {notesFor(record.id).length ? (
+                          <span
+                            className="doc-count"
+                            title={`${notesFor(record.id).length} note${notesFor(record.id).length > 1 ? "s" : ""} filed against this record`}
+                          >
+                            <StickyNote size={11} aria-hidden />
+                            {notesFor(record.id).length}
+                          </span>
+                        ) : (
+                          <span
+                            className="register-unknown"
+                            title="No notes filed against this record yet"
+                          >
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td
                         className="register-col-actions"
                         onClick={(e) => e.stopPropagation()}
@@ -763,7 +942,7 @@ export function AssetRegister({
                         className="register-detail-row"
                         id={`register-detail-${record.id}`}
                       >
-                        <td colSpan={8}>{detailPanel(row)}</td>
+                        <td colSpan={9}>{detailPanel(row)}</td>
                       </tr>
                     )}
                   </Fragment>
@@ -792,6 +971,7 @@ export function AssetRegister({
                   {tabId === "cash" ? "—" : formatPence(totals.remainingPence)}
                 </td>
                 <td className="register-col-docs" />
+                <td className="register-col-notes" />
                 <td className="register-col-actions" />
               </tr>
             </tfoot>

@@ -2637,6 +2637,76 @@ summary {
   gap: 6px;
   flex-shrink: 0;
 }
+.register-col-notes {
+  width: 66px;
+  text-align: center !important;
+}
+.register-note-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.register-note-list li {
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.register-note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+.register-note-when {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.register-note-who {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.register-note-head .subtle-button {
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.register-note-title {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.register-note-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.register-note-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.register-note-compose textarea {
+  font-size: 12px;
+  min-height: 56px;
+}
+.register-note-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.register-note-actions small {
+  font-size: 11px;
+  color: var(--muted);
+}
 .register-detail-text {
   margin: 0;
   font-size: 12px;
