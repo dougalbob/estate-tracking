@@ -568,8 +568,18 @@ test("restoring an older backup missing households and gatherings runs migration
     sqlite.exec(
       "CREATE TABLE IF NOT EXISTS `__drizzle_migrations` (`id` integer PRIMARY KEY AUTOINCREMENT, `hash` text NOT NULL, `created_at` numeric)",
     );
-    for (const entry of journal.entries) {
-      if (entry.tag === "0011_guest_list") continue;
+    // Stop at 0010: this is a database as it was before the guest list. The
+    // journal is truncated rather than having one entry skipped, because
+    // drizzle decides what to apply by timestamp — leaving a later migration in
+    // place would make 0011 look older than something already applied, and the
+    // restore would never create the missing tables.
+    const beforeGuests = journal.entries.slice(
+      0,
+      journal.entries.findIndex(
+        (entry: { tag: string }) => entry.tag === "0011_guest_list",
+      ),
+    );
+    for (const entry of beforeGuests) {
       const sql = await import("node:fs").then((fs) =>
         fs.readFileSync(`./drizzle/${entry.tag}.sql`, "utf8"),
       );

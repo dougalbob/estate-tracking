@@ -196,6 +196,12 @@ export const interactionInput = z
      * saved before v0.2.18 still validates.
      */
     sourceTaskId: optionalText.default(null),
+    /**
+     * The financial record this note is about, or null for an ordinary note.
+     * Optional so every note saved before this field existed still validates,
+     * and read only when the note is new — see `saveInteraction`.
+     */
+    financeRecordId: optionalText.default(null),
     followUps: z
       .array(taskInput.omit({ id: true, version: true }))
       .max(30)

@@ -1,0 +1,1 @@
+ALTER TABLE `interactions` ADD `finance_record_id` text;

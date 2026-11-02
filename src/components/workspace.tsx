@@ -13,7 +13,6 @@ import {
   Leaf,
   ListTodo,
   LockKeyhole,
-  Paperclip,
   Plus,
   Users,
   Wallet,
@@ -24,7 +23,6 @@ import {
   Mail,
   Globe,
   MapPin,
-  StickyNote,
   ScrollText,
   ArrowUpDown,
   CalendarDays,
@@ -42,10 +40,6 @@ import {
   X,
   Eye,
   EyeOff,
-  Landmark,
-  Receipt,
-  TrendingUp,
-  TrendingDown,
   HandCoins,
   PoundSterling,
   ListChecks,
@@ -72,6 +66,7 @@ import {
   FinanceVoidDialog,
   type FinanceRecordEditor,
 } from "./finance-forms";
+import { AssetRegister } from "./asset-register";
 import { ProjectChecklist } from "./checklist";
 import { InteractionCard } from "./interaction-card";
 import { journalEntries } from "@/lib/records/journal";
@@ -103,7 +98,6 @@ import {
   taskKinds,
   everyoneAssignee,
   documentCategories,
-  financeKinds,
   movementKindFor,
   interactionKinds,
   uploadAcceptAttribute,
@@ -199,23 +193,6 @@ const taskKindIcons = {
   research: Search,
   review: ClipboardCheck,
 };
-/**
- * How many documents are attached. Deliberately a chip rather than a few words
- * in a long line of metadata: a receipt attached to a payment is easy to miss,
- * and missing it leads to the same paperwork being filed twice.
- */
-function DocumentCount({ count }: { count: number }) {
-  return (
-    <span
-      className="doc-count"
-      title={`${count} document${count > 1 ? "s" : ""} attached`}
-    >
-      <Paperclip size={11} aria-hidden />
-      {count} document{count > 1 ? "s" : ""}
-    </span>
-  );
-}
-
 function viewDocument(id: string) {
   if (typeof window === "undefined") return;
   try {
@@ -409,11 +386,7 @@ export function Workspace({
       version: number;
       reinstating: boolean;
       title: string;
-    } | null>(null),
-    [financeQuery, setFinanceQuery] = useState(""),
-    [financeFilter, setFinanceFilter] = useState<
-      "all" | (typeof financeKinds)[number]
-    >("all");
+    } | null>(null);
 
   /**
    * The Event log's filters, remembered in this browser between visits. They are
@@ -855,11 +828,6 @@ export function Workspace({
     data.financeMovements.filter(
       (m) => m.recordId === recordId && (!kind || m.kind === kind),
     );
-  const activeMovementTotal = (recordId: string) =>
-    movementsFor(recordId)
-      .filter((m) => !m.voidedAt)
-      .reduce((total, m) => total + m.amountPence, 0);
-
   const openTasks = data.tasks.filter(
     (t) => !["done", "cancelled"].includes(t.status),
   );
@@ -984,148 +952,6 @@ export function Workspace({
     );
     setVoidTarget(null);
     router.refresh();
-  }
-
-  function financeRow(record: Snapshot["financeRecords"][number]) {
-    const paidOrReceived = activeMovementTotal(record.id);
-    const movementKind = movementKindFor(record.kind);
-    const docs = linkedDocsForFinance(record.id);
-    const Icon =
-      record.kind === "asset"
-        ? Landmark
-        : record.kind === "liability"
-          ? Receipt
-          : record.kind === "income"
-            ? TrendingUp
-            : record.kind === "expense"
-              ? TrendingDown
-              : HandCoins;
-    const money =
-      record.kind === "asset"
-        ? [
-            record.amountPence === null
-              ? "Estimated value not recorded yet"
-              : `Estimated ${formatPence(record.amountPence)}`,
-            paidOrReceived > 0
-              ? `Proceeds ${formatPence(paidOrReceived)}`
-              : null,
-            record.amountPence !== null && paidOrReceived < record.amountPence
-              ? `${formatPence(record.amountPence - paidOrReceived)} still to realise`
-              : null,
-          ]
-        : record.kind === "liability"
-          ? [
-              `Recorded ${formatPence(record.amountPence ?? 0)}`,
-              `Paid ${formatPence(paidOrReceived)}`,
-              (record.amountPence ?? 0) - paidOrReceived > 0
-                ? `${formatPence((record.amountPence ?? 0) - paidOrReceived)} outstanding`
-                : "Paid in full",
-            ]
-          : record.kind === "income"
-            ? [`Received ${formatPence(record.amountPence ?? 0)}`]
-            : record.kind === "expense"
-              ? [
-                  record.fundedBy
-                    ? `${formatPence(record.amountPence ?? 0)} paid personally by ${names(record.fundedBy)}`
-                    : `${formatPence(record.amountPence ?? 0)} paid from the estate`,
-                  record.fundedBy
-                    ? paidOrReceived > 0
-                      ? `Reimbursed ${formatPence(paidOrReceived)} · ${formatPence(Math.max(0, (record.amountPence ?? 0) - paidOrReceived))} still owed`
-                      : "Not reimbursed yet"
-                    : null,
-                ]
-              : [
-                  `${formatPence(record.amountPence ?? 0)} to ${names(record.beneficiary)}`,
-                ];
-    const movementButton =
-      movementKind === "proceeds"
-        ? "Proceeds"
-        : movementKind === "payment"
-          ? "Payments"
-          : "Reimburse";
-    return (
-      <div className="task-row" key={record.id}>
-        <span className="task-icon">
-          <Icon size={18} />
-        </span>
-        <div className="task-copy">
-          <button
-            className="record-title"
-            onClick={() => setFinanceEditor({ id: record.id })}
-          >
-            {record.title}
-          </button>
-          <p>
-            <span className={record.voidedAt ? "badge voided" : "badge"}>
-              {record.voidedAt ? "Voided" : label(record.kind)}
-            </span>
-            {record.category ? ` · ${label(record.category)}` : ""}
-            {record.occurredOn ? ` · ${formatDate(record.occurredOn)}` : ""}
-            {record.organisationId
-              ? ` · ${orgName(record.organisationId)}`
-              : ""}
-            {record.projectId && projectName(record.projectId)
-              ? ` · ${projectName(record.projectId)}`
-              : ""}
-            {docs.length > 0 && <DocumentCount count={docs.length} />}
-          </p>
-          <p>{money.filter(Boolean).join(" · ")}</p>
-          {record.voidedAt && record.voidReason && (
-            <p>
-              <small>Voided: {record.voidReason}</small>
-            </p>
-          )}
-          <p>
-            <small>
-              Recorded by {names(record.createdBy)}
-              {record.version > 1 ? " · Corrected since – see history" : ""}
-            </small>
-          </p>
-        </div>
-        <div className="row-actions">
-          {movementKind && !record.voidedAt && (
-            <button
-              className="subtle-button"
-              onClick={() => setMovementRecordId(record.id)}
-            >
-              <PoundSterling size={14} />
-              {movementButton}
-            </button>
-          )}
-          <button
-            className="subtle-button"
-            onClick={() => setFinanceEditor({ id: record.id })}
-          >
-            <Pencil size={14} />
-            Edit
-          </button>
-          {historyButton("finance_record", record.id)}
-          <button
-            className="subtle-button"
-            onClick={() =>
-              setVoidTarget({
-                target: "record",
-                id: record.id,
-                version: record.version,
-                reinstating: !!record.voidedAt,
-                title: record.title,
-              })
-            }
-          >
-            {record.voidedAt ? "Reinstate" : "Void"}
-          </button>
-          <button
-            className="subtle-button"
-            onClick={() =>
-              handleDelete("finance_record", record.id, record.version)
-            }
-          >
-            <Trash2 size={14} />
-            Bin
-          </button>
-        </div>
-      </div>
-    );
   }
 
   function taskRow(t: Snapshot["tasks"][number]) {
@@ -1566,31 +1392,6 @@ export function Workspace({
     data.deletedTaskTemplates.length +
     data.deletedHouseholds.length;
 
-  const financeRecords = [...data.financeRecords]
-    .filter((record) => {
-      if (financeFilter !== "all" && record.kind !== financeFilter)
-        return false;
-      const q = financeQuery.trim().toLowerCase();
-      if (!q) return true;
-      return [
-        record.title,
-        record.detail,
-        record.category ?? "",
-        record.voidReason ?? "",
-        record.organisationId ? orgName(record.organisationId) : "",
-        record.projectId ? (projectName(record.projectId) ?? "") : "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    })
-    .sort(
-      (a, b) =>
-        Number(!!a.voidedAt) - Number(!!b.voidedAt) ||
-        (b.occurredOn ?? "").localeCompare(a.occurredOn ?? "") ||
-        a.title.localeCompare(b.title),
-    );
-
   const movementRecord = movementRecordId
     ? data.financeRecords.find((r) => r.id === movementRecordId)
     : undefined;
@@ -1780,7 +1581,7 @@ export function Workspace({
                           : view === "events"
                             ? "Every call, email, letter, web form and note in one place, most recent first. Search the title or detail, or filter by contact, project, type and who recorded it."
                             : view === "finances"
-                              ? "Recorded facts in GBP, with no tax, debt-priority, or entitlement calculations. Assets, liabilities, cash movements, and personal amounts are summarised separately, and every correction keeps its history."
+                              ? "The asset register: what the estate owns, owes, receives and gives out, in GBP, with no tax, debt-priority or entitlement calculations. The cards above summarise the whole estate; the grid below is every record, and opening a row shows its money movements and paperwork. Every correction keeps its history."
                               : view === "backup"
                                 ? "Create an encrypted recovery copy, or validate one before restoring it."
                                 : "Everything you need, shared between the two of you."}
@@ -2494,9 +2295,11 @@ export function Workspace({
           {view === "notes" && (
             <>
               {data.interactions
-                .filter((n) => !n.organisationId)
+                .filter((n) => !n.organisationId && !n.financeRecordId)
                 .map(noteSurfaceCard)}
-              {!data.interactions.some((n) => !n.organisationId) && (
+              {!data.interactions.some(
+                (n) => !n.organisationId && !n.financeRecordId,
+              ) && (
                 <section className="panel empty-state">
                   <h2>A place for thoughts before they’re organised</h2>
                   <p>
@@ -3388,39 +3191,40 @@ export function Workspace({
                 </section>
               </div>
 
-              <div className="list-toolbar">
-                <label className="search-label">
-                  Find a record
-                  <input
-                    type="search"
-                    placeholder="Search title, category, or notes…"
-                    value={financeQuery}
-                    onChange={(e) => setFinanceQuery(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Type
-                  <select
-                    value={financeFilter}
-                    onChange={(e) =>
-                      setFinanceFilter(
-                        e.target.value as "all" | (typeof financeKinds)[number],
-                      )
-                    }
-                  >
-                    <option value="all">All types</option>
-                    {financeKinds.map((k) => (
-                      <option key={k} value={k}>
-                        {label(k)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Button onClick={() => setFinanceEditor({})}>
-                  <Plus size={16} />
-                  Add financial record
-                </Button>
-              </div>
+              <AssetRegister
+                records={data.financeRecords}
+                movements={data.financeMovements}
+                documents={data.documents}
+                documentLinks={data.documentLinks}
+                notes={data.interactions}
+                nameFor={names}
+                orgName={orgName}
+                projectName={projectName}
+                onAdd={(kind) => setFinanceEditor({ kind })}
+                onEdit={(id) => setFinanceEditor({ id })}
+                onMovement={setMovementRecordId}
+                onVoid={(record) =>
+                  setVoidTarget({
+                    target: "record",
+                    id: record.id,
+                    version: record.version,
+                    reinstating: !!record.voidedAt,
+                    title: record.title,
+                  })
+                }
+                onBin={(record) =>
+                  handleDelete("finance_record", record.id, record.version)
+                }
+                onHistory={(id) => setHistory({ kind: "finance_record", id })}
+                onOpenNote={(id) => setEditor({ kind: "interaction", id })}
+                onViewDocument={setViewingDoc}
+                onUpload={(recordId) =>
+                  setDocUpload({ financeRecordId: recordId })
+                }
+                onLinkExisting={(recordId) =>
+                  setLinkPicker({ financeRecordId: recordId })
+                }
+              />
 
               <div className="csv-bar">
                 <span>Download for a spreadsheet:</span>
@@ -3447,29 +3251,6 @@ export function Workspace({
                   from spreadsheet formulas.
                 </small>
               </div>
-
-              <section className="panel">
-                {financeRecords.map(financeRow)}
-                {!financeRecords.length && (
-                  <div className="empty-state">
-                    <Wallet size={26} />
-                    <h2>Estate finances, recorded as facts</h2>
-                    <p>
-                      Start with what the estate owns, or with an expense you
-                      have already paid. Amounts are in pounds, with no tax,
-                      debt-priority, or entitlement calculations.
-                    </p>
-                    <Button onClick={() => setFinanceEditor({})}>
-                      Add the first record
-                    </Button>
-                  </div>
-                )}
-                {data.financeRecords.length > 0 && !financeRecords.length && (
-                  <p className="empty-state">
-                    No records match that search or type.
-                  </p>
-                )}
-              </section>
 
               {finance.reimbursableExpenses.some((e) => e.owedPence > 0) && (
                 <section className="panel spaced">

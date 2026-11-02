@@ -85,6 +85,13 @@
       "when": 1789891296306,
       "tag": "0011_guest_list",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793615956550,
+      "tag": "0012_interaction_finance_record",
+      "breakpoints": true
     }
   ]
 }
