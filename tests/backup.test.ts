@@ -274,3 +274,127 @@ test("restore handles a temporary directory on a different filesystem", async ()
     await rm(targetRoot, { recursive: true, force: true });
   }
 });
+
+/**
+ * A migration must not strand the backups that predate it. Restoring runs every
+ * migration the backup is missing, so a copy taken before `0012` still comes
+ * back complete — with its notes, and with the new column added empty rather
+ * than the restore failing. This is the same path the guest-list test covers for
+ * `0011`, kept here because it is the promise the user relies on: keep taking
+ * backups, and old ones still open.
+ */
+test("a backup taken before the finance-note migration restores cleanly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "estate-backup-old-schema-"));
+  const sourceDatabase = join(root, "source", "estate.sqlite");
+  const sourceDocuments = join(root, "source", "documents");
+  const backupPath = join(root, "estate.estate-backup");
+  const restoredDatabase = join(root, "restored", "estate.sqlite");
+  await mkdir(sourceDocuments, { recursive: true });
+
+  // Build the database as it was before 0012: every migration up to that tag,
+  // and nothing from it on.
+  const sqlite = new Database(sourceDatabase);
+  try {
+    const journal = JSON.parse(
+      await readFile("./drizzle/meta/_journal.json", "utf8"),
+    ) as { entries: { tag: string; when: number }[] };
+    const beforeThisMigration = journal.entries.slice(
+      0,
+      journal.entries.findIndex(
+        (entry) => entry.tag === "0012_interaction_finance_record",
+      ),
+    );
+    assert.ok(beforeThisMigration.length > 0);
+    sqlite.exec(
+      "CREATE TABLE IF NOT EXISTS `__drizzle_migrations` (`id` integer PRIMARY KEY AUTOINCREMENT, `hash` text NOT NULL, `created_at` numeric)",
+    );
+    for (const entry of beforeThisMigration) {
+      const sql = await readFile(`./drizzle/${entry.tag}.sql`, "utf8");
+      for (const statement of sql.split("--> statement-breakpoint")) {
+        const trimmed = statement.trim();
+        if (trimmed) sqlite.exec(trimmed);
+      }
+      sqlite
+        .prepare(
+          "INSERT INTO `__drizzle_migrations` (`hash`, `created_at`) VALUES (?, ?)",
+        )
+        .run(entry.tag, entry.when);
+    }
+    const columns = (
+      sqlite.prepare("PRAGMA table_info(interactions)").all() as {
+        name: string;
+      }[]
+    ).map((column) => column.name);
+    assert.ok(!columns.includes("finance_record_id"));
+
+    // A note written by that version, with no link, because there was no field.
+    sqlite
+      .prepare(
+        "INSERT INTO interactions (id, title, detail, kind, occurred_at, version, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "old-note",
+        "Older note",
+        "Written before the upgrade",
+        "note",
+        "2026-09-01T10:00:00.000Z",
+        1,
+        "alex@example.invalid",
+        "2026-09-01T10:00:00.000Z",
+        "2026-09-01T10:00:00.000Z",
+      );
+  } finally {
+    sqlite.close();
+  }
+
+  try {
+    const password = "fictional recovery password";
+    await createEncryptedBackup(password, backupPath, {
+      databasePath: sourceDatabase,
+      documentsRoot: sourceDocuments,
+    });
+    await restoreEncryptedBackup(backupPath, password, {
+      databasePath: restoredDatabase,
+      documentsRoot: join(root, "restored", "documents"),
+    });
+
+    const restored = new Database(restoredDatabase, { readonly: true });
+    try {
+      const columns = (
+        restored.prepare("PRAGMA table_info(interactions)").all() as {
+          name: string;
+        }[]
+      ).map((column) => column.name);
+      assert.ok(
+        columns.includes("finance_record_id"),
+        "the migration should have been applied on the way in",
+      );
+      const note = restored
+        .prepare(
+          "SELECT title, detail, finance_record_id FROM interactions WHERE id = ?",
+        )
+        .get("old-note") as {
+        title: string;
+        detail: string;
+        finance_record_id: string | null;
+      };
+      assert.equal(note.title, "Older note");
+      assert.equal(note.detail, "Written before the upgrade");
+      assert.equal(note.finance_record_id, null);
+      // Nothing else was lost on the way through: every required table is here.
+      const tables = new Set(
+        (
+          restored
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .all() as { name: string }[]
+        ).map((table) => table.name),
+      );
+      for (const table of ["households", "gatherings", "revisions"])
+        assert.ok(tables.has(table), `missing ${table} after restore`);
+    } finally {
+      restored.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
