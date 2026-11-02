@@ -7,6 +7,7 @@ import { auditEntry } from "./audit";
 import { financeStore } from "../finances/store";
 import { checklistStore } from "./checklist-store";
 import { guestStore } from "../guests/store";
+import { probateStore } from "../probate/store";
 import { templateSeeds } from "./template-seeds";
 import {
   organisationInput,
@@ -33,6 +34,7 @@ const {
   taskTemplates,
   households,
   gatherings,
+  probateRecords,
 } = schema;
 export { RecordError };
 export function recordStore(
@@ -42,6 +44,7 @@ export function recordStore(
   const finances = financeStore(db, users);
   const checklist = checklistStore(db, users);
   const guests = guestStore(db, users);
+  const probate = probateStore(db, users);
   function actorCheck(actor: string) {
     assertActor(users, actor);
   }
@@ -511,6 +514,7 @@ export function recordStore(
     ...finances,
     ...checklist,
     ...guests,
+    ...probate,
     seedTemplates() {
       checklist.seedTemplates(templateSeeds);
     },
@@ -591,6 +595,12 @@ export function recordStore(
           .from(gatherings)
           .where(isNull(gatherings.deletedAt))
           .all(),
+        /** One row, or none before anything has been recorded. */
+        probateRecord: db
+          .select()
+          .from(probateRecords)
+          .where(isNull(probateRecords.deletedAt))
+          .get(),
         deletedOrganisations: db
           .select()
           .from(organisations)
