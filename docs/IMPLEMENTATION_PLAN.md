@@ -1,18 +1,18 @@
 # Estate Organiser — Implementation Plan
 
-## Current state — 20 September 2026
+## Current state — 2 November 2026
 
 Read this before the dated sections below. They are kept as a record, and some of them describe work that has since shipped.
 
-| Item                   | Position today                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Live release           | **v0.2.21** — fix backup filename client override – save-as now uses version and London HHmm from server header, with a matching client fallback. Expected filename: `estate-backup-v0.2.21-YYYY-MM-DD-HHmm.estate-backup`. Sidebar version and backup metadata remain in step. Unraid was last confirmed on v0.2.20; Force Update and the Linux Mint save-dialog / PC and mobile sidebar checks remain to be done after publication |
-| Build source of truth  | `.github/workflows/publish.yml`, triggered by pushing a `v*` tag. Only a tag publishes an image                                                                                                                                                                                                                                                                                                                                      |
-| Data in use            | **Real estate records and real documents.** The installation is live on Unraid behind Cloudflare Access, and both users work in it                                                                                                                                                                                                                                                                                                   |
-| Verified in production | Both users signing in; document upload; **an encrypted backup created and restored, with the records confirmed afterwards**; the PWA installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)                                                                                                               |
-| Automated gates        | **206 unit/integration tests**, `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass on the released commit                                                                                                                                                                                                                                                                             |
-| Still outstanding      | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                                                                                                                                   |
-| Version numbering      | The next release after v0.2.21 has no number or content yet; nothing is planned beyond the carried-forward items at the end of this document. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                                                                                                                                |
+| Item                   | Position today                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Live release           | **v0.2.22** — the Estate finances page became an asset register (tabs, sortable grid, totals footer, derived status, inline drill-down) and notes can be filed against an asset (migration `0012`). Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check, a backup download and a restore remain to be done after publication |
+| Build source of truth  | `.github/workflows/publish.yml`, triggered by pushing a `v*` tag. Only a tag publishes an image                                                                                                                                                                                                                                                        |
+| Data in use            | **Real estate records and real documents.** The installation is live on Unraid behind Cloudflare Access, and both users work in it                                                                                                                                                                                                                     |
+| Verified in production | Both users signing in; document upload; **an encrypted backup created and restored, with the records confirmed afterwards**; the PWA installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)                                 |
+| Automated gates        | **206 unit/integration tests**, `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass on the released commit                                                                                                                                                                                               |
+| Still outstanding      | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                                                     |
+| Version numbering      | **v0.2.22** is this release; the next release after it has no number or content yet. Nothing is planned beyond the carried-forward items at the end of this document. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                          |
 
 ### Sandbox facts a new session must know
 
@@ -1022,9 +1022,9 @@ Verified:
 
 After the v0.2.21 tag publishes the container, Force Update on Unraid. Confirm `v0.2.21` in the PC and mobile sidebar and create a backup in Linux Mint: the native save-as dialog must suggest `estate-backup-v0.2.21-YYYY-MM-DD-HHmm.estate-backup`. These live-device checks cannot be claimed from the sandbox harness or HTTP checks.
 
-## Unreleased checkpoint — the asset register on Estate finances (2 November 2026)
+## v0.2.22 checkpoint — the asset register, and notes on an asset (2 November 2026)
 
-Phase 1 of [the proposal](PROPOSAL_estate_assets_page.md), written from Issue #29. Nothing is tagged; the work is on a session branch.
+Built from [the proposal](PROPOSAL_estate_assets_page.md), which was written from Issue #29. Phases 1 and 2 only: the user decided that valuation date and basis, ownership share and part-paid distributions are not wanted, and that an estimate is sufficient.
 
 **What the page is now.** The three summary cards at the top are unchanged and still describe the whole estate. Below them, the single list of mobile-style record rows is replaced by a register divided into four tabs — **Assets**, **Debts & expenses**, **Cash** and **Distributions** — each a real table with one row per financial record.
 
@@ -1058,6 +1058,32 @@ The other explicit ask in Issue #29. Migration **0012** adds one nullable column
 **Deliberately not yet built** (see the proposal): valuation date and basis; an ownership share and assets that pass outside the estate; distributions that can be part paid; keyboard navigation; a filtered-view CSV export.
 
 **Verified.** `tsc --noEmit`, `prettier --check`, `next build` and the unit suite pass (206 tests: eleven new in `tests/finance-register.test.ts`, five in `tests/finance-notes.test.ts`, one in `tests/backup.test.ts`). There is still no browser in the sandbox, so the register was rendered to static markup with `tsx` against the demo database and checked in both an assets tab and a debts tab with every row expanded, and `curl` against the development server returns 200 with the register's chunk present. The real page was then served on the development server for the user to review.
+
+### Dependency update before release
+
+The production audit went red on 2 November 2026 while this release was being assembled: `next` 16.3.5 had moved inside the affected range of eight advisories (including two remote code execution issues in `next/og` and image optimisation). It is not something to ship quietly, so the release carries the update.
+
+- **`next` 16.3.5 → 16.4.4**, the current release outside every affected range. React 19.3, the App Router and the `experimental.serverActions` configuration are untouched and still correct for this version.
+- `zod` → 4.6.6 and `source-map-js` → 1.2.2 come in transitively through `npm audit fix`, both within their existing ranges. Validation behaviour is unchanged, which the 206 tests cover.
+- `npm audit --omit=dev` now reports **0 findings** again. The four moderate findings in the development-only Drizzle/esbuild toolchain are unchanged and remain accepted, as the README records.
+- Rebuilt and re-ran the whole suite on 16.4.4: typecheck, format check, tests and `next build` all pass, and the development server serves the page and a backup download with the new version.
+
+### Verified before merge
+
+- `npm ci --ignore-scripts`, `npm run format:check`, `npm run typecheck`, **206 unit/integration tests**, `NEXT_TELEMETRY_DISABLED=1 npm run build` and `npm audit --omit=dev` all pass. The build retains the four known filesystem-tracing warnings.
+- There is still no browser in the sandbox, so the register was rendered to static markup with `tsx` against the demo database — the assets tab, the debts tab, and every row expanded — and `curl` against the development server returned 200 with the register's chunk present. No click-through has been performed in a browser.
+- Backups were exercised in both directions rather than assumed: the running app's `/api/backup/download` produced a real file that restored with all demo records, the note and its link; a schema-0011 database was backed up and restored to prove a pre-migration copy is migrated on the way in. Both are described under phase 2.
+
+### Deployment acceptance still required
+
+After the tag publishes the image, Force Update on Unraid and confirm:
+
+1. The sidebar reads **v0.2.22** on a PC and on a phone.
+2. **Estate finances** opens on the Assets tab; the grid lists the real records, a column sorts, and the footer total matches the cards above.
+3. A row opens in place: money movements, documents, the note block and the composer all appear, and no real record shows an error.
+4. Adding a note to a real asset saves it, survives a page reload, and appears in the Event log; **Unfiled notes** does not list it.
+5. Create an encrypted backup and confirm the filename reads `estate-backup-v0.2.22-YYYY-MM-DD-HHmm.estate-backup`. Restoring it is worth doing once into the live installation's usual window, as every earlier release did.
+6. Migration `0012` runs at container start; if it does not, the page shows a clear error rather than pretending, because the snapshot selects the new column.
 
 ## Carried forward for a future session
 
