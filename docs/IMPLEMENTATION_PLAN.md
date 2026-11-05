@@ -1111,7 +1111,7 @@ The user found that two funeral expenses were edited from **paid personally by C
 
 ### Release
 
-Published as **v0.2.23** from a single release PR. Open PR #32 still calls itself v0.2.23 for the Probate page and must be renumbered before that work is published. The annotated `v0.2.23` tag on the merge commit triggers `.github/workflows/publish.yml`, which builds and pushes `ghcr.io/dougalbob/estate-organiser:v0.2.23`, `:latest` and the SHA tag.
+Published as **v0.2.23** from [PR #33](https://github.com/dougalbob/estate-tracking/pull/33), the single release PR. Open PR #32 still calls itself v0.2.23 for the Probate page and must be renumbered before that work is published. After PR #33 is merged, the annotated `v0.2.23` tag on the merge commit triggers `.github/workflows/publish.yml`, which builds and pushes `ghcr.io/dougalbob/estate-organiser:v0.2.23`, `:latest` and the SHA tag.
 
 ### Deployment acceptance — v0.2.23
 
