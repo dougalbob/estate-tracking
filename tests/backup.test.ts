@@ -369,6 +369,15 @@ test("a backup taken before the finance-note migration restores cleanly", async 
         columns.includes("finance_record_id"),
         "the migration should have been applied on the way in",
       );
+      const movementColumns = (
+        restored.prepare("PRAGMA table_info(finance_movements)").all() as {
+          name: string;
+        }[]
+      ).map((column) => column.name);
+      assert.ok(
+        movementColumns.includes("source_label"),
+        "the newer finance-movement migration should also be applied on restore",
+      );
       const note = restored
         .prepare(
           "SELECT title, detail, finance_record_id FROM interactions WHERE id = ?",

@@ -348,6 +348,161 @@ test("reimbursements are refused when they would overpay or when the estate paid
   }
 });
 
+test("a reimbursement's paid-via label is stored without changing the money", () => {
+  const { sqlite, store } = setup();
+  try {
+    const expense = store.saveFinanceRecord(
+      {
+        kind: "expense",
+        title: "Funeral costs paid by Jamie",
+        detail: "",
+        category: "funeral",
+        amount: "500",
+        occurredOn: "2026-09-03",
+        fundedBy: jamie,
+        beneficiary: null,
+        organisationId: null,
+        projectId: null,
+      },
+      jamie,
+    );
+    const reimbursement = store.saveFinanceMovement(
+      {
+        recordId: expense,
+        kind: "reimbursement",
+        amount: "200",
+        occurredOn: "2026-09-15",
+        detail: "Reimbursed by Lloyds",
+        sourceLabel: "Lloyds — deceased's current account",
+      },
+      alex,
+    );
+    const written = store
+      .snapshot()
+      .financeMovements.find((m) => m.id === reimbursement);
+    assert.equal(written?.sourceLabel, "Lloyds — deceased's current account");
+
+    // The label is provenance only: estate-funded totals are exactly as before.
+    const summary = summaryOf(store);
+    assert.equal(summary.cash.personallyFundedPence, 50000);
+    assert.equal(summary.cash.expensesFromEstatePence, 0);
+    assert.equal(summary.cash.reimbursedPence, 20000);
+    assert.equal(summary.cash.moneyOutPence, 20000);
+    assert.equal(summary.reimbursements[1].owedPence, 30000);
+
+    // A label supplied on any other movement kind is ignored, not stored.
+    const liability = store.saveFinanceRecord(
+      {
+        kind: "liability",
+        title: "Headstone balance",
+        detail: "",
+        category: "unpaid_bill",
+        amount: "100",
+        occurredOn: "2026-09-04",
+        fundedBy: null,
+        beneficiary: null,
+        organisationId: null,
+        projectId: null,
+      },
+      alex,
+    );
+    const payment = store.saveFinanceMovement(
+      {
+        recordId: liability,
+        kind: "payment",
+        amount: "50",
+        occurredOn: "2026-09-05",
+        detail: "",
+        sourceLabel: "Not a reimbursement",
+      },
+      alex,
+    );
+    assert.equal(
+      store.snapshot().financeMovements.find((m) => m.id === payment)
+        ?.sourceLabel,
+      null,
+    );
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("reimbursements keep an expense tied to the person who paid it", () => {
+  const { sqlite, store } = setup();
+  try {
+    const expense = store.saveFinanceRecord(
+      {
+        kind: "expense",
+        title: "Funeral costs paid by Jamie",
+        detail: "",
+        category: "funeral",
+        amount: "500",
+        occurredOn: "2026-09-03",
+        fundedBy: jamie,
+        beneficiary: null,
+        organisationId: null,
+        projectId: null,
+      },
+      jamie,
+    );
+    store.saveFinanceMovement(
+      {
+        recordId: expense,
+        kind: "reimbursement",
+        amount: "200",
+        occurredOn: "2026-09-15",
+        detail: "",
+        sourceLabel: "Lloyds",
+      },
+      alex,
+    );
+
+    const edit = (fundedBy: string | null) => ({
+      id: expense,
+      version: 1,
+      kind: "expense",
+      title: "Funeral costs paid by Jamie",
+      detail: "",
+      category: "funeral",
+      amount: "500",
+      occurredOn: "2026-09-03",
+      fundedBy,
+      beneficiary: null,
+      organisationId: null,
+      projectId: null,
+    });
+
+    // Reclassifying as estate-paid, or moving the debt to Alex, would orphan
+    // the reimbursement and count the estate cash twice.
+    assert.throws(
+      () => store.saveFinanceRecord(edit(null), alex),
+      /reimbursements recorded/i,
+    );
+    assert.throws(
+      () => store.saveFinanceRecord(edit(alex), alex),
+      /reimbursements recorded/i,
+    );
+    assert.equal(store.snapshot().financeRecords[0].fundedBy, jamie);
+
+    // Correcting a mistaken "paid by estate" back to Jamie is allowed, so the
+    // real data can be repaired without voiding a payment that happened.
+    sqlite
+      .prepare("UPDATE finance_records SET funded_by = NULL WHERE id = ?")
+      .run(expense);
+    assert.equal(
+      summaryOf(store).cash.moneyOutPence,
+      70000,
+      "the mistaken state really does double-count estate cash",
+    );
+    store.saveFinanceRecord(edit(jamie), alex);
+    assert.equal(store.snapshot().financeRecords[0].fundedBy, jamie);
+    assert.equal(store.snapshot().financeRecords[0].version, 2);
+    assert.equal(summaryOf(store).cash.moneyOutPence, 20000);
+  } finally {
+    sqlite.close();
+  }
+});
+
 test("voiding keeps the record, its reason and its history, and leaves it out of the totals", () => {
   const { sqlite, store } = setup();
   try {
@@ -715,6 +870,7 @@ test("CSV exports protect against spreadsheet formulas and keep money as numbers
         amount: "200",
         occurredOn: "2026-09-15",
         detail: "@SUM(1+1)",
+        sourceLabel: "Lloyds — deceased's current account",
       },
       jamie,
     );
@@ -772,11 +928,13 @@ test("CSV exports protect against spreadsheet formulas and keep money as numbers
       for (const cell of row.match(/"[^"]*(?:""[^"]*)*"/g) ?? [])
         assert.ok(!/^"[=+\-@]/.test(cell), `unprotected cell ${cell}`);
     assert.match(cash.csv, /Expense paid personally by alex/);
-    assert.match(cash.csv, /Reimbursement paid to alex/);
+    assert.match(cash.csv, /Reimbursement paid to alex via Lloyds/);
     assert.match(cash.csv, /not a new expense/);
 
     const reimbursements = exportCsv("reimbursements", context);
     assert.match(reimbursements.csv, /"Still owed \(£\)"/);
+    assert.match(reimbursements.csv, /"Paid via \(estate funds\)"/);
+    assert.match(reimbursements.csv, /Lloyds — deceased's current account/);
     assert.match(reimbursements.csv, /"300\.00"/);
     assert.match(reimbursements.csv, /Total owed to alex/);
 

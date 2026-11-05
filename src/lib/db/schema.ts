@@ -208,7 +208,9 @@ export const financeRecords = sqliteTable("finance_records", {
  *  - payment:       money paid against a liability
  *  - reimbursement: estate money repaying a user for an expense they funded
  *                    personally. This settles money owed to that user; it is
- *                    never counted as a second expense.
+ *                    never counted as a second expense. An optional source
+ *                    label records the bank or account the estate payment came
+ *                    from (for example, Lloyds); it is never a second funder.
  */
 export const financeMovements = sqliteTable("finance_movements", {
   id: text("id").primaryKey(),
@@ -221,6 +223,8 @@ export const financeMovements = sqliteTable("finance_movements", {
   amountPence: integer("amount_pence").notNull(),
   occurredOn: text("occurred_on").notNull(),
   detail: text("detail").notNull().default(""),
+  /** Optional plain label: the estate bank/account a reimbursement was paid via. */
+  sourceLabel: text("source_label"),
   voidedAt: integer("voided_at", { mode: "timestamp_ms" }),
   voidReason: text("void_reason"),
   version: integer("version").notNull().default(1),

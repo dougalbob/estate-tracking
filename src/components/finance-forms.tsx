@@ -746,6 +746,7 @@ export function FinanceMovementDialog({
         amount: get("amount"),
         occurredOn: get("occurredOn") || londonToday(),
         detail: get("detail"),
+        sourceLabel: get("sourceLabel"),
       });
       if (result.ok) {
         // The amount is cleared so the next part payment starts from an empty
@@ -868,6 +869,20 @@ export function FinanceMovementDialog({
                 <input name="detail" maxLength={500} placeholder="Optional" />
               </label>
             </div>
+            {kind === "reimbursement" && (
+              <label>
+                Paid via (optional)
+                <input
+                  name="sourceLabel"
+                  maxLength={500}
+                  placeholder="For example, Lloyds — deceased's current account"
+                />
+                <small className="form-help">
+                  All reimbursements are estate funds. This is just the bank or
+                  account the payment came from, not another person or funder.
+                </small>
+              </label>
+            )}
             {hint && (
               <p
                 id="movement-balance"
@@ -880,9 +895,9 @@ export function FinanceMovementDialog({
             )}
             {kind === "reimbursement" && (
               <p className="form-help">
-                Part payments are fine. A reimbursement only settles money{" "}
-                {name(record.fundedBy)} already paid – it is never counted as a
-                second expense.
+                Part payments are fine. Estate funds reimburse{" "}
+                {name(record.fundedBy)} for money already paid – it is never
+                counted as a second expense or a distribution.
               </p>
             )}
             <div className="row-actions">
@@ -923,6 +938,7 @@ export function FinanceMovementDialog({
               <p>
                 {movement.occurredOn} · {name(movement.createdBy)}
                 {movement.detail ? ` · ${movement.detail}` : ""}
+                {movement.sourceLabel ? ` · via ${movement.sourceLabel}` : ""}
               </p>
               {movement.voidedAt && movement.voidReason && (
                 <p>

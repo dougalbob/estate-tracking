@@ -101,6 +101,7 @@ if (existing) {
       amount: "200",
       occurredOn: "2026-09-15",
       detail: "Fictional part repayment",
+      sourceLabel: "Lloyds — deceased's current account (fictional)",
     },
     users[1],
   );

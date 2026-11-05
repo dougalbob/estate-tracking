@@ -1,0 +1,1 @@
+ALTER TABLE `finance_movements` ADD `source_label` text;

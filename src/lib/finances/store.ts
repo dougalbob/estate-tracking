@@ -201,6 +201,26 @@ export function financeStore(
             "Only a distribution is recorded against a beneficiary",
           );
 
+        /**
+         * Reimbursements belong to the person who paid the expense. Changing
+         * that payer after money has been recorded would leave the movement
+         * orphaned and the estate cash counted twice. Restoring a mistaken
+         * "paid by estate" back to a person is allowed, so the data can be
+         * corrected without voiding real payments.
+         */
+        if (
+          before &&
+          before.kind === "expense" &&
+          input.kind === "expense" &&
+          before.fundedBy &&
+          before.fundedBy !== fundedBy &&
+          liveMovements(before.id, "reimbursement").length > 0
+        )
+          throw new RecordError(
+            "This expense already has reimbursements recorded. Void them before changing who paid it, or set it back to the person who was originally owed.",
+            "validation",
+          );
+
         const now = new Date();
         const id = input.id || randomUUID();
         const after = {
@@ -343,6 +363,8 @@ export function financeStore(
           amountPence,
           occurredOn: input.occurredOn,
           detail: input.detail,
+          sourceLabel:
+            input.kind === "reimbursement" ? input.sourceLabel : null,
           voidedAt: before?.voidedAt ?? null,
           voidReason: before?.voidReason ?? null,
           version: (before?.version ?? 0) + 1,
