@@ -1,19 +1,18 @@
 # Estate Organiser — Implementation Plan
 
-## Current state — 2 November 2026
+## Current state — 5 November 2026
 
 Read this before the dated sections below. They are kept as a record, and some of them describe work that has since shipped.
 
 | Item                   | Position today                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Live release           | **v0.2.22** — the Estate finances page became an asset register (tabs, sortable grid, totals footer, derived status, inline drill-down) and notes can be filed against an asset (migration `0012`). Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check, a backup download and a restore remain to be done after publication |
-| Unreleased on this branch | Reimbursement movements can carry an optional **Paid via (estate funds)** label (migration `0013`), and an expense with reimbursements recorded can no longer be reclassified away from the person who paid it. Not yet tagged, merged or published |
+| Live release           | **v0.2.23** — reimbursement movements can carry an optional **Paid via (estate funds)** label (migration `0013`), and an expense with reimbursements recorded can no longer be reclassified away from the person who paid it. Builds on the v0.2.22 asset register. Unraid was last confirmed on v0.2.20; Force Update, the sidebar version check, a backup download and a restore remain to be done after publication |
 | Build source of truth  | `.github/workflows/publish.yml`, triggered by pushing a `v*` tag. Only a tag publishes an image                                                                                                                                                                                                                                                        |
 | Data in use            | **Real estate records and real documents.** The installation is live on Unraid behind Cloudflare Access, and both users work in it                                                                                                                                                                                                                     |
 | Verified in production | Both users signing in; document upload; **an encrypted backup created and restored, with the records confirmed afterwards**; the PWA installed on Android with the Cloudflare Access Bypass rules in place; the v0.2.6 contact popup used on a PC and a mobile phone against the live installation (17 September 2026)                                 |
-| Automated gates        | **208 unit/integration tests on this branch** (206 on the released v0.2.22 commit), `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass                                                                                                                                                          |
-| Still outstanding      | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain. There is deliberately no offline support                                                                                                                                                                                     |
-| Version numbering      | **v0.2.22** is the live release; the next release has no number yet. The current branch carries the unreleased reimbursement source label described below and is not tagged. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                          |
+| Automated gates        | **208 unit/integration tests**, `tsc --noEmit`, `prettier --check`, `next build` and `npm audit --omit=dev` (0 findings) all pass on the v0.2.23 release commit                                                                                                                                                                          |
+| Still outstanding      | A full accessibility and security review; four moderate audit findings in the development-only Drizzle/esbuild toolchain; the Unraid Force Update / sidebar / backup checks for v0.2.23; renumbering open PR #32 before the Probate work is published. There is deliberately no offline support                                                                                                     |
+| Version numbering      | **v0.2.23** is the live release; **v0.2.22** is the previous one. Open PR #32 still calls itself v0.2.23 for the Probate page and must be renumbered before that work is published. Tags are the version source of truth; `package.json` is kept in step for tidiness; `src/lib/version.ts` exports `APP_VERSION` and `APP_VERSION_DISPLAY`                          |
 
 ### Sandbox facts a new session must know
 
@@ -1086,7 +1085,7 @@ After the tag publishes the image, Force Update on Unraid and confirm:
 5. Create an encrypted backup and confirm the filename reads `estate-backup-v0.2.22-YYYY-MM-DD-HHmm.estate-backup`. Restoring it is worth doing once into the live installation's usual window, as every earlier release did.
 6. Migration `0012` runs at container start; if it does not, the page shows a clear error rather than pretending, because the snapshot selects the new column.
 
-## Unreleased — reimbursement paid-via label and payer guard (5 November 2026)
+## v0.2.23 checkpoint — reimbursement paid-via label and payer guard (5 November 2026)
 
 The user found that two funeral expenses were edited from **paid personally by Claire** to **paid by estate** after Lloyds had reimbursed Claire from the deceased's account. That edit changed who the app thinks paid the supplier, not where the reimbursement came from, and left the register, the reimbursement card and the cash summary disagreeing.
 
@@ -1104,11 +1103,26 @@ The user found that two funeral expenses were edited from **paid personally by C
 
 **Backups.** No backup code changed. The existing pre-`0012` restore test now also asserts that `finance_movements.source_label` is present after restore, so a backup predating both migrations is confirmed to be upgraded on the way in. Because `0013` is additive and nullable, a database that has been through it is still readable by v0.2.22.
 
-**Verified.** `npm ci --ignore-scripts`, `npm run typecheck`, `npm run format:check`, **208 unit/integration tests** (206 before, two new), `NEXT_TELEMETRY_DISABLED=1 npm run build` and `npm audit --omit=dev` (0 findings) all pass. The build keeps its four known filesystem-tracing warnings. There is still no browser in the sandbox, so the change was checked by rendering through the development server: `/api/health` and `/` return 200, and both CSV endpoints return the new column and the Lloyds label against the fictional demo data. No click-through has been performed in a browser.
+**Verified.** `npm ci --ignore-scripts`, `npm run typecheck`, `npm run format:check`, **208 unit/integration tests** (206 before, two new), `NEXT_TELEMETRY_DISABLED=1 npm run build` and `npm audit --omit=dev` (0 findings) all pass on the release commit. The build keeps its four known filesystem-tracing warnings. The user reviewed and approved the live Arena preview; additionally `/api/health` and `/` return 200 and both CSV endpoints return the new column and the Lloyds label against the fictional demo data. No automated browser click-through test has been run in the sandbox.
 
-**Before this is used on the live data.** Revert the two funeral rows from **The estate** back to **Claire** in Edit, keeping their reimbursement movements. The new guard allows that correction. No version number, tag, merge or PR is associated with this branch yet.
+**After Force Update on Unraid.** Revert the two funeral rows from **The estate** back to **Claire** in Edit, keeping their reimbursement movements. The new guard allows that correction. Published as **v0.2.23** on 5 November 2026; the PR, merge commit and tag are recorded in the release section below.
 
 **Deliberately not built:** third-party funders, beneficiary-funded reimbursements and debt transfers, linked contacts or estate account assets, and any change to the Distributions tab.
+
+### Release
+
+Published as **v0.2.23** from a single release PR. Open PR #32 still calls itself v0.2.23 for the Probate page and must be renumbered before that work is published. The annotated `v0.2.23` tag on the merge commit triggers `.github/workflows/publish.yml`, which builds and pushes `ghcr.io/dougalbob/estate-organiser:v0.2.23`, `:latest` and the SHA tag.
+
+### Deployment acceptance — v0.2.23
+
+After the tag publishes the image, Force Update on Unraid and confirm:
+
+1. The sidebar reads **v0.2.23** on a PC and on a phone.
+2. **Estate finances → Debts & expenses** opens normally; expanding a reimbursement shows its **Paid via** label.
+3. The **Reimbursements** CSV contains the `Paid via (estate funds)` column and the **Cash** CSV carries the label in the movement line.
+4. Editing an expense that already has reimbursements refuses a change to **The estate**, while setting a mistaken **The estate** row back to the original payer succeeds.
+5. Create an encrypted backup and confirm the filename reads `estate-backup-v0.2.23-YYYY-MM-DD-HHmm.estate-backup`. Restore once into the live installation's usual window, as every earlier release did.
+6. Migration `0013` runs at container start; if it does not, the page shows a clear error rather than pretending, because the snapshot selects the new column.
 
 ## Carried forward for a future session
 
