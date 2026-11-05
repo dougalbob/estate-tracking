@@ -234,18 +234,26 @@ function cashRows(context: ExportContext): CsvRow[] {
           { notes: movement.detail || record.detail },
         ),
       });
-    if (movement.kind === "reimbursement")
+    if (movement.kind === "reimbursement") {
+      const via = movement.sourceLabel ? ` via ${movement.sourceLabel}` : "";
+      const note = [
+        movement.detail,
+        movement.sourceLabel ? `Paid via ${movement.sourceLabel}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
       lines.push({
         sort: `${movement.occurredOn}|${record.title}`,
         row: row(
           { ...record, occurredOn: movement.occurredOn },
-          `Reimbursement paid to ${record.fundedBy?.split("@")[0] ?? "a user"} (settles money owed, not a new expense)`,
+          `Reimbursement paid to ${record.fundedBy?.split("@")[0] ?? "a user"}${via} (settles money owed, not a new expense)`,
           movement.amountPence,
           null,
           movement.amountPence,
-          { notes: movement.detail || record.detail },
+          { notes: note || record.detail },
         ),
       });
+    }
     if (movement.kind === "payment")
       lines.push({
         sort: `${movement.occurredOn}|${record.title}`,
@@ -296,6 +304,7 @@ function reimbursementRows(context: ExportContext): CsvRow[] {
       "Reimbursed so far (£)",
       "Still owed (£)",
       "Status",
+      "Paid via (estate funds)",
       "Organisation",
       "Project",
       "Notes",
@@ -303,6 +312,13 @@ function reimbursementRows(context: ExportContext): CsvRow[] {
   ];
   for (const expense of summary.reimbursableExpenses) {
     const record = context.records.find((r) => r.id === expense.id);
+    const paidVia = [
+      ...new Set(
+        expense.reimbursements
+          .map((movement) => movement.sourceLabel)
+          .filter((label): label is string => !!label),
+      ),
+    ].join("; ");
     rows.push([
       expense.occurredOn ?? "",
       expense.title,
@@ -311,6 +327,7 @@ function reimbursementRows(context: ExportContext): CsvRow[] {
       formatPencePlain(expense.reimbursedPence),
       formatPencePlain(expense.owedPence),
       expense.owedPence === 0 ? "Settled" : "Owed",
+      paidVia,
       context.organisationName(expense.organisationId),
       context.projectName(expense.projectId),
       record?.detail ?? "",
@@ -325,6 +342,7 @@ function reimbursementRows(context: ExportContext): CsvRow[] {
       formatPencePlain(line.fundedPence),
       formatPencePlain(line.reimbursedPence),
       formatPencePlain(line.owedPence),
+      "",
       "",
       "",
       "",

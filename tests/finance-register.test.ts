@@ -48,6 +48,7 @@ function movement(overrides: Partial<FinanceMovement> = {}): FinanceMovement {
     amountPence: 50000,
     occurredOn: "2026-09-02",
     detail: "",
+    sourceLabel: null,
     voidedAt: null,
     voidReason: null,
     version: 1,

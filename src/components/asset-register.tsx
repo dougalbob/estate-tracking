@@ -238,6 +238,7 @@ export function AssetRegister({
         ...notesFor(row.record.id).map((n) => n.detail),
         ...documentsFor(row.record.id).map((d) => d.doc.friendlyName),
         ...row.movements.map((m) => m.detail),
+        ...row.movements.map((m) => m.sourceLabel ?? ""),
       ];
       return words.join(" ").toLowerCase().includes(needle);
     });
@@ -388,7 +389,9 @@ export function AssetRegister({
                       {formatPence(m.amountPence)}
                     </span>
                     <span className="register-movement-detail">
-                      {m.detail || ""}
+                      {[m.detail, m.sourceLabel ? `via ${m.sourceLabel}` : ""]
+                        .filter(Boolean)
+                        .join(" · ")}
                       {m.voidedAt && m.voidReason
                         ? ` · voided: ${m.voidReason}`
                         : m.voidedAt

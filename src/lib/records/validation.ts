@@ -427,6 +427,12 @@ export const financeMovementInput = z.object({
       "Enter a valid date",
     ),
   detail: z.string().max(20000).default(""),
+  /**
+   * Reimbursements are always estate money. This optional plain label records
+   * the bank or account the payment came from; it is not a second funder and
+   * has no effect on any total.
+   */
+  sourceLabel: optionalText.default(null),
 });
 export const financeVoidInput = z.object({
   target: z.enum(["record", "movement"]),
